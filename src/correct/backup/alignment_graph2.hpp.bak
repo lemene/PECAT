@@ -1,0 +1,256 @@
+#ifndef FSA_ALIGNMENT_GRAPH2_HPP
+#define FSA_ALIGNMENT_GRAPH2_HPP
+
+
+#include <cassert>
+#include <vector>
+#include <list>
+#include <map>
+#include <set>
+
+#include "graph_utils.hpp"
+
+#include "aligner.hpp"
+
+namespace fsa {
+
+template<typename T>
+class ObjectPool {
+public:
+    ObjectPool(size_t bsz = 10240) : block_size_(bsz) { data_.push_back(new T[block_size_]); }
+    ~ObjectPool() { for (auto d : data_) { delete[] d; } }
+
+    T* PreAlloc(size_t sz) { 
+        if (id_ + sz >= block_size_) {
+            iv_ ++; 
+            if (iv_ == data_.size()) {
+                data_.push_back(new T[block_size_]);
+                
+            }
+            id_ = 0; 
+            assert(id_ + sz < block_size_);
+        }
+
+        return data_[iv_] + id_;
+    }
+
+    T* Alloc(size_t sz) {
+        T* p = PreAlloc(sz);
+        id_ += sz;
+        return p;
+    }
+    
+    void Clear() {
+        iv_ = 0; id_ = 0;
+ 
+    }
+
+protected:
+    std::vector<T*> data_;
+    const size_t block_size_;
+    size_t iv_;
+    size_t id_;
+};
+
+template<typename T>
+class FixedVector {
+    class iterator {
+    public:
+        iterator(const FixedVector &v, size_t i) : v_(v), i_(i) {}
+        void operator ++() { i_++; }
+        T& operator*() { return v_[i_]; }
+        bool operator != (const iterator& a) { return i_ != a.i_; }
+    protected:
+        const FixedVector &v_;
+        size_t i_ { 0 };
+    };
+public:
+    FixedVector(T* d=nullptr, size_t sz=0) : data_(d), size_(sz) {}
+    void reset(T* d, size_t sz) { data_ = d; size_ = sz; }
+    size_t size() const { return size_; }
+    T& operator[] (int i) const { return data_[i]; }
+    iterator begin() const { return iterator(*this, 0);}
+    iterator end() const { return iterator(*this, size_);}
+    
+protected:
+    T* data_;
+    size_t size_;
+};
+
+class AlignmentGraph2 : public GraphUtils{
+public:
+
+
+    struct Node {
+        Node() {}
+        void Reset() { 
+            count = 0; score = 0.0; 
+            best_link=nullptr; 
+            links.reset(nullptr, 0);
+        }
+
+        void SortLinks() {
+            for (size_t i=0; i<links.size(); ++i) {
+                for (size_t j= i+1; j<links.size(); ++j) {
+                    if (links[j].count > links[i].count) {
+                        std::swap(links[i], links[j]);
+                    }
+                }
+            }
+        }
+        uint16_t count{ 0 };
+        double score{ 0 };
+        const Link* best_link{ nullptr };
+
+        FixedVector<Link> links;
+    };
+
+    struct NodeGroup {
+        Node& operator [] (size_t i) {
+            assert(0 <= i && i < 5);
+            return base[i];
+        }
+        size_t Size() const { return 5; }
+        Node base[5];
+    };
+
+
+    struct Column {
+        Column() {  }
+        NodeGroup& operator[] (size_t i) { return rows[i]; }
+        size_t Size() const { return rows.size(); }
+
+        void Reset(NodeGroup* p, size_t sz) {
+            rows.reset(p, sz);
+            for (auto& i : rows) {
+                i[0].Reset();
+                i[1].Reset();
+                i[2].Reset();
+                i[3].Reset();
+                i[4].Reset();
+            }
+            coverage = 0;
+            weight = 0;
+            queries.reset();
+        }
+
+        FixedVector<NodeGroup> rows;
+        int coverage {0};
+        double weight {0};
+        std::bitset<MAX_COV> queries;
+
+    };
+
+    struct Tag {
+        bool operator == (const Tag &a) const{
+            return curr == a.curr && prev == a.prev;
+        }
+        bool operator != (const Tag &a) const{
+            return !(*this == a);
+        }
+        bool operator < (const Tag &a) const {
+            return curr < a.curr || (curr == a.curr && prev < a.prev);
+        }
+        Loc curr;
+        Loc prev;
+        int id;
+    };
+
+    struct Score {
+        int qid { -1 };
+        int cross { 0 };         // number of positions where have 
+        int t_in_cross { 0 };
+        int q_in_cross { 0 };
+        int q_t_one { 0 };
+        int q_t_two { 0 };       //
+        double similarity { 1 };
+
+        std::vector<const Link*> branches;
+    };
+
+    struct Segment {
+        Loc end;
+        Loc begin;
+        int type = 0;
+    };
+
+    AlignmentGraph2();
+
+    void SetParameter(const std::string &name, const std::string &v);
+    void SetParameter(const std::string &name, int v);
+    void SetParameter(const std::string &name, double v);
+
+    
+    Column& operator[] (size_t i) { return cols[i]; }
+    Node& operator[] (const Loc &loc) { return cols[loc.col][loc.row][loc.base]; }
+
+    void Build(const DnaSeq& target, const std::array<size_t,2> &range, const std::vector<Alignment> &aligned, const std::vector<int> &qids);
+    void BuildCol(size_t s, size_t e);
+    void BuildNode(size_t s, size_t e);
+    void Clear();
+
+    void Save(const std::string &fname) const;
+    Loc Locate(const Node& node);
+
+    Node* Get(const Loc& loc) {
+        if (loc.col == -1) return nullptr;
+        return &cols[loc.col].rows[loc.row].base[loc.base];
+    }
+
+    Segment FindBestPathBasedOnCount();
+    Segment FindBestPathBasedOnWeight();
+
+    void Reconstruct(const Node &end);
+    std::vector<Segment> SplitSegment(const Loc &end);
+    void Reconstruct(const Node &end, std::vector<std::array<const Node*, 2>>& complex);
+    void Consensus();
+    void Consensus2();
+
+    std::string ReconstructSimple(const Loc &begin, const Loc &end);
+    std::string ReconstructComplex(const Loc &begin, const Loc &end);
+
+    std::vector<std::string> RestoreSequencesFromSegment(const Segment &seg);
+
+    const std::string& GetSequence() const { return sequence_; }
+
+    void ComputeSimilarity();
+
+    std::vector<const Link*> CollectLinks(size_t i);
+    std::vector<const Link*> CollectLinks1(size_t i);
+    std::vector<const Link*> CollectLinks2(size_t i);
+
+    Link* AllocLink(size_t sz);
+    NodeGroup* AllocNodeGroup(size_t sz);
+    void Dump(const std::string& fname, size_t s, size_t e);
+
+protected:
+    void AddTarget(const DnaSeq &target, const std::array<size_t, 2> &range);
+    void AddQuery(size_t qid, size_t query_start, const std::string &aligned_query,  size_t target_start, const std::string &aligned_target);
+    double LinkScoreCount(size_t col, size_t row, const Link& link) { return link.count - cols[col].coverage*(branch_score_*20/(20+row)); } 
+    double LinkScoreWeight(size_t col, size_t row, const Link& link);
+    double LinkScoreCount2(size_t col, size_t row, const Link& link);
+protected:
+    static DnaSerialTable2 Base2Num;
+
+    std::vector<Column> cols;
+    std::vector<const Link*> branches_;     // target每个base所在的分支，nullptr表示该base不在分支上
+    std::vector<bool> branch_flags_;        // base是否有分支
+    const DnaSeq* target_;
+    std::array<size_t,2> range_;
+    std::vector<Score> scores_;
+    double branch_score_ { 0.5 };
+    int weight_base_ { 10 };
+
+    std::vector<Tag> tags_;
+
+    std::string sequence_;
+    double (AlignmentGraph2::*LinkScore)(size_t, size_t, const Link&) { nullptr };
+    const Node* (AlignmentGraph2::*FindBestPath)() {nullptr };
+    ObjectPool<Link> link_pool;
+    ObjectPool<NodeGroup> nodegroup_pool;
+};
+
+
+} // namespace fsa {
+    
+#endif // FSA_ALIGNMENT_GRAPH2_HPP

@@ -1,0 +1,9 @@
+[submodule "thirdparty/plgd"]
+	path = thirdparty/plgd
+    url = git@github.com:lemene/plgd.git
+[submodule "thirdparty/ksw2"]
+	path = thirdparty/ksw2
+	url = https://github.com/lh3/ksw2.git
+[submodule "thirdparty/edlib"]
+	path = thirdparty/edlib
+	url = https://github.com/Martinsos/edlib.git

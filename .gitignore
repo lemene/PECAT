@@ -1,32 +1,32 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
+*.pyc
 *.so
-*.dylib
-*.dll
+*~
+*.swp
+Debug/
+backup/
+.vs/
+.vscode/
+*.user
+*.bak
+lib/
+*.d
+*.o
+fsa_assemble
+fsa_rd_stat
+fsa_ol_improve
+fsa_ol_filter
+fsa_ol_compare
+fsa_ol_stat
+fsa_ol_show
+fsa_ol_cut
+fsa_ol_trim
+fsa_ctg_bridge
+fsa_rd_extract
+run_test
+libfsa.a
+msvc/x64
+build/
 
-# Fortran module files
-*.mod
-*.smod
+# 以“_”开头的名字不包含在项目中，用于自定义目录。
+_*
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app

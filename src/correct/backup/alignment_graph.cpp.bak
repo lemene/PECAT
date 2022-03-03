@@ -1,0 +1,474 @@
+#include "alignment_graph.hpp"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <limits.h>
+#include <string.h>
+#include <stdint.h>
+#include <fstream>
+#include <unordered_set>
+
+#include <algorithm>
+#include <numeric>
+#include "aligner.hpp"
+#include "logger.hpp"
+
+namespace fsa {
+
+DnaSerialTable2 AlignmentGraph::Base2Num;
+
+AlignmentGraph::AlignmentGraph() {
+}
+
+
+void AlignmentGraph::SetParameter(const std::string &name, const std::string &v) {
+    if (name == "score") {
+        if (v == "count") {
+            LinkScore = &AlignmentGraph::LinkScoreCount;
+        } else if (v == "weight") {
+            LinkScore = &AlignmentGraph::LinkScoreWeight;
+        } else {
+            LOG(FATAL)("Not support score type: %s", v.c_str());
+        }
+    } else {
+        LOG(FATAL)("Not support parameter: %s", name.c_str());
+
+    }
+}
+
+void AlignmentGraph::SetParameter(const std::string &name, int v) {
+    LOG(FATAL)("Not support parameter: %s", name.c_str());
+}
+
+void AlignmentGraph::SetParameter(const std::string &name, double v) {
+    LOG(FATAL)("Not support parameter: %s", name.c_str());
+}
+
+void AlignmentGraph::Build(const DnaSeq& target, const std::array<size_t,2> &range, const std::vector<Alignment> &aligned, const std::vector<int> &qids) {
+    Clear();
+    assert(aligned.size() == qids.size());
+    
+    AddTarget(target);
+    scores_.reserve(aligned.size());
+    range_ = range;
+
+    for (size_t i=0; i<aligned.size(); ++i) {
+        scores_.push_back(Score());
+        AddQuery(scores_.size()-1, aligned[i].query_start, aligned[i].aligned_query, aligned[i].target_start, aligned[i].aligned_target);
+        scores_.back().qid = qids[i];
+        scores_.back().length = aligned[i].AlignSize();
+        scores_.back().distance = aligned[i].distance;
+        scores_.back().branches.assign(cols.size(), nullptr);
+    }
+}
+
+
+void AlignmentGraph::Clear() {
+    cols.clear();
+    branches_.clear();
+    branch_flags_.clear();
+    target_ = nullptr;
+    ranges_.clear();
+    scores_.clear();
+    sequence_.clear();
+}
+
+void AlignmentGraph::Save(const std::string &fname) const {
+    std::ofstream out(fname);
+
+    for (size_t i = 0; i < cols.size(); ++i) {
+        for (size_t j = 0; j < cols[i].rows.size(); ++j) {
+            for (size_t k = 0; k < 5; ++k) {
+                const Node &node = cols[i].rows[j].base[k];
+
+                const char* acgt = ".ACGT-";
+                for (auto & link : node.links) {
+                    out << i << " " << j << " " << k << " "
+                        << link.prev.col << " " << link.prev.row << " " << (acgt+1)[link.prev.base] << " "
+                        << link.count << "\n";
+
+                }
+            }
+        }
+    }
+}
+
+
+const AlignmentGraph::Node* AlignmentGraph::FindBestPath() {
+    const Node* end = nullptr;
+    double global_score = -1;
+
+    if (LinkScore == &AlignmentGraph::LinkScoreWeight) {
+        // pre-compute
+        for (size_t col = 0; col < cols.size(); col++) {
+            cols[col].weight = 0;
+            if (cols[col].queries[0]) cols[col].weight += 1;
+            for (size_t i=0; i<scores_.size(); ++i) {
+                if (cols[col].queries[i+1]) {
+                    cols[col].weight += (scores_[i].q_t_one + weight_base_)*1.0 / (scores_[i].cross + weight_base_);
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < cols.size(); i++) {
+        for (size_t j = 0; j < cols[i].Size(); j++) {
+            for (size_t k = 0; k < cols[i][j].Size(); k++) {
+
+                Node &node = cols[i][j][k];
+                
+                for (const auto &link : node.links) {
+                    
+
+                    if (link.count == 0) continue;
+
+                    Loc prev = link.prev;
+
+                    double score = (this->*LinkScore)(i, j, link) + (prev.col == -1 ? 0 : cols[prev.col][prev.row][prev.base].score);
+
+                    if (score > node.score) {
+                        node.score = score;
+                        node.best_link = &link;
+                    }
+                }
+
+                if (node.score > global_score) {
+                    global_score = node.score;
+                    end = &node;                       
+                }
+            }
+        }
+    }
+
+    return end;
+
+}
+
+void AlignmentGraph::Reconstruct(const Node &end) {
+
+    assert(sequence_.size() == 0);
+
+    const Node *curr_node = &end;
+    Loc loc = Locate(end);
+    sequence_.reserve(int(cols.size()*1.2));
+
+    
+    while (loc.col >= 0) {
+        char b = "ACGT-"[loc.base];
+
+        if (b != '-') {
+            sequence_ += b;
+        }
+
+        if (curr_node->best_link != nullptr) {
+            loc = curr_node->best_link->prev;
+            curr_node = Get(loc);
+        }
+        else {
+            break;
+        }
+    }
+
+    std::reverse(sequence_.begin(), sequence_.end());
+
+}
+
+
+AlignmentGraph::Loc AlignmentGraph::Locate(const Node& node) {
+    for (size_t i = 0; i < cols.size(); ++i) {
+        for (size_t j = 0; j < cols[i].Size(); ++j) {
+            for (size_t k = 0; k < cols[i][j].Size(); ++k) {
+                if (&cols[i][j][k] == &node)
+                    return { (int)i, (int)j, (int)k };
+            }
+        }
+    }
+    return { -1, 0, 0 };
+}
+
+void AlignmentGraph::Consensus() {
+    const Node* end = FindBestPath();
+    Reconstruct(*end);
+}
+
+void AlignmentGraph::AddTarget(const DnaSeq& target) {
+    assert(cols.size() == 0);   // It should be empty graph
+
+    target_ = &target;
+
+    cols.assign(target.Size(), Column());
+    branches_.assign(cols.size(), nullptr);
+    branch_flags_.assign(cols.size(), false);
+
+    Loc prev_loc = { -1, 0, -1 };
+    for (size_t i = 0; i < target.Size(); ++i) {
+        Loc curr_loc = { (int)i, 0, target[i]};
+        cols[i].coverage++;
+        cols[i].queries.set(0, true);
+        cols[i].Extend(0 + 1);
+        (*this)[curr_loc].update_col(curr_loc, prev_loc, 0);
+        prev_loc = curr_loc;
+    }
+}
+
+void AlignmentGraph::AddQuery(size_t sid, size_t query_start, const std::string &aligned_query, size_t target_start, const std::string &aligned_target) {
+    size_t row = 0;
+    int offset_t = (int)target_start - 1;   // move the index to -1 for the first operation ++.
+    int offset_q = (int)query_start - 1;
+    Loc prev_loc = { -1, 0, -1 };
+    
+    assert(aligned_target.size() == aligned_query.size());
+    for (size_t i=0; i<aligned_target.size(); ++i) {
+
+        char base_s = aligned_target[i];
+        char base_q = aligned_query[i];
+        if (base_s == base_q && base_s != '-') {
+            ++offset_t;
+            ++offset_q;
+            row = 0;
+        } else if (base_q == '-' && base_s != '-') {
+            ++offset_t;
+            row = 0;
+        } else if (base_s == '-' && base_q != '-') {
+            ++offset_q;
+            ++row;
+        } else {;
+            assert(base_s == '-' && base_q == '-');
+            continue;
+        }
+
+        assert(base_s == '-' || (*target_)[offset_t] == Base2Num[base_s]);
+
+        if (offset_t < range_[0]) continue;
+        if (offset_t >= range_[1]) break;
+
+        if (offset_t >= 0) {   // TODO offset 应该恒大于等于0，但aligned中可能由第三种比对情况，应该在前面trim掉
+            Loc curr_loc = { offset_t, (int)row, Base2Num[base_q] };
+            if (row == 0) {
+                cols[offset_t].coverage++;
+                cols[offset_t].queries.set(sid+1, true);
+            }
+            cols[offset_t].Extend(row + 1);
+            (*this)[curr_loc].update_col(curr_loc, prev_loc, sid+1);
+
+            prev_loc = curr_loc;
+        }
+    }
+}
+
+static int BranchSizeThreshold(int coverage) {
+
+    auto linear = [](int cov_start, int cov_end, int start, int end, int cov) {
+        return int((1.0*end - start) / (cov_end - cov_start) *(cov - cov_start) + start);
+    };
+
+    int cov_low = 30;
+    int cov_high = 500;
+    float rate = 0.2;
+
+    if (coverage < 30) {
+        return INT_MAX;         // 使用大整数替代无效值，便于比较
+    } else if (coverage >= cov_low && coverage < cov_high) {
+        return linear(cov_low, cov_high, cov_low*0.5, cov_high*rate, coverage);
+    } else {
+        return  coverage * rate;
+    }
+}
+
+std::vector<const AlignmentGraph::Link*> AlignmentGraph::CollectLinks(size_t i) {
+    std::vector<const Link*> links;
+    for (size_t j = 0; j < cols[i][0].Size(); ++j) {
+        for (const auto& l : cols[i][0][j].links) {
+            if (l.prev.col != -1) {
+                links.push_back(&l);
+            }
+        }
+    }
+    return links;
+}
+
+
+std::vector<const AlignmentGraph::Link*> AlignmentGraph::CollectLinks1(size_t i) {
+    std::vector<const Link*> links;
+
+
+    assert (cols[i][0].Size() == 5);
+    for (size_t j = 0; j < 4; ++j) {
+        for (const auto& l : cols[i][0][j].links) {
+            if (l.prev.col != -1) {
+                links.push_back(&l);
+            }
+        }
+    }
+
+    for (size_t t=1; t < cols[i].Size(); ++t) {
+        for (size_t j=0; j<cols[i][t].Size(); ++j) {
+            for (const auto &l : cols[i][t][j].links) {
+                if (l.prev == Loc {(int)i, 0, 4}) {
+                    links.push_back(&l);
+                }
+            }
+        }
+    }
+
+    for (size_t j = 0; j < cols[i+1][0].Size(); ++j) {
+        for (const auto& l : cols[i+1][0][j].links) {
+            if (l.prev == Loc {(int)i, 0, 4}) {
+                links.push_back(&l);
+            }
+        }
+    }
+
+    return links;
+}
+
+
+std::vector<const AlignmentGraph::Link*> AlignmentGraph::CollectLinks2(size_t i) {
+    std::vector<const Link*> links;
+
+
+    assert (cols[i][0].Size() == 5);
+    for (size_t j = 0; j < 4; ++j) {
+        for (const auto& l : cols[i][0][j].links) {
+            if (l.prev.col != -1) {
+                links.push_back(&l);
+            }
+        }
+    }
+
+    return links;
+}
+
+void AlignmentGraph::ComputeScore() {
+    assert(cols.size() > 0 );
+
+    for (size_t i=1; i<cols.size()-1; i++) {  // Skip the first and the last
+
+        std::vector<const Link*> links = CollectLinks2(i);
+        size_t link_count = std::accumulate(links.begin(), links.end(), 0, [](size_t a, const Link* b) {
+            return a + b->count;
+        });
+
+
+        int min_coverage = 30;
+        if (links.size() >= 2 && (int)link_count >= min_coverage) {
+            std::sort(links.begin(), links.end(), [](const Link* a, const Link *b) {
+                return a->count > b->count || (a->count == b->count && a->prev < b->prev);
+            });
+
+            int branch_threshold = BranchSizeThreshold(cols[i].coverage);
+
+            size_t sz = 0;
+            for (; sz < links.size(); ++sz) {
+                if ((int)links[sz]->count < branch_threshold) break;    // branch_threshold 可能是无效值
+            }
+
+            if (sz >= 2) {
+                auto find_link = [&links,sz](size_t id) -> const Link*{
+                    for (size_t i=0; i<sz; ++i) {
+                        if (links[i]->seqs[id]) { return links[i]; }
+                    }
+                    return nullptr;
+                };
+
+                auto tlink = find_link(0);
+                branch_flags_[i] = true;
+                branches_[i] = tlink;
+                for (size_t si = 0; si<scores_.size(); ++si) {
+                    int qid = si;
+                    if (cols[i].queries[qid+1]) {
+                        scores_[si].cross ++;
+
+                        auto qlink = find_link(qid+1);
+                        scores_[si].branches[i] = qlink;
+                        if (tlink != nullptr) {
+                            scores_[si].t_in_cross ++;
+                        }
+                        if (qlink != nullptr) {
+                            scores_[si].q_in_cross ++;
+                        }
+
+                        if (tlink  != nullptr && qlink != nullptr) {
+
+                            if (tlink == qlink) scores_[si].q_t_one++;
+                            else                scores_[si].q_t_two++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (size_t si = 0; si<scores_.size(); ++si) {
+        const size_t window_size_ = 1000;
+        assert(window_size_ <= cols.size());
+
+        auto in_two_branch = [&](size_t si, size_t i) {
+             return branches_[i] != nullptr && scores_[si].branches[i] != nullptr &&
+                     branches_[i] != scores_[si].branches[i];
+        };
+
+        auto in_one_branch = [&](size_t si, size_t i) {
+             return branches_[i] != nullptr && scores_[si].branches[i] != nullptr &&
+                     branches_[i] == scores_[si].branches[i];
+        };
+
+        auto branch_score = [&](size_t si, size_t i) {
+            return in_two_branch(si, i) ? 1 :
+                   in_one_branch(si, i) ? -1 : 0;
+        };
+
+        int best = 0;
+        size_t best_pos = 0;
+        for (size_t i=0; i<window_size_; ++i) {
+            best += branch_score(si, i);
+        }
+        int count = best;
+        for (size_t i=window_size_; i<cols.size(); ++i) {
+            count += (branch_score(si, i)) - (branch_score(si, i-window_size_));
+            if (count > best) {
+                best = count;
+                best_pos = i - window_size_+1;
+
+            }
+        }
+
+        int total = 0;
+        int q_t_one = 0;
+        int q_t_two = 0;
+        for (size_t i=best_pos; i<best_pos + window_size_; ++i) {
+            if (branch_flags_[i]) {
+                total ++;
+
+                if (scores_[si].branches[i] != nullptr && branches_[i] != nullptr) {
+                    if (scores_[si].branches[i] == branches_[i]) {
+                        q_t_one ++;
+                    } else {
+                        q_t_two ++;
+                    }
+
+                }
+            }
+        }
+
+    }
+
+
+}
+
+double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link) {
+    double s = 0;
+    //if (link.seqs[0]) s += 1;
+    for (size_t i=0; i<scores_.size(); ++i) {
+        if (link.seqs[i+1]) {
+            double diff = (scores_[i].q_t_one + weight_base_)*1.0 / (scores_[i].cross + weight_base_);
+            s += diff;
+        }
+    }
+    
+    return s-(branch_score_*4/(4+row))*cols[col].weight;
+
+}
+
+
+} // namespace fsa {

@@ -1,0 +1,15 @@
+
+date_str=`date +%Y%m%d`
+bin_path=build/bin
+
+commit_ts=`git log -1 --format="%ct"`
+commit_time=`date -d@$commit_ts +"%Y-%m-%d %H:%M:%S"`
+current_time=`date +"%Y-%m-%d %H:%M:%S"`
+git_version=`git log -1 --format="%H"`
+
+echo "Version: $git_version" > $bin_path/VERSION
+echo "Commit Time: $commit_time" >> $bin_path/VERSION
+echo "Build Time: $current_time" >> $bin_path/VERSION
+
+cd src && make && cd ..
+tar --transform 's,^,fsa/,S' -czf build/fsa_${date_str}.tar.gz $bin_path 
