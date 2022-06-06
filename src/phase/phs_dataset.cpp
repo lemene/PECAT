@@ -16,6 +16,10 @@ void PhsDataset::Load() {
     LOG(INFO)("Load overlaps");
     LoadOverlaps(opts_.ol_fname_);
 
+    if (!opts_.rd2rd.empty()) {
+        LoadAva(opts_.rd2rd);
+    }
+
     LOG(INFO)("Load reads and contigs");
     LoadReads();
     
@@ -32,8 +36,8 @@ void PhsDataset::LoadOverlaps(const std::string &fname) {
             return false;
         }
 
-        // TODO 
-        //if (o.b_.start < 149000000 || o.b_.start > 149200000) return false;
+//        // TODO for debug
+//        if (o.b_.start < 66229153 - 1000000 || o.b_.start > 66332061 + 1000000) return false;
 
         return true;
     };
@@ -46,7 +50,34 @@ void PhsDataset::LoadOverlaps(const std::string &fname) {
         LOG(ERROR)("No overlap was loaded");
     }
 
-    ol_store_.Save(opts_.OutputPath("load.paf"));
+    //ol_store_.Save(opts_.OutputPath("load.paf"));
+}
+
+
+void PhsDataset::LoadAva(const std::string &fname) {
+ 
+
+    ol_ava_.LoadFast(fname, "", (size_t)opts_.thread_size_);
+
+    if (ol_ava_.Size() > 0) {
+        LOG(INFO)("Overlap size: %zd", ol_ava_.Size());
+    } else {
+        LOG(ERROR)("No overlap was loaded");
+    }
+    ol_ava_.Group(ava_groups_, opts_.thread_size_);
+}
+
+std::unordered_set<int> PhsDataset::QueryGroup(int id) {
+    auto iter = ava_groups_.find(id);
+    if (iter != ava_groups_.end()) {
+        std::unordered_set<int> sss;
+        for (auto ii : iter->second) {
+            sss.insert(ii.first);
+        }
+        return sss;
+    } else {
+        return {};
+    }
 }
 
 void PhsDataset::LoadReads() {

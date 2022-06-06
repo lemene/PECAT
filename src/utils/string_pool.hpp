@@ -13,6 +13,7 @@ namespace fsa {
 class StringPool {
 public:
     typedef int ID;
+    const static ID NID = -1;
 
     struct NameId {
         virtual Seq::Id GetIdByName(const std::string &name) = 0;

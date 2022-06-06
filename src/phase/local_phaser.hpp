@@ -215,6 +215,9 @@ public:
             }
             return vars.size();
         }
+        
+        bool Connected() const ;
+        std::vector<Group> Split() const;
 
         std::unordered_set<const Query*> queries;
         std::vector<Loc> vars;  // ((-n, 0, n), cov
@@ -250,6 +253,7 @@ protected:
     
     const ReadInfo* target_ { nullptr };
     std::vector<Query> queries_;
+    const Query* target_in_queires_;
 
     std::unordered_map<int, int> mapper; 
     std::unordered_map<ReadOffset, std::vector<PhaseItem>> inconsistent_;

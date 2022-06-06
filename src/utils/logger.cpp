@@ -22,6 +22,7 @@ Dumper::Stream::~Stream() {
 
 void Dumper::Stream::operator()(const char *const format, ...) {
     if (file_ != nullptr) {
+        std::lock_guard<std::mutex> lock(mutex_);
         va_list arglist;
         va_start(arglist, format);
         vfprintf(file_, format, arglist);
@@ -30,20 +31,27 @@ void Dumper::Stream::operator()(const char *const format, ...) {
     }
 }
 
-Dumper::Stream& Dumper::operator [](const std::string &name) {
+void Dumper::Stream::Write(const char* const format, va_list arglist) {
+    if (file_ != nullptr) { 
+        std::lock_guard<std::mutex> lock(mutex_);
+        vfprintf(file_, format, arglist);
+        fflush(file_);
+    }
+}
 
+Dumper::Stream& Dumper::operator [](const std::string &name) {
+    
     if (level_ > 0) {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = streams_.find(name);
         if (it != streams_.end()) {
             return *it->second;
-        }
-        else {
-            Stream *s = new Stream(name);
+        } else {
+            Stream *s = new Stream(MakeFileName(name));
             streams_[name] = std::unique_ptr<Stream>(s);
             return *s;
         }
-    }
-    else {
+    } else {
         return empty_;
     }
 }

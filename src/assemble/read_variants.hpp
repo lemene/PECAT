@@ -25,6 +25,8 @@ public:
     ReadVariants(StringPool &sp) : string_pool_(sp) {}
     void Load(const std::string &fname);
 
+    std::array<int, 2> GetClosestSnps(const Overlap &ol) const;
+    std::array<int, 2> GetSnps(const Variants &a, const Variants &b) const;
     std::array<int, 2> Test(const Overlap &ol, bool bad=false) const;
     std::array<int, 2> Test(int a, int b) const ;
     template<typename T>

@@ -416,8 +416,7 @@ void StringGraph::AddOverlap(const Overlap* overlap) {
            
 			AddEdge(overlap, fE, gE, overlap->b_.id);
 			AddEdge(overlap, gB, fB, overlap->a_.id);
-		}
-		else {
+		} else {
 			// f.B         f.E
 			//	f----------->
 			//	g         <------------ -
@@ -624,124 +623,6 @@ bool StringGraph::IsDiffType(const BaseNode* n0, const BaseNode* n1) {
     return rr[1] > rr[0];
 }
 
-// void StringGraph::PhaseCross() {
-//     auto rvs = asmdata_.GetReadVariants();
-//     if (rvs == nullptr) return;
-
-//     LOG(INFO)("PhaseCross");
-
-//     std::vector<std::vector<StringNode*>> cands;
-//     std::unordered_set<StringNode::ID, StringNode::ID::Hash> done;
-//     for (auto &i : nodes_) {
-//         StringNode* n = i.second;
-//         if (done.find(n->Id()) != done.end()) continue;
-
-//         if (n->InDegree() == 2 && IsDiffType(n->in_edges_[0]->InNode(), n->in_edges_[1]->InNode())) {
-//             std::vector<StringNode*> cand {n};
-            
-//             StringNode* curr = n;
-//             while (curr->OutDegree() == 1 && curr->out_edges_[0]->OutNode()->InDegree() == 1) {
-//                 cand.push_back(curr->out_edges_[0]->OutNode());
-//                 curr = curr->out_edges_[0]->OutNode();
-//             }
-
-//             if (curr->OutDegree() == 2 && IsDiffType(curr->out_edges_[0]->OutNode(), curr->out_edges_[1]->OutNode())) {
-//                 printf("addphase %zd (%d, %d), %d\n", cand.front()->in_edges_.size(), cand.front()->in_edges_[0]->InNode()->Id().v,cand.front()->in_edges_[1]->InNode()->Id().v,cand.front()->in_edges_[0]->OutNode()->Id().v);
-//                 cands.push_back(cand);
-//                 done.insert(cand.front()->Id());
-//                 done.insert(StringNode::ReverseId(cand.front()->Id()));
-//                 done.insert(cand.back()->Id());
-//                 done.insert(StringNode::ReverseId(cand.back()->Id()));
-//             }
-//         }   
-//     }
-
-//     LOG(INFO)("Find PhaseCross %zd", cands.size());
-
-//     const int max_cand_size = 50;
-//     for (auto &cand : cands) {
-//         if (cand.size() > max_cand_size) continue;
-
-//         std::vector<PhasePath> paths;
-//         std::vector<StringNode*> ends;
-        
-//         for (auto e : cand.back()->out_edges_) {
-//             ends.push_back(e->OutNode());
-//         }   
-
-//         printf("start dophase\n");
-//         for (auto e : cand.front()->in_edges_) {
-//             printf("dophase %zd %s %s\n", cand.front()->in_edges_.size(), 
-//                 asmdata_.QueryNameById(e->InNode()->ReadId()).c_str(), 
-//                 asmdata_.QueryNameById(e->OutNode()->ReadId()).c_str());
-                
-//             paths.push_back(PhasePath(asmdata_, e->InNode()->Id().v, rvs));
-//             PhasePath &path = paths.back();
-
-//             path.Extend(cand, ends);
-//         }
-
-//         if (paths.size() != 2) {
-//             LOG(WARNING)("phasepath != 2 indegree = %zd", cand.front()->in_edges_.size());
-//             continue;
-//         }
-//         assert(paths.size() == 2);
-//         if (paths[0].dst.size() == 1 && paths[1].dst.size() != 1) {
-//             paths[1].ExtendWithOtherPath(cand, ends, paths[0]);            
-//             printf("phasepath amb 1\n");
-//         } else if (paths[1].dst.size() == 1 && paths[0].dst.size() != 1) {
-//             paths[0].ExtendWithOtherPath(cand, ends, paths[1]);
-//             printf("phasepath amb 0\n");
-//         }
-
-//         if (PhasePath::IsIndependentPath(paths)) {
-
-//             // 
-//             for (auto c : cand) {
-//                 for (auto e : c->in_edges_) {
-//                     if (!e->IsReduce()) {
-                        
-//                         e->Reduce(StringEdge::RT_PHASED);
-//                         ReverseEdge(e)->Reduce(StringEdge::RT_PHASED);
-//                     }
-//                 }    
-//                 for (auto e : c->out_edges_) {
-//                     if (!e->IsReduce()) {
-//                         e->Reduce(StringEdge::RT_PHASED);
-//                         ReverseEdge(e)->Reduce(StringEdge::RT_PHASED);
-//                     }
-//                 }
-//             }
-            
-//             // 
-//             for (auto &path : paths) {
-//                 printf("phasepath path:");
-//                 auto & pathnode = path.tips;
-//                 for (size_t i = 1; i < pathnode.size(); ++i) {
-//                     auto eid = StringEdge::CreateID(pathnode[i-1], pathnode[i]);
-//                     auto eiter = edges_.find(eid);
-//                     if (eiter != edges_.end()) {
-//                         if (eiter->second->IsReduce()) {
-//                             eiter->second->Reactivate();
-//                             ReverseEdge(eiter->second)->Reactivate();
-//                         }
-//                     } else {
-//                         auto o = asmdata_.QueryOverlap(Seq::EndIdToId(pathnode[i-1]), Seq::EndIdToId(pathnode[i]));
-//                         assert (o != nullptr);
-//                         AddOverlap(o);
-//                     }
-//                     printf("%s->%s, ", asmdata_.QueryNameById(Seq::EndIdToId(pathnode[i-1])).c_str(), asmdata_.QueryNameById(Seq::EndIdToId(pathnode[i])).c_str());
-//                 }
-                
-//                 printf("\n");
-//             }
-            
-            
-//         }
-//     }
-// }
-
-
 
 void StringGraph::IdentifySimplePaths() {
     std::unordered_set<BaseEdge*> visited;
@@ -771,6 +652,8 @@ std::list<BaseEdge*> StringGraph::ExtendSimplePath(BaseEdge *e, std::unordered_s
     path.push_back(e);
     rnodes.insert(ReverseNode(e->InNode()));
     rnodes.insert(ReverseNode(e->OutNode()));
+    rnodes.insert(e->InNode());
+    rnodes.insert(e->OutNode());
 
     BaseEdge* curr = path.back();
     while (curr->OutNode()->InDegree() == 1 && curr->OutNode()->OutDegree() == 1 && 
@@ -780,6 +663,7 @@ std::list<BaseEdge*> StringGraph::ExtendSimplePath(BaseEdge *e, std::unordered_s
         path.push_back(curr->OutNode()->GetOutEdges().front());
         visited.insert(curr->OutNode()->GetOutEdges().front());
         rnodes.insert(ReverseNode(curr->OutNode()->GetOutEdges().front()->OutNode()));
+        rnodes.insert(curr->OutNode()->GetOutEdges().front()->OutNode());
         curr = curr->OutNode()->GetOutEdges().front();
     }
 
@@ -791,6 +675,7 @@ std::list<BaseEdge*> StringGraph::ExtendSimplePath(BaseEdge *e, std::unordered_s
         path.push_front(curr->InNode()->GetInEdges().front());
         visited.insert(curr->InNode()->GetInEdges().front());
         rnodes.insert(ReverseNode(curr->InNode()->GetInEdges().front()->InNode()));
+        rnodes.insert(curr->InNode()->GetInEdges().front()->InNode());
 
         curr = curr->InNode()->GetInEdges().front();
     }
@@ -1057,137 +942,6 @@ bool TestOutExtend(PathEdge* e, int minlen, int minnode) {
 }
 
 
-// void PathGraph::IdentifyPathSpur2() {
-//     LOG(INFO)("Find spurs in the graph");
-
-//     size_t depth_threshold = Options().max_spur_nodesize;
-//     size_t length_threshold = Options().max_spur_length;
-
-//     std::unordered_set<PathNode*> cands;
-
-//     for (auto n : nodes_) {
-//         if (n.second->InDegree() == 0) {
-//             cands.insert(n.second);
-//         }
-//     }
-    
-//     for (auto n : cands) {
-//         assert(n->InDegree() == 0);
-        
-//         std::vector<PathNode*> path;
-//         PathNode *curr = n;
-//         while (curr->InDegree() <= 1 && curr->OutDegree() == 1) {
-//             path.push_back(curr);
-            
-//             curr = curr->out_edges_[0]->OutNode();
-//             assert(curr != nullptr);
-//         }
-//         path.push_back(curr);   // 
-
-//         if (path.size() >= 2 && path.back()->InDegree() >= 2 && path.back()->OutDegree() >= 1) {
-//             size_t path_len = 0;
-//             size_t path_node = 0;
-//             for (size_t i = 0; i < path.size() - 1; ++i) {
-//                 path_len += (ReverseEdge(path[i]->out_edges_[0])->Length() + path[i]->out_edges_[0]->Length()) / 2;
-//                 path_node += path[i]->out_edges_[0]->NodeSize();
-//             }
-            
-//             if (path_len < length_threshold && path_node < depth_threshold) {
-
-//                 bool is_spur = true;
-//                 for (auto e : path.back()->in_edges_) {
-//                     if (e->InNode() != path[path.size()-2]) {
-//                         if (!TestInExtend(e, path_len*2, path_node*2)) {
-//                             is_spur = false;
-//                             break;
-//                         }
-//                     }
-//                 }
-
-//                 if (is_spur) {
-                    
-//                     for (size_t i = 0; i + 1 < path.size(); ++i) {
-//                         auto e = path[i]->out_edges_[0];
-//                         if (!e->IsReduced()) {
-//                             e->Reduce("spur:2", true);
-//                             ReverseEdge(e)->Reduce("spur:2", true);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     LOG(INFO)("End Find spurs in the graph");
-// }
-
-
-
-/**
- * 选择入度为0得点，找到ego_graph（限制边数）
- * 分析ego_graph的点，是否有来自非ego_graph的点
- * 如果有则找起点和该点的最短路径，当长度小于阈值删除整条路径，
- * 如果中间产生新的入度为0点的，则加入后续点中。
- */
-// void PathGraph::IdentifyPathSpur() {
-//     LOG(INFO)("IdentifyPathSpur");
-
-//     int depth_threshold = 10;
-//     int length_threshold = 100000;
-
-//     std::unordered_set<PathNode*> candidates;
-
-//     for (auto n : nodes_) {
-//         if (n.second->InDegree() == 0) {
-//             candidates.insert(n.second);
-//         }
-//     }
-    
-//     while (candidates.size() > 0) {
-//         PathNode* n = *candidates.begin();
-//         bool found = false;
-//         assert(n->InDegree() == 0);
-
-//         std::list<PathNode*> &&ego_nodes = GetEgoNodes(n, depth_threshold, length_threshold*10);    // TODO 
-//         std::unordered_set<PathNode*> ego_nodes_set(ego_nodes.begin(), ego_nodes.end());
-
-
-//         for (auto b_node : ego_nodes) {
-//             if (b_node->InDegree() > 1) {
-// 				std::vector<PathNode*> b_in_nodes = b_node->GetInNodes();
-//                 assert(b_in_nodes.size() > 1);
-
-// 				if (!BelongTo(b_in_nodes, ego_nodes_set)) {
-
-// 					std::vector<PathEdge*>&& shortest = ShortestPath(n, b_node, ego_nodes_set);
-//                     std::vector<PathEdge*> vshortest = ReversePath(shortest);
-//                     int nodesize = std::accumulate(shortest.begin(), shortest.end(), 0, [](int a, const PathEdge *b) { return a + b->NodeSize(); });
-//                     int length = std::accumulate(shortest.begin(), shortest.end(), 0, [](int a, const PathEdge *b) { return a + b->Length(); });
-//                     int vlength = std::accumulate(vshortest.begin(), vshortest.end(), 0, [](int a, const PathEdge *b) { return a + b->Length(); });
-// 					if (length < length_threshold && nodesize <  depth_threshold) {
-// 						for (auto e : shortest) {
-//                             e->Reduce("spur:2", true);
-//                             ReverseEdge(e)->Reduce("spur:2", true);
-// 						}
-
-//                         // 添加新产生的候选节点
-//                         for (auto e : shortest) {
-//                             assert(std::find(ego_nodes.begin(), ego_nodes.end(), e->OutNode()) != ego_nodes.end()); 
-//                             assert(std::find(ego_nodes.begin(), ego_nodes.end(), e->InNode()) != ego_nodes.end());
-//                             if (e->OutNode()->InDegree() == 0) {
-//                                 candidates.insert(e->OutNode());
-//                             }
-//                         }
-//                         found = true;
-//                         break;
-// 					}
-// 				}
-//             }
-//         }
-//         if (!found) candidates.erase(candidates.begin());
-//     }
-// }
-
-
 std::vector<PathEdge*> PathGraph::ShortestPath(const PathNode* src, const PathNode *dst,
     std::unordered_set<PathNode*> candnodes, int(*score)(PathEdge*)) {
 
@@ -1294,70 +1048,64 @@ bool PathGraph::HasBridgeJunction(const LinearPath& path, int max_depth) {
 
 void PathGraph::IdentifyPaths(const std::string &method) {
 
-    std::list<std::list<PathEdge*>> paths;
+    std::vector<std::list<PathEdge*>> paths;
     std::unordered_set<PathEdge*> visited;
 
     for (auto &i : edges_) {
         std::deque<PathEdge*> stack;
         stack.push_back(i.second);
+
+        size_t start = paths.size();
+
         
         while (!stack.empty()) {
             PathEdge* e = stack.front();
             stack.pop_front();
-                
-            //LOG(INFO)("stack %s", e->Id().ToString().c_str());
 
             if (!e->IsReduced() && visited.find(e) == visited.end()) {
-                // LOG(INFO)("ExtendPath %zd %zd, %zd %zd", e->InNode()->InDegree(), e->InNode()->OutDegree(), 
-                //     e->OutNode()->InDegree(), e->OutNode()->OutDegree());
-                // for (size_t i = 0; i < e->InNode()->InDegree(); ++i)  {
-                //     LOG(INFO)("Extend in in %s ", e->InNode()->InEdge(i)->Id().ToString().c_str());
-                // }
-                // for (size_t i = 0; i < e->InNode()->OutDegree(); ++i)  {
-                //     LOG(INFO)("Extend in out %s ", e->InNode()->OutEdge(i)->Id().ToString().c_str());
-                // }
-                // for (size_t i = 0; i < e->OutNode()->InDegree(); ++i)  {
-                //     LOG(INFO)("Extend out in %s ", e->OutNode()->InEdge(i)->Id().ToString().c_str());
-                // }
-                // for (size_t i = 0; i < e->OutNode()->OutDegree(); ++i)  {
-                //     LOG(INFO)("Extend out out %s ", e->OutNode()->OutEdge(i)->Id().ToString().c_str());
-                // }
+
                 paths.push_back(ExtendPath(e, visited, method));
-                // LOG(INFO)("paths %zd %zd", paths.size(), paths.back().size());
-                // LOG(INFO)(" back out %zd", paths.back().back()->OutNode()->OutDegree());
-                // LOG(INFO)(" back out %zd", paths.back().back()->OutNode()->out_edges_.size());
 
                 for (auto ie : paths.back().back()->OutNode()->out_edges_) {
                     if (!ie->IsReduced() && visited.find(ie) == visited.end()) {
                         stack.push_back(ie);
                     }
                 }
-                // LOG(INFO)(" back in %zd", paths.back().back()->OutNode()->InDegree());
-                // LOG(INFO)(" back in %zd", paths.back().back()->OutNode()->in_edges_.size());
                 for (auto ie : paths.back().back()->OutNode()->in_edges_) {
                     if (!ie->IsReduced() && visited.find(ie) == visited.end()) {
                         stack.push_back(ie);
                     }
                 }
-                // LOG(INFO)(" front out %zd", paths.back().front()->InNode()->OutDegree());
-                // LOG(INFO)(" front out %zd", paths.back().front()->InNode()->out_edges_.size());
                 for (auto ie : paths.back().front()->InNode()->out_edges_) {
                     if (!ie->IsReduced() && visited.find(ie) == visited.end()) {
                         stack.push_back(ie);
                     }
                 }
-                // LOG(INFO)(" front in %zd", paths.back().front()->InNode()->InDegree());
-                // LOG(INFO)(" front in %zd", paths.back().front()->InNode()->in_edges_.size());
                 for (auto ie : paths.back().front()->InNode()->in_edges_) {
                     if (!ie->IsReduced() && visited.find(ie) == visited.end()) {
                         stack.push_back(ie);
                     }
                 }
-//                LOG(INFO)("stack2 %zd", stack.size());
             }
 
         }
+
+        if (start < paths.size()) {
+            clusters_.push_back(Cluster());
+            for (size_t i = start; i < paths.size(); ++i) {
+                for (auto e : paths[i]) {
+                    clusters_.back().edges.insert(e);
+                    edge2cluster_[e] = clusters_.size() - 1;
+                }
+            }
+        }
     }
+
+    LOG(INFO)("Contig cluster size: %zd, %zd", clusters_.size(), paths.size());
+
+    for (auto & c : clusters_) c.FindLongest();
+
+    LOG(INFO)("Test whether the paths overlap");
 
     visited.clear();
     for (auto & path : paths) {
@@ -1370,6 +1118,7 @@ void PathGraph::IdentifyPaths(const std::string &method) {
             }
         }
 
+        assert(!overlapped);
         if (!overlapped) {
             paths_.push_back(path);
             std::list<PathEdge*> rpath;
@@ -1845,6 +1594,160 @@ BubbleEdge* PathGraph::FindBubble(PathNode* start_node, bool check, int depth_cu
     else {
         return nullptr;
     }
+}
+
+std::vector<PathEdge*> PathGraph::Cluster::GetStarts() const {
+
+    std::vector<PathEdge*> ends;
+    for (auto e : edges) {        
+        bool is_end = true;
+        for (size_t i = 0; i < e->InNode()->InDegree(); ++i) {
+            if (edges.find(e->InNode()->InEdge<PathEdge>(i)) != edges.end()) {
+                is_end = false;
+                break;
+            }
+        }
+
+        if (is_end) {
+            ends.push_back(e);
+        } 
+    }
+
+    if (ends.size() == 0) {
+        ends.push_back(*edges.begin());
+    }
+
+    return ends;
+}
+
+std::vector<PathEdge*> PathGraph::Cluster::GetEnds() const {
+
+    std::vector<PathEdge*> ends;
+    for (auto e : edges) {        
+        bool is_end = true;
+        for (size_t i = 0; i < e->InNode()->InDegree(); ++i) {
+            if (edges.find(e->InNode()->InEdge<PathEdge>(i)) != edges.end()) {
+                is_end = false;
+                break;
+            }
+        }
+
+        if (is_end) {
+            ends.push_back(e);
+        } 
+    }
+
+    if (ends.size() == 0) {
+        ends.push_back(*edges.begin());
+    }
+
+    return ends;
+}
+
+void PathGraph::Cluster::FindLongest() {
+
+    size_t maxlen = 0;
+
+    std::vector<PathEdge*> starts = GetStarts();
+    DUMPER["asm"]("FFF: Starts: %zd, %zd", starts.size(), edges.size());
+    for (auto s : starts) {
+        std::unordered_set<PathEdge*> visited;
+        std::unordered_map<PathEdge*, LPath> longests;
+
+        FindLongest0(s, visited, longests);
+        auto lg = longests.find(s);
+        assert(lg != longests.end());
+
+        DUMPER["asm"]("FFFe: %zd", lg->second.second.size());
+        for (auto e : lg->second.second) {
+            nontrivial.insert(e);
+        }
+        maxlen = std::max(maxlen, lg->second.first);
+    }
+
+    std::vector<PathEdge*> ends = GetEnds();
+    DUMPER["asm"]("ends: %zd, %zd", ends.size(), edges.size());
+    for (auto s : ends) {
+        std::unordered_set<PathEdge*> visited;
+        std::unordered_map<PathEdge*, LPath> longests;
+        FindLongest1(s, visited, longests);
+        auto lg = longests.find(s);
+        assert(lg != longests.end());
+
+        DUMPER["asm"]("FFFe: %zd", lg->second.second.size());
+        for (auto e : lg->second.second) {
+            nontrivial.insert(e);
+        }
+        maxlen = std::max(maxlen, lg->second.first);
+    }
+
+    length = maxlen;
+}
+
+void PathGraph::Cluster::FindLongest0(PathEdge* e, std::unordered_set<PathEdge*> &visited, std::unordered_map<PathEdge*, LPath>& longests) {
+
+    assert(visited.find(e) == visited.end());
+    visited.insert(e);
+    DUMPER["asm"]("FFF0 visited %zd", visited.size());
+    
+    std::unordered_map<PathEdge*, LPath>::const_iterator best = longests.end();
+    for (size_t i = 0; i < e->OutNode()->OutDegree(); ++i) {
+        auto oe = e->OutNode()->OutEdge<PathEdge>(i);
+        if (visited.find(oe) == visited.end()) {
+            auto iter = longests.find(oe);
+            if (iter == longests.end()) {
+                FindLongest0(oe, visited, longests);
+                iter = longests.find(oe);
+                assert(iter != longests.end());
+            }
+            if (best == longests.end() || best->second.first < iter->second.first) {
+                best = iter;
+            }
+        }
+    }
+
+    if (best == longests.end()) {
+        longests[e] = std::make_pair(e->Length(), std::vector<PathEdge*>({e}));
+    } else {
+        LPath& lp = longests[e];
+        lp.first = e->Length() + best->second.first;
+        lp.second = best->second.second;
+        lp.second.push_back(e);
+    }
+    visited.erase(e);
+}
+
+void PathGraph::Cluster::FindLongest1(PathEdge* e, std::unordered_set<PathEdge*> &visited, std::unordered_map<PathEdge*, LPath>& longests) {
+
+    assert(visited.find(e) == visited.end());
+
+    visited.insert(e);
+    DUMPER["asm"]("FFF1 visited %zd", visited.size());
+    std::unordered_map<PathEdge*, LPath>::const_iterator best = longests.end();
+    for (size_t i = 0; i < e->InNode()->InDegree(); ++i) {
+        auto ie = e->InNode()->InEdge<PathEdge>(i);
+        if (visited.find(ie) == visited.end()) {
+            auto iter = longests.find(ie);
+            if (iter == longests.end()) {
+                FindLongest1(ie, visited, longests);
+                iter = longests.find(ie);
+                assert(iter != longests.end());
+            }
+            if (best == longests.end() || best->second.first < iter->second.first) {
+                best = iter;
+            }
+        }
+    }
+
+    if (best == longests.end()) {
+        longests[e] = std::make_pair(e->Length(), std::vector<PathEdge*>({e}));
+    } else {
+        LPath& lp = longests[e];
+        lp.first = e->Length() + best->second.first;
+        lp.second = best->second.second;
+        lp.second.push_back(e);
+    }
+    visited.erase(e);
 }
 
 } // namespace fsa {

@@ -53,7 +53,9 @@ std::unordered_map<ReadOffset, ReadInfo> ContigPhaser::CollectReads(Seq::Id ctg)
             bool repeat = false;
             const int SUB = 1000;
             for (const auto &r : ranges) {
-                repeat = o.b_.start + SUB < r[1] && o.b_.end >= r[0] + SUB;
+                //repeat = o.b_.start + SUB < r[1] && o.b_.end >= r[0] + SUB;
+                auto rr = std::min<int>(o.b_.end, r[1]) - std::max<int>(o.b_.start, r[0]);
+                repeat = rr > (o.b_.end - o.b_.start) / 2;
                 if (repeat) break;
             }
 
@@ -297,8 +299,10 @@ std::unordered_map<ReadOffset, std::unordered_set<ReadOffset>> ContigPhaser::Gro
                 }
 
                 if (count[0] >= shared_variants) {
+                    if (dataset_.HasAva() && !dataset_.QueryAva(iri.id, jri.id)) continue;
                     groups[jid].insert(iid);
                     groups[iid].insert(jid);
+
 
                     if ((int)groups[jid].size() >= opts_.cov_opts_.valid_range[1]*2) {
                         discards.insert(jid);

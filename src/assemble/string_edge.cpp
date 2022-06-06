@@ -187,6 +187,11 @@ void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
             LOG(INFO)("ASSERT ERROR: %s", Id().ToString().c_str());
         }
         assert(string_edges_.size() > 0);
+
+        length_ = 0;
+        for (auto& p : string_edges_) {
+            length_ = std::max(length_, std::accumulate(p.begin(), p.end(), 0, [](int a, BaseEdge* b) { return a + b->Length(); }));
+        }
     }
 }
 
@@ -319,43 +324,6 @@ void SemiBubbleEdge::IdentifySimplePaths(StringGraph& sg) {
         }
 
         assert(string_edges_.size() >= 2);
-
-        int b = Branchs();
-        if ((b == 1 || b == 2) && (InNode()->InDegree() == 0 || OutNode()->OutDegree() == 0)) {
-
-            std::unordered_map<BaseEdge*, std::array<int,3>> scores;
-            for (size_t i = 0; i < string_edges_.size(); ++i) {
-                auto &p = string_edges_[i];
-            
-                std::array<int,3> score = {0, 0, 0};
-                auto rvr = sg.GetAsmData().GetReadVariants();
-                if (b == 1) {
-                    if ( rvr != nullptr) {
-                        auto s = rvr->Test(*p.front()->ol_);
-                        score[0] += -s[1];
-                        score[1] += s[0];
-                    }
-                    score[2] += p.front()->Score();
-                }
-                if (b == 2) {
-                    if ( rvr != nullptr) {
-                        auto s = rvr->Test(*p.back()->ol_);
-                        score[0] += -s[1];
-                        score[1] += s[0];
-                    }
-                    score[2] += p.back()->Score();
-                
-                }
-                scores[p.front()] = score;
-            }
-            
-
-            std::sort(string_edges_.begin(), string_edges_.end(), [&scores](const std::list<BaseEdge*> &a, const std::list<BaseEdge*> &b) {
-                return CompareArray<3,int>(scores[a.front()], scores[b.front()]) > 0;
-            });
-        }
-
-        //string_edges_.insert(string_edges_.end(), others.begin(), others.end());
     }
 }
 
@@ -363,12 +331,23 @@ bool SemiBubbleEdge::Validate(PhaseInfoFile *ignored, const ReadStore &rs, Strin
     assert(sg != nullptr );
 
     IdentifySimplePaths(*sg);
+        
+    auto path_len = [](const std::list<BaseEdge*>& path) {
+        size_t len = 0;
+        for (auto p : path) {
+            len += p->Length();
+        }
+        return len;
+    };
 
     if (string_edges_.size() >= 2 && ignored != nullptr) {
         bool r = true;
-    
+        auto len0 = path_len(string_edges_[0]);
+        auto b = Branchs();
+        bool check_len = ((b&1) != 0 && string_edges_[0].back()->OutNode()->OutDegree() > 0 ) || 
+                         ((b&2) != 0 && string_edges_[0].front()->InNode()->InDegree() > 0);
         for (size_t j=1; j<string_edges_.size(); ++j) {
-            if (!ValidateDipolid(string_edges_[0], string_edges_[j], *ignored, rs)) {
+            if ((check_len && path_len(string_edges_[j]) >= len0 * 1.2) || !ValidateDipolid(string_edges_[0], string_edges_[j], *ignored, rs)) {
                 r = false;
                 break;
             }

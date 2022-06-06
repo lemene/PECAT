@@ -36,6 +36,9 @@ ArgumentParser OverlapAssemble::GetArgumentParser() {
 
 void OverlapAssemble::CheckArguments() {
     opts_.CheckArguments();
+    //DUMPER.SetLevel(opts_.dump);
+    DUMPER.SetLevel(1);
+    DUMPER.SetDirectory(opts_.output_directory);
 }
 
 
@@ -69,7 +72,7 @@ void OverlapAssemble::CreateStringGraph() {
     string_graph_.AddOverlaps(dataset_.GetOverlapStore());
 
     LOG(INFO)("Simplify string graph");
-    string_graph_.Simplify(opts_.reduction0);
+    string_graph_.Simplify(opts_.reduction0, opts_.reducer0);
     
     LOG(INFO)("Identify paths from string graph");
     string_graph_.IdentifySimplePaths();
@@ -98,18 +101,47 @@ void OverlapAssemble::SaveContigs() {
         contigs.push_back(Contig(i/2, paths[i], string_graph_));
         contigs.back().PhasedReads(dataset_.GetInconsistentOverlaps());
     }
-    std::sort(contigs.begin(), contigs.end(), [](const Contig& a, const Contig &b) { return a.Length() > b.Length(); });
+    std::sort(contigs.begin(), contigs.end(), [](const Contig& a, const Contig &b) { return a.Weight() > b.Weight(); });
     LOG(INFO)("Contig size: %zd", contigs.size());
 
     // classify contigs
-    if (!opts_.phased.empty()) {
-        for (size_t i=1; i<contigs.size(); ++i) {
-            for (size_t j = 0; j < i; ++j) {
-                if (contigs[j].IsPrimary() && contigs[i].IsDiploid(contigs[j], opts_)) {
-                    contigs[i].SetHomo(contigs[j]);
-                    break;
+    for (size_t i=1; i<contigs.size(); ++i) {
+
+        size_t threshold = opts_.max_trivial_length;
+        auto &cluster = path_graph_.clusters_[path_graph_.edge2cluster_[contigs[i].path_->front()]];
+        DUMPER["asm"]("%zd: Contig(%d,%d): Cluster(%zd): size %zd,%zd", i, contigs[i].id_, contigs[i].Weight(), path_graph_.edge2cluster_[contigs[i].path_->front()], cluster.Size(), cluster.Length());
+        if (cluster.Length() < threshold) {
+            contigs[i].SetTrivial();
+            DUMPER["asm"]("Cluster SetTrivial0 %zd", contigs[i].id_);
+        } else {
+            if (contigs[i].Length() < threshold) {
+                if (cluster.nontrivial.find(contigs[i].path_->front()) == cluster.nontrivial.end()) {
+                    contigs[i].SetTrivial();
+                    DUMPER["asm"]("Cluster SetTrivial1 %zd", contigs[i].id_);
                 }
             }
+        }
+            
+
+        if (!opts_.phased.empty()) {
+            int pri = -1;
+            for (size_t j = 0; j < i; ++j) {
+                if (contigs[j].IsTrivial()) continue;
+                if (contigs[i].IsDiploid(contigs[j], opts_)) {
+                    if (contigs[j].IsPrimary()) {
+                        if (pri < 0) pri = j;
+                    } else {
+                        pri = j;
+                        break;
+                    }
+                }
+            }
+                    
+            if (pri >= 0) {
+                contigs[i].SetPrimary(contigs[pri]);
+                contigs[pri].AddAlternate(contigs[i]);
+            }
+            
         }
     }
 
@@ -148,14 +180,37 @@ void OverlapAssemble::SaveContigs() {
         std::ostringstream oss_oth_tiles;
 
         for (size_t curr = index.fetch_add(1); curr < contigs.size(); curr = index.fetch_add(1)) {
+            if (contigs[curr].IsTrivial())  {
+                if(this->ConstructContig(contigs[curr].pcontig).size() < opts_.max_trivial_length) {
+                    contigs[curr].Save(oss_oth, *this, opts_.min_contig_length);
+                    contigs[curr].SaveTiles(oss_oth_tiles, string_graph_);
+                    contigs[curr].SaveBubbles(oss_oth, oss_oth_tiles, oss_oth, oss_oth_tiles, *this);
+                    continue;
+                }
+            }
             if (contigs[curr].IsPrimary()) {
                 contigs[curr].Save(oss_pri, *this, opts_.min_contig_length);
                 contigs[curr].SaveTiles(oss_pri_tiles, string_graph_);
-                contigs[curr].SaveBubbles(oss_alt, oss_alt_tiles, *this);
+                contigs[curr].SaveBubbles(oss_alt, oss_alt_tiles, oss_oth, oss_oth_tiles, *this);
             } else {
-                contigs[curr].Save(oss_alt, *this, opts_.min_contig_length);
-                contigs[curr].SaveTiles(oss_alt_tiles, string_graph_);
-                contigs[curr].SaveBubbles(oss_oth, oss_oth_tiles, *this);
+                if (contigs[curr].GetPrimary()->IsPrimary()) {
+                    contigs[curr].Save(oss_alt, *this, opts_.min_contig_length);
+                    contigs[curr].SaveTiles(oss_alt_tiles, string_graph_);
+                    contigs[curr].SaveBubbles(oss_pri, oss_pri_tiles, oss_oth, oss_oth_tiles, *this);
+                } else {
+                    if ( // !contigs[curr].GetPrimary()->GetPrimary()->IsPrimary() ||
+                        contigs[curr].IsDiploid(*contigs[curr].GetPrimary()->GetPrimary(), opts_) ||
+                        contigs[curr].IsOverlapped(*contigs[curr].GetPrimary()->GetPrimary(), opts_)) {
+
+                        contigs[curr].Save(oss_oth, *this, opts_.min_contig_length);
+                        contigs[curr].SaveTiles(oss_oth_tiles, string_graph_);
+                        contigs[curr].SaveBubbles(oss_oth, oss_oth_tiles, oss_oth, oss_oth_tiles, *this);
+                    } else {
+                        contigs[curr].Save(oss_pri, *this, opts_.min_contig_length);
+                        contigs[curr].SaveTiles(oss_pri_tiles, string_graph_);
+                        contigs[curr].SaveBubbles(oss_alt, oss_alt_tiles, oss_oth, oss_oth_tiles, *this);
+                    }
+                }
             }
         }
         combine_func(oss_pri, oss_pri_tiles, oss_alt, oss_alt_tiles, oss_oth, oss_oth_tiles);
@@ -215,6 +270,7 @@ std::string OverlapAssemble::ConstructContigStraight(const std::list<BaseEdge*> 
 std::string OverlapAssemble::ConstructContig(const std::list<BaseEdge*> &contig) {
     std::string seq;
 
+    // if (contig.size() == 1) return seq;
     auto first = contig.front()->InNode();
     // first->OutDegree() == 0: never happen
     // first->OutDegree() == 1: read of first node should be add to this contig
@@ -350,31 +406,56 @@ double OverlapAssemble::ComputeSequenceSimilarity(const std::string &qseq, const
     return identity;
 }
 
-OverlapAssemble::Contig::Contig(size_t id, const std::list<PathEdge*> &path, StringGraph &sg) : id_(id){
+OverlapAssemble::Contig::Contig(size_t id, const std::list<PathEdge*> &path, StringGraph &sg) : id_(id), path_(&path) {
+    
+    auto path_len = [](const std::list<BaseEdge*>& path) {
+        size_t len = 0;
+        for (auto p : path) {
+            len += p->Length();
+        }
+        return len;
+    };
+
     for (auto p : path) {
         p->IdentifySimplePaths(sg); // TODO It may not be necessary to call
         assert(p->SimplePathSize() >= 1);
-        auto sp = p->GetSimplePath(0);
 
-        // TODO 
-        if (pcontig.size() > 0 && sp.size() > 0) {
-            if (pcontig.back()->OutNode() != sp.front()->InNode()) {
-                auto s = sg.GetEdge(pcontig.back()->OutNode()->Id(), sp.front()->InNode()->Id());
+        DUMPER["asm"]("ctgswap: %zd, %d\n", id_, p->Type().c_str());
+        std::vector<std::list<BaseEdge*>> ctgs;
+        for (size_t i = 0; i < p->SimplePathSize(); ++i) {
+            ctgs.push_back(p->GetSimplePath(i));
+        }
+
+        if (ctgs.size() > 1) {
+            if ( p->IsType("bubble") || 
+                (p == path.front() && p->IsType("semi") && static_cast<SemiBubbleEdge*>(p)->Branchs() == 2) ||
+                (p == path.back()  && p->IsType("semi") && static_cast<SemiBubbleEdge*>(p)->Branchs() == 1)) {
+
+                DUMPER["asm"]("ctgswap -- : %zd, %d\n", id_, p->Type().c_str());
+                auto mx = std::max_element(ctgs.begin(), ctgs.end(), [path_len](const std::list<BaseEdge*>& a, const std::list<BaseEdge*> &b) {
+                    return path_len(a) < path_len(b);
+                });
+                if (ctgs.begin() != mx) {
+                    auto t = ctgs[0];
+                    ctgs[0] = *mx;
+                    *mx = t;
+                }
+            }
+        }
+
+        if (pcontig.size() > 0 && ctgs[0].size() > 0) {
+            if (pcontig.back()->OutNode() != ctgs[0].front()->InNode()) {
+                auto s = sg.GetEdge(pcontig.back()->OutNode()->Id(), ctgs[0].front()->InNode()->Id());
                 //assert(s != nullptr);
                 if (s != nullptr) pcontig.push_back(s);
             }
         }
-        pcontig.insert(pcontig.end(), sp.begin(), sp.end());
-
-        if (p->SimplePathSize() > 1) {
-            std::vector<std::list<BaseEdge*>> actg;
-            for (size_t i=0; i<p->SimplePathSize(); ++i) {
-                actg.push_back(p->GetSimplePath(i));
-            }
-            acontigs.push_back(std::make_pair(p, std::move(actg)));
+        pcontig.insert(pcontig.end(), ctgs[0].begin(), ctgs[0].end());        
+        if (ctgs.size() > 1) {
+            acontigs.push_back(std::make_pair(p, std::move(ctgs)));
         }
-
     }
+    weight_ = path_len(pcontig);
 }
 
 
@@ -394,30 +475,59 @@ static bool ValidateDipolid(const std::list<BaseEdge*> &path0, const std::list<B
 }
 
 // c is primary
-bool OverlapAssemble::Contig::IsDiploid(const Contig& c, const AsmOptions& opts) {
+bool OverlapAssemble::Contig::IsDiploid(const Contig& c, const AsmOptions& opts) const {
     size_t count = 0;
-    size_t cc = 0;
-    size_t mcc = 0;
     for (auto r : reads) {
         if (c.vreads.find(r) != c.vreads.end()) {
             count ++;
-            cc++;
-            mcc = std::max(cc, mcc);
         } else {
-            cc = 0;
         }
     }
-    //printf("contig: %zd -> %zd: %zd/%zd, %f, %zd\n", id_, c.id_, count, reads.size(), count*1.0 / reads.size(), mcc);
-    return count*1.0 / reads.size() >= opts.diploid_rate && (int)count >= opts.diploid_count;
+    auto rr = count*1.0 / reads.size() >= opts.diploid_rate && (int)count >= opts.diploid_count || count*1.0 / reads.size() >= 0.45;
+    
+    DUMPER["asm"]("contig: %zd -> %zd: %zd/%zd/%zd, %f, %d\n", id_, c.id_, count, reads.size(), c.reads.size(), count*1.0 / reads.size(), rr);
+    return count*1.0 / reads.size() >= opts.diploid_rate && (int)count >= opts.diploid_count ||  count*1.0 / reads.size() >= 1.0;
+
+}
+
+
+// c is primary
+bool OverlapAssemble::Contig::IsOverlapped(const Contig& c, const AsmOptions& opts) const {
+    size_t count = 0;
+    for (auto r : vreads) {
+        if (c.vreads.find(r) != c.vreads.end()) {
+            count ++;
+        } 
+    }
+    
+    DUMPER["asm"]("overlaped: %zd -> %zd: %zd/%zd\n", id_, c.id_, count, vreads.size());
+    return count > 0 && count*1.0 / vreads.size() >= 0.5; // TODO Parameterization 
 
 }
 
 void OverlapAssemble::Contig::PhasedReads(PhaseInfoFile *phased) {
     if (phased != nullptr) {
         for (auto p : pcontig) {
+            // if (p == pcontig.front()) {
+            //     if (p->InNode()->InDegree() == 0) {
+            //         reads.insert(p->InRead()->id);
+            //         auto rs = phased->Get(p->OutRead()->id);
+            //         vreads.insert(rs.begin(), rs.end());
+            //     }
+            // }
             reads.insert(p->OutRead()->id);
             auto rs = phased->Get(p->OutRead()->id);
             vreads.insert(rs.begin(), rs.end());
+        }
+
+        for (auto & lsa: acontigs) {
+            for (auto &as : lsa.second) {   
+                for (auto a : as) {
+                    //reads.insert(a->OutRead()->id);
+                    auto rs = phased->Get(a->OutRead()->id);
+                    vreads.insert(rs.begin(), rs.end());
+                }
+            }
         }
     }
 }
@@ -439,24 +549,49 @@ void OverlapAssemble::Contig::SaveTiles(std::ostream& os, const StringGraph& sg)
 }
 
 
-void OverlapAssemble::Contig::SaveBubbles(std::ostream &file,  std::ostream &ftile, OverlapAssemble& ass) {
+void OverlapAssemble::Contig::SaveBubbles(std::ostream &fctg,  std::ostream &ftile, OverlapAssemble& ass) {
     int ibubble = 1;
 
     for (const auto &bubble : acontigs) {
         const auto &paths = bubble.second;
         assert(paths.size() > 0);
+        SaveBubbles(fctg, ftile, ass, ibubble, paths);
 
-        for (size_t i = 1; i < paths.size(); ++i) {
-            std::string seq = ass.ConstructContigS(paths[i]);
-            file << ">" << SubName(ibubble, i) << "\n" << seq << "\n";
+        ibubble++;
+    }
+}
 
-            for (auto p : paths[i]) {
-                ftile << SubName(ibubble, i) <<
-                        " edge=" <<  ass.string_graph_.IdToString(p->InNode()->Id()) << 
-                        "~" << ass.string_graph_.IdToString(p->OutNode()->Id()) << "\n";
 
-            }
+void OverlapAssemble::Contig::SaveBubbles(std::ostream &fctg,  std::ostream &ftile, OverlapAssemble& ass, int id, const std::vector<std::list<BaseEdge*>>& paths) {
+    assert(paths.size() > 0);
+
+    for (size_t i = 1; i < paths.size(); ++i) {
+        std::string seq = ass.ConstructContigS(paths[i]);
+        fctg << ">" << SubName(id, i) << " length=" << seq.size() << "\n" 
+             << seq << "\n";
+
+        for (auto p : paths[i]) {
+            ftile << SubName(id, i) <<
+                    " edge=" <<  ass.string_graph_.IdToString(p->InNode()->Id()) << 
+                    "~" << ass.string_graph_.IdToString(p->OutNode()->Id()) << "\n";
+
         }
+    }
+}
+
+void OverlapAssemble::Contig::SaveBubbles(std::ostream& fctg0, std::ostream& ftile0, std::ostream& fctg1, std::ostream& ftile1, OverlapAssemble& ass) {
+    int ibubble = 1;
+
+    for (const auto &bubble : acontigs) {
+        const auto &paths = bubble.second;
+        assert(paths.size() > 0);
+        
+        bool is_covered = IsCovered(paths);
+        std::ostream &fctg =  !is_covered ? fctg0  : fctg1;
+        std::ostream &ftile = !is_covered ? ftile0 : ftile1;
+
+        SaveBubbles(fctg, ftile, ass, ibubble, paths);
+
         ibubble++;
     }
 }
@@ -479,12 +614,67 @@ bool OverlapAssemble::Contig::IsCircular() const {
 
 std::string OverlapAssemble::Contig::Description(size_t len) const {
     std::ostringstream oss;
-    oss << (IsPrimary() ? "" : homo_->MainName()) << ":"
+    oss << (IsPrimary() ? "" : pri_->MainName()) << ":"
         << (IsCircular() ? "circular" : "linear") << ":"
         << "length=" << len;
                     
     return oss.str();
 }
 
+bool OverlapAssemble::Contig::IsCovered(const std::vector<std::list<BaseEdge*>>& paths) const {
+    const int N = 3;
+    std::vector<Seq::Id> lids, rids;
+    for (auto &p : paths) {
+        if (p.front()->InNode()->OutDegree() > 1) {
+            BaseEdge* curr = p.front();
+            for (size_t i = 0; i < N; ++i) {
+                lids.push_back(curr->InRead()->id);
+                if (curr->InNode()->InDegree() == 1) {
+                    curr = curr->InNode()->InEdge<BaseEdge>(0);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (p.back()->OutNode()->InDegree() > 1) {
+            BaseEdge* curr = p.back();
+            for (size_t i = 0; i < N; ++i) {
+                rids.push_back(curr->OutRead()->id);
+                if (curr->OutNode()->OutDegree() == 1) {
+                    curr = curr->OutNode()->OutEdge<BaseEdge>(0);
+                } else {
+                    break;
+                }
+            }
+
+        }
+    }
+
+
+    for (auto a : alts_) {
+        size_t ir = 0;
+        for (; ir < rids.size(); ++ir) {
+            if (a->vreads.find(rids[ir]) != a->vreads.end()) {
+                break;
+            }
+        }
+
+        size_t il = 0;
+        for (; il < lids.size(); ++il) {
+            if (a->vreads.find(lids[il]) != a->vreads.end()) {
+                break;
+            }
+        }
+
+        DUMPER["asm"]("xcontig: %s -> %s: %zd/%zd, %zd/%zd\n", MainName().c_str(), a->MainName().c_str(), ir, rids.size(), il, lids.size());
+
+        if (il < lids.size() && ir < rids.size()) {
+            return a->pcontig.size() >= paths[0].size() / 2;
+        } 
+        
+    }
+    return false;
+}
 
 } // namespace fsa {

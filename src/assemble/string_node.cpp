@@ -224,15 +224,15 @@ CrossNode* CrossNode::Reverse(PathGraph& sg) const {
     std::transform(in_nodes_.begin(), in_nodes_.end(), outs.begin(), [&sg](SgNode*n) {
         return sg.ReverseNode((PathNode*)n);
     });
-        LOG(INFO)("Reverse CrossNode 0: %zd %zd  ", ins.size(), outs.size());
-        LOG(INFO)("Reverse CrossNode 1: %zd %zd, %zd %zd", ins[0]->OutDegree(), ins[1]->OutDegree(), outs[0]->InDegree(), outs[1]->InDegree());
-        LOG(INFO)("Reverse CrossNode 3: %s %s, %s %s", 
+        DUMPER["cross"]("Reverse CrossNode 0: %zd %zd \n", ins.size(), outs.size());
+        DUMPER["cross"]("Reverse CrossNode 1: %zd %zd, %zd %zd\n", ins[0]->OutDegree(), ins[1]->OutDegree(), outs[0]->InDegree(), outs[1]->InDegree());
+        DUMPER["cross"]("Reverse CrossNode 3: %s %s, %s %s\n", 
             ins[0]->Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), 
             ins[1]->Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), 
             outs[0]->Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), 
             outs[1]->Id().ToString(sg.GetAsmData().GetStringPool()).c_str());
     auto r = new CrossNode(ins, outs);
-    LOG(INFO)("REVERS %s, %s, %s", Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), r->Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), 
+    DUMPER["cross"]("REVERS %s, %s, %s\n", Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), r->Id().ToString(sg.GetAsmData().GetStringPool()).c_str(), 
         SgNodeID::Reverse(r->Id()).ToString().c_str());
     
     assert(r->Id() == SgNodeID::Reverse(Id()));

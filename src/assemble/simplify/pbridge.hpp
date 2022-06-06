@@ -14,14 +14,14 @@ public:
     virtual bool ParseParameters(const std::vector<std::string> &params);
     virtual void Running();
     bool IsAbnormalBridge(const PathGraph::LinearPath &path);
+    void CalcPathScore(PathGraph::LinearPath &path) const;
     bool TestOutExtend(PathEdge* e, int minlen, int minnode);
     bool TestInExtend(PathEdge* e, int minlen, int minnode);
-    int IsLowestScoreOutEdge(PathEdge* e) ;
-    int IsLowestScoreInEdge(PathEdge* e) ;
     PathGraph& graph_;   
 
     size_t max_length { 1000000 };
     size_t max_nodesize { 20 };
+    size_t round { 3 };
 };
 
 

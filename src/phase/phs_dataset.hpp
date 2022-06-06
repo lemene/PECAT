@@ -18,18 +18,34 @@ public:
         auto iter = read_ids2_.find(i);
         return iter != read_ids2_.end() ? iter->second : 0;
     }
+
+    
+    std::unordered_set<int> QueryGroup(int id);
+    bool QueryAva(int r0, int r1) const {
+        auto i0 = ava_groups_.find(r0);
+        if (i0 != ava_groups_.end()) {
+            return i0->second.find(r1) != i0->second.end();
+        } else {
+            return false;
+        }
+    }
+    bool HasAva() const { return ol_ava_.Size() > 0; }
 protected:
     
     // Load twice to avoid loading unwanted reads
     void PreloadReads();
     void LoadReads();
     void LoadOverlaps(const std::string &fname);
+    void LoadAva(const std::string &fname);
     
 public:
     const PhsOptions &opts_;
 
     ReadStore rd_store_;
     OverlapStore ol_store_ { rd_store_.GetStringPool() };
+
+    OverlapStore ol_ava_ { rd_store_.GetStringPool() };
+    std::unordered_map<int, std::unordered_map<int, const Overlap*>> ava_groups_;
     
     std::unordered_set<std::string> contig_names_;
     std::unordered_set<Seq::Id> contig_ids_;

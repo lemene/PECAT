@@ -17,10 +17,10 @@ libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_sto
              utility.cpp file_io.cpp seq_io.cpp overlap_store.cpp graph.cpp\
 			 assemble/overlap_assemble.cpp simple_align.cpp assemble/string_graph.cpp \
 			 assemble/read_variants.cpp assemble/string_node.cpp assemble/string_edge.cpp \
-			 assemble/path_graph.cpp assemble/asm_dataset.cpp assemble/asm_options.cpp assemble/stat_readinfo.cpp\
+			 assemble/asm_dataset.cpp assemble/asm_options.cpp assemble/stat_readinfo.cpp\
 			 ../thirdparty/edlib/edlib/src/edlib.cpp correct/aligner.cpp ./correct/dw.cpp  ./correct/diff.cpp  \
 			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp \
-			 ./utils/string_pool.cpp ./utils/pair_file.cpp \
+			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp \
 			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(simplify_src)
 
 libfsa_src += $(wildcard ./correct/align/*.cpp)

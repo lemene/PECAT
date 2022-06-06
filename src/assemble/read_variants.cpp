@@ -70,19 +70,7 @@ std::array<int, 2> ReadVariants::Test(int a, int b) const {
         for (auto & ira : ra->second) {
             for (auto & irb : rb->second) {
                 if (ira.contig == irb.contig) {
-                    std::array<int, 2> rs {0, 0};
-                    for (auto & irav : ira.vars) {
-                        auto irbv = irb.vars.find(irav.first);
-                        if (irbv != irb.vars.end()) {
-                            if (irav.second != -1 && irbv->second != -1) {
-                                if (irav.second == irbv->second) {
-                                    rs[0] ++;
-                                } else {
-                                    rs[1] ++;
-                                }
-                            }
-                        }
-                    }
+                    std::array<int, 2> rs = GetSnps(ira, irb);
                     if (result[0] + result[1] < rs[0] + rs[1]) {
                         result = rs;
                     }
@@ -91,6 +79,52 @@ std::array<int, 2> ReadVariants::Test(int a, int b) const {
         }
     }
     return result;
+}
+
+std::array<int, 2> ReadVariants::GetSnps(const Variants &ira, const Variants &irb) const {
+    
+    std::array<int, 2> rs {0, 0};
+    for (auto & irav : ira.vars) {
+        auto irbv = irb.vars.find(irav.first);
+        if (irbv != irb.vars.end()) {
+            if (irav.second != -1 && irbv->second != -1) {
+                if (irav.second == irbv->second) {
+                    rs[0] ++;
+                } else {
+                    rs[1] ++;
+                }
+            }
+        }
+    }
+    return rs;
+}
+
+std::array<int, 2> ReadVariants::GetClosestSnps(const Overlap& ol) const  {
+    auto ra = reads.find(ol.a_.id);
+    auto rb = reads.find(ol.b_.id);
+
+    std::array<int, 2> result = {0, 0};
+    if (ra != reads.end() && rb != reads.end()) {
+
+        int offset = ol.MappingToTarget<1>({0})[0];
+        int distance = 100000000; // Initialize to a large number;
+
+        for (auto & ira : ra->second) {
+            for (auto & irb : rb->second) {
+                if (ira.contig != irb.contig) continue;
+                if (ira.d == irb.d && !ol.SameDirect()) continue;
+                if (ira.d != irb.d && ol.SameDirect()) continue;
+
+                auto atob = irb.d == 0 ? (ira.offset - irb.offset) : -(ira.offset - irb.offset) ;
+                if (std::abs(atob - offset) < distance) {
+                    distance = std::abs(atob - offset);
+                    result = GetSnps(ira, irb);
+                }
+            }
+        }
+    }
+    return result;
+
 }
 
 std::array<int, 2> ReadVariants::Test(const Overlap& ol, bool bad) const  {
@@ -103,19 +137,7 @@ std::array<int, 2> ReadVariants::Test(const Overlap& ol, bool bad) const  {
         for (auto & ira : ra->second) {
             for (auto & irb : rb->second) {
                 if (IsCompatible(ira, irb, ol)) {
-                    std::array<int, 2> rs {0, 0};
-                    for (auto & irav : ira.vars) {
-                        auto irbv = irb.vars.find(irav.first);
-                        if (irbv != irb.vars.end()) {
-                            if (irav.second != -1 && irbv->second != -1) {
-                                if (irav.second == irbv->second) {
-                                    rs[0] ++;
-                                } else {
-                                    rs[1] ++;
-                                }
-                            }
-                        }
-                    }
+                    std::array<int, 2> rs = GetSnps(ira, irb);
                     if (!bad) {
                         if (result[0] + result[1] < rs[0] + rs[1]) {
                             result = rs;

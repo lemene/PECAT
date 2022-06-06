@@ -37,15 +37,12 @@ public:
     virtual void Clear() {}
 
 protected:
-    void CreateDebugFile();
     void Debug(const char* const format, ...);
     std::string ToString(const SgEdge* e) { return e->Id().ToString(ori_graph_.GetAsmData().GetStringPool()); }
     std::string ToString(const SgNode* n) { return n->Id().ToString(ori_graph_.GetAsmData().GetStringPool()); }
 protected:
     std::string name_;
     std::string desc_;
-    std::string wrkdir_ {"."};
-    FILE* debug_file_ { nullptr };
     SgGraph& ori_graph_;
 };
 

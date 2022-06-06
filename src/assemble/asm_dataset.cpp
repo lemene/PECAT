@@ -46,6 +46,8 @@ void AsmDataset::Purge() {
 
     FilterCoverage();
 
+    EstimateGenomeSize();
+
     //FilterConsistency();
 
     FilterContained();
@@ -1730,4 +1732,21 @@ int AsmDataset::FirstTrough(const std::vector<int> &data, size_t last, size_t k)
     return std::max(select, 1);     // avoid selecting 0
 }
 
+
+void AsmDataset::EstimateGenomeSize() {
+    std::vector<int> covs;
+    long long int size = 0;
+    for (auto &ri : read_infos_) {
+        covs.push_back(ri.second.coverage[1]);
+        size += ri.second.len;
+    }
+    std::sort(covs.begin(), covs.end());
+    int ave_cov = covs[covs.size()/2];
+    long long int gsize = size / ave_cov;
+    LOG(INFO)("Esitmate genome size(%lld): %lld = %lld / %d", opts_.genome_size, gsize, size, ave_cov);
+
+    opts_.UpdateByGenomeSize(gsize);
+
 }
+
+} // namespace fsa {

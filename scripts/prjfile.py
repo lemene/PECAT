@@ -116,3 +116,14 @@ def load_overlap_ids(fname):
     for fn in glob.glob(fname):
         load_overlap_ids_xxx(fn, ols)
     return ols
+
+
+def detect_overlap_name_postion(fname):
+    if fname.endswith(".paf") or fname.endswith(".paf.gz"):
+        return (0, 5)
+    elif fname.endswith(".m4") or fname.endswith(".m4.gz"):
+        return (0, 1)
+    elif fname.endswith(".m4a") or fname.endswith(".m4a.gz"):
+        return (0, 1)
+    else:
+        assert 0, "Failed to recognize overlap format"

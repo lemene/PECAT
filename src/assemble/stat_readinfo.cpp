@@ -63,9 +63,10 @@ void ReadStatInfo::Stat(int i, AsmOptions& opts_) {
     std::transform(win_idents.begin(), win_idents.end(), nri.identity_threshold.begin(), [this, i, opts_](std::vector<double>& a){
         if (a.size() > 0) {
             double median, mad;
-            //std::sort(a.begin(), a.end(), [](double i0, double i1) { return i0 > i1; });
+            std::sort(a.begin(), a.end(), [](double i0, double i1) { return i0 > i1; });
 
-            std::vector<double> tmp(a.begin(), a.begin() + std::min<size_t>(opts_.coverage , a.size()));
+            size_t cov = size_t(opts_.coverage) >= a.size() ? a.size() : std::max<size_t>(opts_.coverage , a.size()/2);
+            std::vector<double> tmp(a.begin(), a.begin() + cov);
             ComputeMedianAbsoluteDeviation(tmp, median, mad);
             return std::max(opts_.filter0.min_identity, median-6*1.4826*mad);
         } else {

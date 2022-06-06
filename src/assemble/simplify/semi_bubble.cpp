@@ -66,12 +66,12 @@ void SemiBubbleSimplifier::Running() {
         } else {
             auto re = e->Reverse(graph_);
             Debug("Find semi type: %s\n", oe->Type().c_str());
-            assert(oe->IsType("semi-bubble"));
+            assert(oe->IsType("semi"));
             static_cast<SemiBubbleEdge*>(oe)->Merge(*e);
 
             auto roe = graph_.QueryEdge(re->Id());
             Debug("Find semi type r: %s\n", oe->Type().c_str());
-            assert(roe != nullptr && roe->IsType("semi-bubble"));
+            assert(roe != nullptr && roe->IsType("semi"));
             static_cast<SemiBubbleEdge*>(roe)->Merge(*re);
 
             delete re;

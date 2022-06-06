@@ -65,7 +65,7 @@ struct PhasePath {
     std::array<int,2> TestVariants(const std::unordered_map<int, std::unordered_map<int, int>>& avars, const std::vector<ReadVariants::Variants>* bvars) const;
     std::array<int,2> TestVariants(const std::unordered_map<int, std::unordered_map<int, int>>& avars, int name) const;
 
-    void Debug(const char* const format, ...);
+    void Debug(const char* const format, ...) const ;
     
     std::vector<Seq::EndId> tips;
     std::unordered_set<int> reads;

@@ -51,10 +51,6 @@ public:
     bool IsContained(const Overlap& o, std::array<int, 2> &rel);
     void FilterCoverage();
 
-    // void FilterBestn();    
-    // std::unordered_set<const Overlap*> FindBestN(const std::pair<int, std::unordered_map<int, const Overlap*>> &groud) const;
-
-    /// 
     void FilterConsistency();
     void CalcConsistency(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &best, std::unordered_set<const Overlap*> &ignored);
     MatrixGraph CalcConsistencyGraph(int id, const std::vector<const Overlap*> ols);
@@ -143,6 +139,8 @@ public:
 
     void ScanOverlapsToSelectParams(const std::string &fname);    
     double CalcLocalOverhangThreshold(std::vector<std::array<double,2>> &overhang);
+
+    void EstimateGenomeSize();
    
     AsmOptions& opts_;
     std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;

@@ -35,7 +35,7 @@ public:
     EdgeScore GetEdgeScore(const BaseEdge *e) {
         std::array<int,3> score = { e->Score(), 0, 0 };     
         if (rvs_ != nullptr) {
-            auto mm = rvs_->Test(*(e->ol_), false);
+            auto mm = rvs_->GetClosestSnps(*(e->ol_));
             score[1] = mm[0];
             score[2] = mm[1];
         } 

@@ -17,16 +17,22 @@ public:
         Stream(const std::string &fname="");
         ~Stream();
         void operator() (const char* const format, ...);
+        void Write(const char* const format, va_list arglist);
     protected:
         FILE * file_{ nullptr };
+        std::mutex mutex_;
     };
 
     Stream& operator [](const std::string &name);
 
     void SetDirectory(const std::string &dir) { directory_ = dir; }
     void SetLevel(int level) { level_ = level; }
+
+    bool IsWorking() const { return level_ > 0; }
+    std::string MakeFileName(const std::string &name) { return directory_ + "/debug_" + name + ".log"; }
 protected:
-    std::string directory_;
+    std::mutex mutex_;
+    std::string directory_ { "." };
     int level_{ 0 };
     std::map<std::string, std::unique_ptr<Stream>> streams_;
     Stream empty_;
@@ -65,6 +71,7 @@ protected:
 };
 
 #define LOG(s) Logger::Stream(LOGGER, Logger::L_##s)
+#define SET_LOG_LEVEL(s) LOGGER.SetLevel(Logger::L_##s)
 
 extern Logger LOGGER;
 

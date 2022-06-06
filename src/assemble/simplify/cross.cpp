@@ -36,7 +36,7 @@ void CrossSimplifier::Running() {
     for (auto n : crosses) {
         if (n == nullptr) continue; 
         if (graph_.QueryNode(n->Id()) == nullptr && n->IsRaw()) {
-            printf("Insert cross node: %s %d\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), n);
+            Debug("Insert cross node: %s %d\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), n);
   
             auto rn = n->Reverse(graph_);
             graph_.InsertCrossNode(n);
@@ -44,7 +44,7 @@ void CrossSimplifier::Running() {
 
         } else {
             if (!n->IsRaw()) {
-                printf("CrossNode IsRaw 0\n");
+                Debug("CrossNode IsRaw 0\n");
             }
             delete n;
         }
@@ -104,7 +104,7 @@ CrossNode* CrossSimplifier::DetectCross(SgNode* n) const {
     std::vector<SgNode*> as = { bs[0]->InNode(0), bs[0]->InNode(1) };
     assert(as[0]->OutDegree() == 2 && as[1]->OutDegree() == 2);
 
-    if (IsInconsistent(as[0], as[1]) && IsInconsistent(bs[0], bs[1])) {
+    if (IsInconsistent(as[0], as[1]) || IsInconsistent(bs[0], bs[1])) {
         return new CrossNode(as, bs);
     }
 

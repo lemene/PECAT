@@ -96,7 +96,7 @@ void PhaseCrossSimplifier::Running() {
     const int max_cand_size = 10;
     for (auto &cand : cands) {
         if (cand.size() > max_cand_size) continue;
-        printf("cand(%zd): %s->%s\n", cand.size(), graph_.GetAsmData().QueryNameById(cand.front()->ReadId()).c_str(),
+        Debug("cand(%zd): %s->%s\n", cand.size(), graph_.GetAsmData().QueryNameById(cand.front()->ReadId()).c_str(),
             graph_.GetAsmData().QueryNameById(cand.back()->ReadId()).c_str());
 
 
@@ -107,9 +107,9 @@ void PhaseCrossSimplifier::Running() {
             ends.push_back(e->OutNode());
         }
 
-        printf("start dophase\n");
+        Debug("start dophase\n");
         for (auto e : cand.front()->GetInEdges()) {
-            printf(" -- edge: %s %s\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+            Debug(" -- edge: %s %s\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
                 graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str());
 
             auto alt = std::find_if(cand.front()->GetInEdges().begin(), cand.front()->GetInEdges().end(), [e](BaseEdge* a) {
@@ -124,7 +124,7 @@ void PhaseCrossSimplifier::Running() {
             path.Extend(cand, ends);
         }
 
-        printf("end find %zd %zd\n", paths[0].dst.size(), paths[1].dst.size());
+        Debug("end find %zd %zd\n", paths[0].dst.size(), paths[1].dst.size());
         if (paths.size() != 2) {
             LOG(WARNING)("phasepath != 2 indegree = %zd", cand.front()->InDegree());
             continue;
@@ -132,10 +132,10 @@ void PhaseCrossSimplifier::Running() {
         assert(paths.size() == 2);
         if (paths[0].dst.size() == 1 && paths[1].dst.size() != 1) {
             paths[1].ExtendWithOtherPath(cand, ends, paths[0]);
-            printf("phasepath amb 1\n");
+            Debug("phasepath amb 1\n");
         } else if (paths[1].dst.size() == 1 && paths[0].dst.size() != 1) {
             paths[0].ExtendWithOtherPath(cand, ends, paths[1]);
-            printf("phasepath amb 0\n");
+            Debug("phasepath amb 0\n");
         }
 
         if (PhasePath::IsIndependentPath(paths)) {
@@ -159,7 +159,7 @@ void PhaseCrossSimplifier::Running() {
 
             //
             for (auto &path : paths) {
-                printf("phasepath path:\n");
+                Debug("phasepath path:\n");
                 auto & pathnode = path.tips;
                 for (size_t i = 1; i < pathnode.size(); ++i) {
                     auto eid = BaseEdge::CreateID(pathnode[i-1], pathnode[i]);
@@ -231,11 +231,11 @@ void PhasePath::Extend(const std::vector<BaseNode*> cand, const std::vector<Base
 
             MoveToNextTip(tips.back(), best, extend);
             if (ReachEnds(ends)) {
-                printf("ReachEnds\n");
+                Debug("ReachEnds\n");
                 break;
             }
         } else {
-            printf("no check\n");
+            Debug("no check\n");
             break;
         }
     }
@@ -308,7 +308,7 @@ const Overlap* PhasePath::FindBestExtendOverlap(Seq::EndId start, std::unordered
     auto comfirm = GetComfirmVariants();
     for (const auto &o : ols) {
         auto rr = TestVariants(comfirm, o->GetOtherRead(rid).id);
-        printf("check %d %d, %s %s\n",rr[0], rr[1], asmdata.QueryNameById(o->a_.id).c_str(), asmdata.QueryNameById(o->b_.id).c_str());
+        Debug("check %d %d, %s %s\n",rr[0], rr[1], asmdata.QueryNameById(o->a_.id).c_str(), asmdata.QueryNameById(o->b_.id).c_str());
 
         if (rr[0] >= std::max<int>(opts.min_snp_count, std::ceil(opts.min_snp_rate *(rr[0]+rr[1])))) {
             if (best == nullptr) {
@@ -325,8 +325,8 @@ const Overlap* PhasePath::FindBestExtendOverlap(Seq::EndId start, std::unordered
             extols.insert(o);
         }
     }
-    if (best != nullptr)    printf("best %zd %s %s\n", extols.size(), asmdata.QueryNameById(best->a_.id).c_str(), asmdata.QueryNameById(best->b_.id).c_str());
-    else printf("best 0\n");
+    if (best != nullptr)    Debug("best %zd %s %s\n", extols.size(), asmdata.QueryNameById(best->a_.id).c_str(), asmdata.QueryNameById(best->b_.id).c_str());
+    else Debug("best 0\n");
     return best;
 }
 
@@ -405,7 +405,6 @@ void PhasePath::AddVariants(const std::vector<ReadVariants::Variants>* vars) {
 
 void PhasePath::PrintVariants() const {
     for (auto &ctg : variants) {
-        //printf("phase-variants: %s ", ctg.first.c_str());
 
         std::vector<int> keys(ctg.second.size());
         std::transform(ctg.second.begin(), ctg.second.end(), keys.begin(), [](const std::pair<int, std::vector<std::array<int, 2>>> &pair) { return pair.first;});
@@ -413,14 +412,14 @@ void PhasePath::PrintVariants() const {
         std::sort(keys.begin(), keys.end());
         for (auto k : keys) {
             auto &v = ctg.second.find(k)->second;
-            printf("%d", k);
+            Debug("%d", k);
             for (const auto &iv : v) {
-                printf("-(%d,%d) ", iv[0], iv[1]);
+                Debug("-(%d,%d) ", iv[0], iv[1]);
             }
-            printf(" ");
+            Debug(" ");
 
         }
-        printf("\n");
+        Debug("\n");
     }
 }
 
@@ -484,7 +483,7 @@ std::unordered_map<int, std::unordered_map<int, int>> PhasePath::GetComfirmVaria
 
         for (auto &j : i.second) {
             auto b = important(j.second);
-            printf("comfirm: %d %d\n", j.first, b);
+            Debug("comfirm: %d %d\n", j.first, b);
             if (b >= 0) {
                 cv[j.first] = b;
             }
@@ -495,13 +494,12 @@ std::unordered_map<int, std::unordered_map<int, int>> PhasePath::GetComfirmVaria
     return vars;
 }
 
-void PhasePath::Debug(const char* const format, ...) {
-    if (debug_file_ != nullptr) {
+void PhasePath::Debug(const char* const format, ...) const {
+    if (DUMPER.IsWorking()) {
         va_list arglist;
         va_start(arglist, format);
-        vfprintf(debug_file_, format, arglist);
+        DUMPER["phase"].Write(format, arglist);
         va_end(arglist);
-        fflush(debug_file_);
     }
 }
 

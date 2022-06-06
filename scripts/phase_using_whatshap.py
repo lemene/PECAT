@@ -66,7 +66,7 @@ def phase_vcf(contigs, rd2ctg, usehic, vcf):
     cmd = "whatshap haplotag --reference %s %s.gz %s -o %s" % (contigs, phased, subr2c, haplotag)
     os.system(cmd)
 
-    cmd = "samtools view %s | %s/fxutils.py fx_get_phased_reads - %s" % (haplotag, BIN_PATH, phreads)
+    cmd = "samtools view %s | %s/fxtools.py fx_get_phased_reads - %s" % (haplotag, BIN_PATH, phreads)
     os.system(cmd)
 
 def collect_phased_reads(wrkdir, phreads):

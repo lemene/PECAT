@@ -7,6 +7,8 @@ from collections import defaultdict
 import subprocess
 import re
 
+from scipy import misc
+
 mydir = os.path.split(__file__)
 sys.path.append(mydir)
 from misc import *
@@ -137,10 +139,10 @@ def fx_ctginfo(argv):
 
         args = parser.parse_args(argv)
         name = args.ctg
-        fname = [args.wrkdir + "/primary_tiles", args.wrkdir + "/alternate_tiles"]
+        fname = [args.wrkdir + "/primary_tiles", args.wrkdir + "/alternate_tiles", args.wrkdir + "/rest_tiles"]
 
         tiles = []
-        for line in itertools.chain(open(fname[0]), open(fname[1])):
+        for line in itertools.chain(open(fname[0]), open(fname[1]), open(fname[2])):
             its = line.split()
             if (its[0] == name):
                 tiles.append(its)
@@ -149,10 +151,10 @@ def fx_ctginfo(argv):
         print("line:", len(tiles))
         print("head:", tiles[0])
         head = tiles[0][1].split("=")[1].split("~")[0][:-2]
-        os.system("grep -w %s %s %s" % (head, fname[0], fname[1]))
+        os.system("grep -w %s %s %s %s" % (head, fname[0], fname[1], fname[2]))
         print("tail:", tiles[-1])
         head = tiles[-1][1].split("=")[1].split("~")[1][:-2]
-        os.system("grep -w %s %s %s" % (head, fname[0], fname[1]))
+        os.system("grep -w %s %s %s %s" % (head, fname[0], fname[1], fname[2]))
 
         pass
     except:
@@ -161,6 +163,31 @@ def fx_ctginfo(argv):
         print(fx_ctginfo.__doc__)
 
 
+
+def fx_ctgsg(argv):
+    parser = argparse.ArgumentParser("build contig graph")
+    parser.add_argument("--wrkdir", type=str, default=".")
+    try:        
+        import itertools
+
+        args = parser.parse_args(argv)
+        fname = [args.wrkdir + "/primary_tiles", args.wrkdir + "/alternate_tiles", args.wrkdir + "/rest_tiles"]
+
+        tiles = defaultdict(list)
+        for line in itertools.chain(open(fname[0]), open(fname[1]), open(fname[2])):
+            its = line.split()
+            tiles[its[0]].append(its)
+
+        print("source, target, label, weight")
+        for ctg, ts in tiles.items():
+            
+            head = tiles[0][1].split("=")[1].split("~")[0][:-2]
+            tail = tiles[-1][1].split("=")[1].split("~")[1][:-2]
+            print("%s, %s, %s, %d" % (head, tail, ctg, len(ts)))
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        print(fx_ctginfo.__doc__)
 
 
 def fx_id2name(argv):
@@ -302,50 +329,6 @@ def fx_read_in_contig(argv):
 
 
 
-def fx_filter_paf_with_bininfos(argv):
-    '''使用bin信息过滤paf文件'''
-    parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("ifname", type=str)
-    parser.add_argument("ofname", type=str)
-    parser.add_argument("bininfos", type=str)
-
-    try:
-        args = parser.parse_args(argv)
-
-        logger.info("加载bininfos（fsa_kmer_bin产生）信息")
-
-        classified = [set(), set(), set()]
-        for line in open(args.bininfos):
-            its = line.split()      # name ... type[1|0|-1]
-            classified[int(its[-1])+1].add(its[0])
-
-        logger.info("过滤")
-        with open(args.ofname, "w") as ofile:
-            for i, line in enumerate(open(args.ifname)):
-                its = line.split()
-                s0, s1 = its[0], its[5]
-                if s0 in classified[0] and s1 in classified[2] or s0 in classified[2] and s1 in classified[0]:
-                    pass
-                else:
-                    ofile.write(line)
-
-                if i % 1000000 == 0:
-                    print(i)
-    except:
-        traceback.print_exc()
-        print("-----------------")
-        parser.print_usage()
-
-def detect_overlap_name_postion(fname):
-    if fname.endswith(".paf") or fname.endswith(".paf.gz"):
-        return (0, 5)
-    elif fname.endswith(".m4") or fname.endswith(".m4.gz"):
-        return (0, 1)
-    elif fname.endswith(".m4a") or fname.endswith(".m4a.gz"):
-        return (0, 1)
-    else:
-        assert 0, "Failed to recognize overlap format"
-
 def fx_eval_overlap_haplotype(argv):
     parser = argparse.ArgumentParser("使用reads的分类信息（fsa_kmer_bin生成），评估overlaps中有多少单倍型混合")
     parser.add_argument("overlaps", type=str)
@@ -358,7 +341,7 @@ def fx_eval_overlap_haplotype(argv):
         binfos = prj.BinInfos(args.binfos)
 
         logger.info("检查 overlaps")
-        pos = detect_overlap_name_postion(args.overlaps)
+        pos = prj.detect_overlap_name_postion(args.overlaps)
         count = [0, 0, 0]
         for line in open_file(args.overlaps):
             its = line.split()
@@ -810,7 +793,81 @@ def fx_tile_breakpoint(argv):
         print("-----------------")
         parser.print_usage()
 
+def fx_genome_size(argv):
+    parser = argparse.ArgumentParser("根据组装生成reads信息估计基因组大小")
+    parser.add_argument("readinfos", type=str)
+   
+    try:
+        args = parser.parse_args(argv)
 
+        covs = []
+        lens = []
+        for line in open(args.readinfos):
+            its = line.split()
+            covs.append(int(its[7].split(',')[1]))
+            lens.append(int(its[1]))
+
+        sizes = sum(lens)
+        ave_cov = covs[len(covs)//2]#sum([c*l for c, l in zip(covs,lens)]) / sizes
+        print("Base size:", sizes)
+        print("Cverage coverage:", ave_cov)
+        print("Genome size: ", sizes / ave_cov)
+        #for c in covs: print(c)
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+def fx_test(argv):
+    parser = argparse.ArgumentParser("")
+    parser.add_argument("--tile", type=str, action='append')
+   
+    try:
+        args = parser.parse_args(argv)
+        print(args.tile)
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+def fx_crrsub(argv):
+    parser = argparse.ArgumentParser("extract infos for debugging correction")
+    parser.add_argument("read", type=str, default='')
+    parser.add_argument("--iteration", type=int, default=0)
+    parser.add_argument("--fsa", type=str, default="~/work/fsa/build/bin/")
+   
+    try:
+        args = parser.parse_args(argv)
+        # get ols
+        prjpath = prj.find_prjpath("1-correct", 5)
+        cmd = "grep -w -h %s %s/%d/*fasta.paf > ols.paf" % (args.read, prjpath, args.iteration)
+        
+        logger.info("get sub ols by running %s" % cmd)
+        run_cmd(cmd)
+
+        
+        names = set()
+        for line in open("ols.paf"):
+            its = line.split()
+            names.add(its[0])
+            names.add(its[5])
+        
+        with open("ns", "w") as f:
+            for n in names:
+                f.write("%s\n" % n)
+        
+        cmd = "%s/fsa_rd_tools sub %s sub.fasta --names_fname ns" % (args.fsa, (prjpath+ "/0/corrected_reads.fasta") if args.iteration == 1 else (prjpath + "/../0-prepare/prepared_reads.fasta"))
+        
+        logger.info("get sub reads by running %s" % cmd)
+        run_cmd(cmd)
+        
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
 
 if __name__ == '__main__':
     script_entry(sys.argv, locals())

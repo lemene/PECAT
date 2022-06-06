@@ -19,6 +19,7 @@ public:
     std::vector<const Overlap*> RepairIncompleteCross(const std::vector<SgEdge*>& path);
     std::vector<const Overlap*> GetAltCrossPath(Seq::EndId start, Seq::EndId end, const std::vector<SgEdge*>& path);
     bool IsAmbiguousPath(const std::vector<SgEdge*>& path);
+    int TestConsistent(const std::vector<SgEdge*>& path);
     bool IsLinkedReversedNode(const std::vector<SgEdge*>& path, int max_depth) const;
   
     void DebugPath(const std::vector<SgEdge*> &path, const std::string& msg);

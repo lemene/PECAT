@@ -441,7 +441,7 @@ sub job_calling_with_deepvariant($$$$$) {
         ofiles => ["$rd2ctg.bam"],
         gfiles => ["$rd2ctg.bam"],
         mfiles => [],
-        cmds => ["$bin_path/fxutils.py fx_fa2fq $reads $reads_fastq",
+        cmds => ["$bin_path/fxtools.py fx_fa2fq $reads $reads_fastq",
                  "minimap2 $map_options -a --eqx -R \"\@RG\\tSM:$prj_name\\tID:$prj_name\"  -t $threads $contigs $reads_fastq | samtools sort -\@$threads --output-fmt BAM -o $rd2ctg.bam",
                  "samtools index -\@$threads $rd2ctg.bam"],
         msg => "mapping reads to contigs",
@@ -504,7 +504,7 @@ sub job_phasing_with_whatshap($$$$$) {
     #     gfiles => [$phased],
     #     mfiles => [],
     #     cmds => ["whatshap haplotag --reference $contigs $phased.vcf.gz $rd2ctg -o $haplotag",
-    #              "samtools view $haplotag | $bin_path/fxutils.py fx_get_phased_reads - $phased"],
+    #              "samtools view $haplotag | $bin_path/fxtools.py fx_get_phased_reads - $phased"],
 
     #     msg => "phase",
     # );
@@ -614,13 +614,12 @@ sub run_polish($) {
 
     my $job_flt = $self->newjob(
         name => "${name}_filter",
-        ifiles => [$rd2ctg],
+        ifiles => [$rd2ctg, $tile_pri, $tile_alt],
         ofiles => [$rd2ctg_pri, $rd2ctg_alt],
-        gfiles => [$rd2ctg_flt, $tile_all, $rd2ctg_pri, $rd2ctg_alt],
-        mfiles => [$tile_all, $rd2ctg_flt],
-        cmds => ["cat $tile_pri $tile_alt  > $tile_all",
-                 "$bin_path/fxutils.py fx_purge_overlaps $rd2ctg $tile_all $readinfo > $rd2ctg_flt",
-                 "$bin_path/fxutils.py fx_split_mappings $rd2ctg_flt $ctg_pri,$ctg_alt $rd2ctg_pri,$rd2ctg_alt"],
+        gfiles => [$rd2ctg_flt, $rd2ctg_pri, $rd2ctg_alt],
+        mfiles => [$rd2ctg_flt],
+        cmds => ["$bin_path/fxtools.py fx_purge_overlaps $rd2ctg $readinfo --tile $tile_pri --tile $tile_alt > $rd2ctg_flt",
+                 "$bin_path/fxtools.py fx_split_mappings $rd2ctg_flt $ctg_pri,$ctg_alt $rd2ctg_pri,$rd2ctg_alt"],
         msg => "filter overlaps in which the reads are different haplotype",
     );
     
@@ -723,7 +722,7 @@ sub run_pbgcpp($) {
             ofiles => [$rd2ctg_flt],
             gfiles => [$rd2ctg_flt],
             mfiles => [$tile_all],
-            cmds => ["$bin_path/fxutils.py fx_purge_rd2ctg $rd2ctg $rd2ctg_flt $tile_all $readinfo $id2name --threads $threads",
+            cmds => ["$bin_path/fxtools.py fx_purge_rd2ctg $rd2ctg $rd2ctg_flt $tile_all $readinfo $id2name --threads $threads",
                      "samtools index -@ $threads $rd2ctg_flt"],
             msg => "filter overlaps in which the reads are different haplotype",
         );

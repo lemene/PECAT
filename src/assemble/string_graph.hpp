@@ -272,6 +272,7 @@ public:
         std::vector<PathEdge*> path;
         int length;
         int nodesize;
+        int score;
     };
 
     LinearPath FindBridgePath(PathEdge* start, int max_length, int max_nodesize);
@@ -310,6 +311,29 @@ public:
     StringGraph * string_graph_ { nullptr };
     
 
+    struct Cluster {
+        std::unordered_set<PathEdge*> edges;
+        std::unordered_set<PathEdge*> nontrivial;;
+        
+        using LPath = std::pair<size_t, std::vector<PathEdge*>>;
+        size_t length {0};
+        size_t Size() const {
+            size_t sz = 0;
+            for (auto e : edges) {
+                sz += e->Length();
+            }
+            return sz;
+        }
+        size_t Length() const { return length; }
+        void FindLongest();
+        void FindLongest0(PathEdge* e, std::unordered_set<PathEdge*> &visited, std::unordered_map<PathEdge*, LPath>& longests);
+        void FindLongest1(PathEdge* e, std::unordered_set<PathEdge*> &visited, std::unordered_map<PathEdge*, LPath>& longests);
+        std::vector<PathEdge*> GetStarts() const;
+        std::vector<PathEdge*> GetEnds() const;
+    };
+
+    std::vector<Cluster> clusters_;
+    std::unordered_map<PathEdge*, size_t> edge2cluster_;
 };
 
 } //namespace fsa {

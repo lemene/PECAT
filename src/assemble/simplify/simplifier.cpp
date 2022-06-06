@@ -36,42 +36,21 @@ bool EdgeScoreSignificantlyGreater(const EdgeScore &a, const EdgeScore &b, int c
 }
 
 Simplifier::~Simplifier() {
-    if (debug_file_ != nullptr) {
-        fclose(debug_file_);
-        debug_file_ = nullptr;
-    }
 }
 
 
 bool Simplifier::ParseParameter(const std::vector<std::string> &param) {
     assert(param.size() >= 1);
-    if (param[0] == "debug") {
-        CreateDebugFile();
-
-    } else {
-        return false;
-    }
-
-    return true;
+    return false;
 }
 
-void Simplifier::CreateDebugFile() {
-    if (debug_file_ != nullptr) {
-        fclose(debug_file_);
-        debug_file_ = nullptr;
-    }
-
-    std::string fname = ori_graph_.Options().output_directory + "/debug_" + name_ + ".log";
-    debug_file_ = fopen(fname.c_str(), "wt");
-}
 
 void Simplifier::Debug(const char* const format, ...) {
-    if (debug_file_ != nullptr) {
+    if (DUMPER.IsWorking()) {
         va_list arglist;
         va_start(arglist, format);
-        vfprintf(debug_file_, format, arglist);
+        DUMPER[name_].Write(format, arglist);
         va_end(arglist);
-        fflush(debug_file_);
     }
 }
 

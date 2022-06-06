@@ -130,28 +130,31 @@ BubbleEdge* BubbleSimplifier::Detect(PathNode* start_node, bool check, int depth
 
     SgNode* end_node = nullptr;
 
-    std::list<PathEdge*> bundle_edges;      // 存放气泡的边
+    std::list<PathEdge*> bundle_edges;     
     std::unordered_map<SgNode*, std::pair<int, int>> visited; // length, score
 
     std::list<SgNode*> local_node_list = graph_.GetEgoNodes(start_node, depth_cutoff);
     std::unordered_set<SgNode*> local_nodes(local_node_list.begin(), local_node_list.end());
     std::unordered_set<SgNode*> tips;
 
+    int depth = 0;
+    double width = 1.0;
+    size_t length = 0;
+
+    bool loop_detect = false;
+    bool meet_error = false;
+    bool spur = false;
+
     visited[start_node] = std::make_pair(0, 0);
     for (size_t i = 0; i < start_node->OutDegree(); ++i) {
         auto e = start_node->OutEdge(i);
         tips.insert(e->OutNode());
         bundle_edges.push_back(static_cast<PathEdge*>(e));
+        length = std::max(length, e->Length());
+        //LOG(INFO)("detect-bubble -- : %s, %zd, %s", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), e->Length(), e->Id().ToString(graph_.asmdata_.GetStringPool()).c_str());
     }
 
 
-    int depth = 0;
-    double width = 1.0;
-    int length = 0;
-
-    bool loop_detect = false;
-    bool meet_error = false;
-    bool spur = false;
 
     do {
         std::unordered_map<SgNode*, SgEdge*> new_visited;     // 最新被访问节点，延后加入visited
@@ -251,11 +254,14 @@ BubbleEdge* BubbleSimplifier::Detect(PathNode* start_node, bool check, int depth
                 visited[i.second->InNode()].second + i.second->Score());
 
             // 更新当前长度
+        //LOG(INFO)("detect-bubble up: %s, %zd, %zd", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), length, visited[i.first].first);
             if (length < visited[i.first].first) {
                 length = visited[i.first].first;
             }
 
         }
+
+       // LOG(INFO)("detect-bubble: %s, %zd", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), length);
 
         depth += 1;
         width = 1.0 * bundle_edges.size() / depth;
@@ -270,6 +276,8 @@ BubbleEdge* BubbleSimplifier::Detect(PathNode* start_node, bool check, int depth
     } while (tips.size() >= 1 && tips.size() < 6 && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff));
 
     if (end_node != nullptr && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff) && (!check || check && IsClearBubble(start_node, end_node,bundle_edges, local_nodes))) {
+        
+        //LOG(INFO)("detect-bubble new: %s, %zd, %zd", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), visited[end_node].first, length);
         return new BubbleEdge(start_node, end_node, bundle_edges, visited[end_node].first, width, visited[end_node].second);
     }
     else {

@@ -114,17 +114,18 @@ class PrjFile(object):
 
     @staticmethod
     def get_contig_reads(tile):
-
+        tiles = tile if type(tile) == list else [tile]
         ctgs = defaultdict(list)
 
-        for line in open_file(tile):
-            its = line.split()
-            s = ctgs[its[0]]
-            r = its[1].split("=")[1].split("~")
-            a = str(int(r[0].split(":")[0]))
-            if len(s) == 0: s.append(a)
-            a = str(int(r[1].split(":")[0]))
-            s.append(a)
+        for tl in tiles:
+            for line in open_file(tl):
+                its = line.split()
+                s = ctgs[its[0]]
+                r = its[1].split("=")[1].split("~")
+                a = str(int(r[0].split(":")[0]))
+                if len(s) == 0: s.append(a)
+                a = str(int(r[1].split(":")[0]))
+                s.append(a)
 
         return ctgs
 
@@ -253,22 +254,20 @@ class PurgeInconsistentInSam(object):
         self.purge = PurgeInconsistent(tile, readsnps)
         #self.n2id = PrjFile.load_id2name(id2name, True)
 
-    def __call__(self, line):
+    def __call__(self, line, name2id=None):
         its = line.split()
-        return self.purge(its[0], its[2])
-        #if its[0] in self.n2id:
-            #return self.purge(self.n2id[its[0]], its[2])
-            
-        #else:
-        #    return False
+        n = name2id[its[0]] if name2id != None else its[0]
+        return self.purge(n, its[2])
 
 class PurgeInconsistentInPaf(object):
     def __init__(self, tile, readsnps):
         self.purge = PurgeInconsistent(tile, readsnps)
 
-    def __call__(self, line):
+    def __call__(self, line, name2id=None):
         its = line.split()
-        return self.purge(its[0], its[5])
+        n = name2id[its[0]] if name2id != None and its[0] in name2id else its[0]
+        return self.purge(n, its[5])
+
 
 
 

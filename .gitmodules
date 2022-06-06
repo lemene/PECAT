@@ -1,6 +1,6 @@
 [submodule "thirdparty/plgd"]
 	path = thirdparty/plgd
-    url = git@github.com:lemene/plgd.git
+    url = https://github.com/lemene/plgd.git
 [submodule "thirdparty/ksw2"]
 	path = thirdparty/ksw2
 	url = https://github.com/lh3/ksw2.git

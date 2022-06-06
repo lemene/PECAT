@@ -1,12 +1,13 @@
 #include "pbridge.hpp"
 
+#include <cassert>
+
 namespace fsa {
 
 
 bool PathBridgeSimplifier::ParseParameters(const std::vector<std::string> &params) { 
-    //assert(params[0] == "bridge");
+    assert(params[0] == "bridge");
 
-    CreateDebugFile();
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
         if (it[0] == "length") {
@@ -19,6 +20,9 @@ bool PathBridgeSimplifier::ParseParameters(const std::vector<std::string> &param
     }
     return true;
 }
+
+
+
 
 // void PathBridgeSimplifier::Running() {
 //     // graph_.MarkRepeatBridge();
@@ -79,8 +83,10 @@ bool PathBridgeSimplifier::ParseParameters(const std::vector<std::string> &param
 //     }
 // }
 
-
 void PathBridgeSimplifier::Running() {
+
+    for (size_t i = 0; i < round; ++i) {
+        Debug("Round %zd\n", i);
 
     auto nodes = graph_.CollectNodes([](SgNode* n) {
         return n->OutDegree() > 1;
@@ -89,6 +95,16 @@ void PathBridgeSimplifier::Running() {
     std::unordered_map<PathEdge*, int> removed;
     LOG(INFO)("Bridging: find condidate nodes: %zd", nodes.size());
 
+    auto is_simple_path = [](const std::vector<PathEdge*> path) {
+        for (auto e : path) {
+            if (e->IsType("simple")) continue;
+
+            return false;
+        }
+        return true;
+    };
+
+    std::unordered_map<PathEdge*, PathGraph::LinearPath> removed_path;
     for (auto &n : nodes) {
 
         Debug("bbb: node: %s\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
@@ -98,9 +114,10 @@ void PathBridgeSimplifier::Running() {
             auto e = n->OutEdge<PathEdge>(i);
             auto p = graph_.FindBridgePath1(e, max_length, max_nodesize);
 
-            if (p.path.size() > 0 && graph_.HasBridgeJunction(p, max_nodesize)) {
-                Debug("bbb: conds: %s\n", p.path.front()->ToString(graph_.GetAsmData().GetStringPool()).c_str());
+            if (p.path.size() > 0 && is_simple_path(p.path) && graph_.HasBridgeJunction(p, max_nodesize)) {
+                CalcPathScore(p);
                 conds.push_back(p);
+                Debug("bbb: conds: %s, (%d, %d, %d)\n", p.path.front()->ToString(graph_.GetAsmData().GetStringPool()).c_str(), p.score, p.nodesize, p.length);
             } else {
                 nontrivial = true;
             }
@@ -109,7 +126,8 @@ void PathBridgeSimplifier::Running() {
         size_t start = 0;
         if (!nontrivial) {
             std::sort(conds.begin(), conds.end(), [](const PathGraph::LinearPath& a, const PathGraph::LinearPath& b) {
-                return a.nodesize > b.nodesize || (a.nodesize == b.nodesize && a.length > b.length);
+                return a.score > b.score || (a.score == b.score && a.nodesize > b.nodesize) || 
+                    (a.score == b.score && a.nodesize == b.nodesize && a.length > b.length);
             });
             start = 1;
         }
@@ -123,15 +141,31 @@ void PathBridgeSimplifier::Running() {
                 Debug("bbb: rm e: %s\n", graph_.ReverseEdge(e)->ToString(graph_.GetAsmData().GetStringPool()).c_str());
                 removed[e] ++;
                 removed[graph_.ReverseEdge(e)]++;
+                removed_path[e] = conds[i];
             }
         }
     }
 
+    size_t removed_count = 0;
     for (auto &i : removed) {
-        Debug("bbb: rz e: %d %s\n", i.second, i.first->ToString(graph_.GetAsmData().GetStringPool()).c_str());
+        Debug("bbb: rz e: %d %s\n", i.second, i.first->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
         if (i.second >= 2) {
-            i.first->Reduce("repeat_bridge", true);
+            auto iter = removed_path.find(i.first);
+            if (iter == removed_path.end()) {
+                iter = removed_path.find(graph_.ReverseEdge(i.first));
+            }
+            assert(iter != removed_path.end());
+            Debug("bbb: rz e - : %d %s\n", iter->second.score, i.first->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
+            
+            if (iter->second.score <= 0) {
+                i.first->Reduce("repeat_bridge", true);
+                removed_count ++;
+
+            }
         }
+    }
+
+    if (removed_count == 0) break;
     }
 }
 
@@ -160,6 +194,22 @@ bool PathBridgeSimplifier::IsAbnormalBridge(const PathGraph::LinearPath& path) {
 
     return TestInExtend(path.path.front()->InNode()->InEdge<PathEdge>(0), path.length*r, path.nodesize*r) &&  
            TestOutExtend(path.path.back()->OutNode()->OutEdge<PathEdge>(0), path.length*r, path.nodesize*r);
+}
+
+
+void PathBridgeSimplifier::CalcPathScore(PathGraph::LinearPath &path) const {
+    const auto& head = path.path.front();
+    assert(head->IsType("simple"));
+    static_cast<SimplePathEdge*>(head)->IdentifySimplePaths(*graph_.string_graph_);
+    auto e0 =  static_cast<SimplePathEdge*>(head)->GetSimplePath(0).front();
+    
+    const auto&tail = path.path.back();
+    assert(tail->IsType("simple"));
+    static_cast<SimplePathEdge*>(tail)->IdentifySimplePaths(*graph_.string_graph_);
+    auto e1 =  static_cast<SimplePathEdge*>(tail)->GetSimplePath(0).back();
+
+    path.score = (e0->subject_ ? 1 : 0) + (e1->subject_ ? 1 : 0);
+
 }
 
 bool PathBridgeSimplifier::TestOutExtend(PathEdge* e, int minlen, int minnode) {
@@ -191,71 +241,6 @@ bool PathBridgeSimplifier::TestInExtend(PathEdge* e, int minlen, int minnode) {
     Debug("test %d >= %d %d >= %d\n", len, minlen, node, minnode);
 
     return len >= minlen && node >= minnode;
-}
-
-
-int PathBridgeSimplifier::IsLowestScoreOutEdge(PathEdge* e) {
-
-    auto rvs = graph_.GetAsmData().GetReadVariants();
-
-    size_t idx = 0;
-    std::vector<std::array<int, 3>> scores;
-    for (size_t i = 0; i < e->InNode()->OutDegree(); ++i) {
-        auto ie = static_cast<PathEdge*>(e->InNode()->OutEdge(i));
-        if ( !ie->IsType("simple")) return 0;
-        auto ps = ie->GetSimplePath(0);
-        scores.push_back(GetEdgeScore(ps.front(), rvs));
-        if (ie == e) {
-            idx = i;
-        }
-    }
-
-    std::array<size_t, 2> stat = {0, 0};
-    for (size_t i = 0; i < scores.size(); ++i) {
-        if (i == idx) continue;
-        if (EdgeScoreSignificantlyGreater(scores[i], scores[idx])) {
-            stat[0] ++;
-        }
-        if (EdgeScoreSignificantlyGreater(scores[idx], scores[i])) {
-            stat[1] ++;
-        }
-    }
-
-    if (stat[0] + 1 == scores.size()) return -1;
-    if (stat[1] + 1 == scores.size()) return 1;
-    return 0;
-}
-
-int PathBridgeSimplifier::IsLowestScoreInEdge(PathEdge* e) {
-
-    auto rvs = graph_.GetAsmData().GetReadVariants();
-
-    size_t idx = 0;
-    std::vector<std::array<int, 3>> scores;
-    for (size_t i = 0; i < e->OutNode()->InDegree(); ++i) {
-        auto ie = static_cast<PathEdge*>(e->OutNode()->InEdge(i));
-        if ( !ie->IsType("simple")) return 0;
-        auto ps = e->GetSimplePath(0);
-        scores.push_back(GetEdgeScore(ps.back(), rvs));
-        if (ie == e) {
-            idx = i;
-        }
-    }
-
-    std::array<size_t, 2> stat = {0, 0};
-    for (size_t i = 0; i < scores.size(); ++i) {
-        if (i == idx) continue;
-        if (EdgeScoreSignificantlyGreater(scores[i], scores[idx])) {
-            stat[0] ++;
-        }
-        if (EdgeScoreSignificantlyGreater(scores[idx], scores[i])) {
-            stat[1] ++;
-        }
-    }
-
-    if (stat[0] + 1 == scores.size()) return -1;
-    if (stat[1] + 1 == scores.size()) return 1;
-    return 0;
 }
 
 

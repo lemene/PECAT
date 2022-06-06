@@ -67,6 +67,7 @@ public:
     std::string ctg_fname_;
     std::string output_directory_ {"."};
     std::string ctgname_fname_ {""};
+    std::string rd2rd {""};
 
     std::string filter_opts_str_ {"l=3000:al=2500:alr=0.6:i=90:aal=5000:aalr=0.5:oh=1000:ohr=0.1:ilid=100"};               //!< overlap filtering options when loading 
     Overlap::Filter filter_opts_ { filter_opts_str_ };

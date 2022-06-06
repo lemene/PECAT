@@ -16,6 +16,7 @@ void PhsOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(cov_opts_str_, "coverage", "coverage options to identify candidate SNPs, \"l=40:h=200:s=0.2\" means that [l,h] to coverage range to identity SNP and s is alternative base freqency cutoff");
     ap.AddNamedOption(phase_opts_str_, "phase_options", "Phasing options");
     ap.AddNamedOption(snp_match_length_, "snp_match_length", "");
+    ap.AddNamedOption(rd2rd, "rd2rd", "overlaps between reads");
     ap.AddNamedOption(loglevel, "loglevel", "the larger the value(0-4), the more detailed the log. ");
     
 }

@@ -6,7 +6,6 @@ namespace fsa {
 bool LowQualitySimplifier::ParseParameters(const std::vector<std::string> &params) {
     //assert(params[0] == "quality");
 
-    CreateDebugFile();
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
         if (it[0] == "s") {

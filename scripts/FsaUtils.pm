@@ -412,7 +412,7 @@ sub job_polish($$$$$$$) {
         gfiles => [$polished],
         mfiles => [],
         cmds => ["minimap2  -t $threads $map_options $contigs $reads > $rd2ctg",
-                 "$bin_path/fxutils.py fx_purge_paf $rd2ctg $wrkdir/contig_tiles$sub $wrkdir/id2name.txt.gz $wrkdir/../4-phase/phased > $rd2ctg_flt",
+                 "$bin_path/fxtools.py fx_purge_paf $rd2ctg $wrkdir/contig_tiles$sub $wrkdir/id2name.txt.gz $wrkdir/../4-phase/phased > $rd2ctg_flt",
                  "racon -t $threads $reads $rd2ctg_flt $contigs > $polished"],
         msg => "polishing contigs$sub, $name",
     );

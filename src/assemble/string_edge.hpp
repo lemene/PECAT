@@ -217,6 +217,7 @@ public:
     ReduceType reduce_type_{ RT_ACTIVE };
     const Overlap* ol_ { nullptr } ;
     std::array<int, 2> score_;
+    bool subject_ { true };
 
 protected:
 };
@@ -289,8 +290,6 @@ public:
 
 protected:
 };
-
-
 
 class SimplePathEdge : public PathEdge {
 public:
@@ -402,8 +401,13 @@ class SemiBubbleEdge : public PathEdge {
 public:
     SemiBubbleEdge(const std::vector<std::vector<PathEdge*>> &paths)
      : PathEdge(paths[0].front()->InNode(), paths[0].back()->OutNode()), paths_(paths) {
-        AttachType("semi-bubble");
+        AttachType("semi");
         id_ = ID(ID_EDGE_TYPE_SEMI_BUBBLE, InNode()->Id(), OutNode()->Id());
+
+        for (auto &p : paths) {
+            auto len = std::accumulate(p.begin(), p.end(), 0, [](int a, const PathEdge* b) { return a + b->Length(); });
+            length_ = std::max(len, length_);
+        }
     }
 
     virtual ~SemiBubbleEdge()  {}    
@@ -473,6 +477,8 @@ public:
             // Merged do nothing
         }
 
+        length_ = std::max(length_, e.length_);
+
     }
 
 
@@ -490,6 +496,8 @@ public:
         AttachType("loop");
 
         id_ = ID(ID_EDGE_TYPE_LOOP, InNode()->Id(),  OutNode()->Id());
+        length_ += std::accumulate(forward.begin(), forward.end(), 0, [](int a, const SgEdge* b) { return a + b->Length(); });
+        length_ += std::accumulate(backward.begin(), backward.end(), 0, [](int a, const SgEdge* b) { return a + b->Length(); });
     }
 
     virtual ~LoopEdge()  {}

@@ -3,9 +3,9 @@
 TARGET_DIR=../build/bin
 
 TARGET_FILES =   ${TARGET_DIR}/FsaUtils.pm 
-TARGET_SCRIPTS = ${TARGET_DIR}/fsa.pl  ${TARGET_DIR}/fxutils.py \
+TARGET_SCRIPTS = ${TARGET_DIR}/pecat.pl  ${TARGET_DIR}/fsa.pl  ${TARGET_DIR}/fxtools.py \
 				 ${TARGET_DIR}/phase_using_whatshap.py ${TARGET_DIR}/misc.py ${TARGET_DIR}/show_hapkmer.R \
-				 ${TARGET_DIR}/prjfile.py ${TARGET_DIR}/fxrun.py ${TARGET_DIR}/fxbug.py
+				 ${TARGET_DIR}/prjfile.py ${TARGET_DIR}/fxbug.py
 
 scripts: ${TARGET_SCRIPTS} ${TARGET_FILES}
 

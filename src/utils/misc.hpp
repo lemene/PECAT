@@ -1,6 +1,8 @@
 #pragma once
 
+#include <vector>
 #include <sstream>
+#include <unordered_map>
 
 namespace fsa {
 
@@ -28,5 +30,24 @@ public:
 
 };
 
+
+struct PrjFile {
+    class ContigTiles {
+    public:
+        ContigTiles(class StringPool &sp) : string_pool_(sp) {}
+
+        void Load(const std::string &fname);
+        const std::vector<int>& GetTiles(int& ctg) {
+            auto iter = tiles_.find(ctg);
+            return iter != tiles_.end() ? iter->second : empty_;
+        }
+
+        const std::unordered_map<int, std::vector<int>> & GetTiles() const { return tiles_; }
+    protected:
+        std::unordered_map<int, std::vector<int>> tiles_;
+        std::vector<int> empty_;
+        class StringPool &string_pool_;
+    };
+};
 
 }

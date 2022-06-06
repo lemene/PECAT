@@ -122,10 +122,29 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
                         graph_.GetAsmData().QueryNameById(ve->OutNode()->ReadId()).c_str());
                     abandoned.insert(e);
                     abandoned.insert(graph_.ReverseEdge(e));
+                    e->subject_ = false;
+                    graph_.ReverseEdge(e)->subject_ = false;
                     //break;
                 }
             }
         }
+
+        // if (out_bests.size() == 1 || (out_bests.size() >= 2 && EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[1].s))) {
+        //     out_bests[0].e->subject_ = true;
+        //     graph_.ReverseEdge(out_bests[0].e)->subject_ = true;
+            
+        //     auto s = out_bests[0].s;
+        //     auto e = out_bests[0].e;
+        //     Debug("cand subject: %s -> %s, %d %d %d, (/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+        //         graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests.size());
+        //     if (out_bests.size()>=2) {
+        //         auto s = out_bests[1].s;
+        //         auto e = out_bests[1].e;
+        //         Debug("cand subject2: %s -> %s, %d %d %d, (/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+        //             graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests.size());
+        //     }
+ 
+        // }
 
         if (EdgeScoreSignificantlyGreater(out_bests[0].s, EdgeScore({0, 0, 0}))) {
             ok_out_nodes.insert(graph_.ReverseNode(out_bests[0].e->InNode()));
