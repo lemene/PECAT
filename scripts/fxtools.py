@@ -1209,5 +1209,58 @@ def fx_gen_dipref(argv):
         parser.print_usage()
         exit(-1)
 
+def fx_split_shasta(argv):
+    parser = argparse.ArgumentParser("Generate a primary/alternate-style contigs from shasta contigs.")
+    parser.add_argument("shasta", help="the shasta conitgs", type=str)
+    parser.add_argument("prictg", help="primmary contigs", type=str)
+    parser.add_argument("altctg", help="alternate contigs", type=str)
+    parser.add_argument("--min-length", help="minimum length of contigs", type=int)
+
+    try:
+        args = parser.parse_args(argv)
+
+        from Bio import SeqIO
+        assert args.shasta.endswith(".fasta")
+        itype = "fasta"
+
+        pfile = open(args.prictg, "w")
+        afile = open(args.altctg, "w")
+
+        chains = defaultdict(list)
+
+        for rec in SeqIO.parse(args.shasta, itype):
+
+            if rec.name.startswith("PR"):
+                its = rec.name.split(".")
+                t, bc, p, _, h = its[0], int(its[1]), int(its[2]), its[3], int(its[4])
+                chains[bc].append((t, p, h, rec))
+            elif rec.name.startswith("UR"):
+                its = rec.name.split(".")
+                t, bc, p = its[0], int(its[1]), int(its[2])
+                chains[bc].append((t, p, 0, rec))
+            else:
+                if len(rec.seq) >= args.min_length:
+                    pfile.write(">%s\n%s\n" % (rec.name, rec.seq))
+
+
+        for bc, info in chains.items():
+            info.sort(key=lambda x: (x[1], x[2]))
+            seq = []
+            for i in info:
+                if i[2] == 0:
+                    seq.append(str(i[3].seq))
+                else:
+                    if len(i[3].seq) >= args.min_length:
+                        afile.write(">%s\n%s\n" % (i[3].name, i[3].seq))
+            sseq = "".join(seq)
+            if len(sseq) >= args.min_length:
+                pfile.write(">BC.%d\n%s\n" % (bc, sseq))
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+        exit(-1)
+
 if __name__ == '__main__':
     script_entry(sys.argv, locals())
