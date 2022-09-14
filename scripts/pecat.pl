@@ -614,12 +614,11 @@ sub run_polish($) {
 
     my $job_flt = $self->newjob(
         name => "${name}_filter",
-        ifiles => [$rd2ctg],
+        ifiles => [$rd2ctg, $tile_pri, $tile_alt],
         ofiles => [$rd2ctg_pri, $rd2ctg_alt],
-        gfiles => [$rd2ctg_flt, $tile_all, $rd2ctg_pri, $rd2ctg_alt],
-        mfiles => [$tile_all, $rd2ctg_flt],
-        cmds => ["cat $tile_pri $tile_alt  > $tile_all",
-                 "$bin_path/fxtools.py fx_purge_overlaps $rd2ctg $tile_all $readinfo > $rd2ctg_flt",
+        gfiles => [$rd2ctg_flt, $rd2ctg_pri, $rd2ctg_alt],
+        mfiles => [$rd2ctg_flt],
+        cmds => ["$bin_path/fxtools.py fx_purge_overlaps $rd2ctg $readinfo --tile $tile_pri --tile $tile_alt > $rd2ctg_flt",
                  "$bin_path/fxtools.py fx_split_mappings $rd2ctg_flt $ctg_pri,$ctg_alt $rd2ctg_pri,$rd2ctg_alt"],
         msg => "filter overlaps in which the reads are different haplotype",
     );
@@ -816,10 +815,11 @@ my @defaultConfig = (
     ["align_filter_options", "--filter0=l=2000:aal=4000:oh=3000:ohr=0.3 --task=extend --filter1=oh=100:ohr=0.01", 0],
     ["asm1_assemble_options", "", 0],
     ["phase_method", "", 0],
-    ["phase_rd2ctg_options", "-x map-pb -c -p 0.5 -r 1000", 0],
     ["phase_use_reads", "1", 0],
+    ["phase_rd2ctg_options", "-x map-pb -c -p 0.5 -r 1000", 0],
     ["phase_phase_options", "", 0],
     ["asm2_assemble_options", "", 0],
+    ["polish_use_reads", "1", 0],
     ["polish_map_options", "-x map-pb", 0], #  --secondary=no
     ["polish_filter_options", "--filter0 oh=1000:ohr=0.1", 0],
     ["polish_cns_options", "", 0],

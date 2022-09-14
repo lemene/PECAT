@@ -26,7 +26,7 @@ protected:
     bool ExtendRight(const char* qseq, size_t qsize, const char* tseq, size_t tsize, size_t qstart, size_t tstart, AlignResult &result);
 protected:
     size_t block_size_ { 1000 };
-    size_t match_count_ { 8 };
+    size_t match_count_ { 6 };
     double block_error_ { 0.50 };
 };
 
