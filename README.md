@@ -21,6 +21,7 @@ $ make
 
 After installation, all the executable files can be found in `PECAT/build/bin`. 
 
+The executale files can be packaged with `bash scripts\package.sh`. `pecat_xxx_yyy_.tar.gz` is created in `PECAT/build`.
 
 # Quick Start
 *Before running PECAT please do not forget to add the paths of minimap2, racon and perl to the system PATH.*

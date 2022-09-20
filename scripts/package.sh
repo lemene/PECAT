@@ -1,3 +1,7 @@
+#!/bin/bash
+
+# compile the project
+cd src && make && cd ..
 
 date_str=`date +%Y%m%d`
 bin_path=build/bin
@@ -11,5 +15,4 @@ echo "Version: $git_version" > $bin_path/VERSION
 echo "Commit Time: $commit_time" >> $bin_path/VERSION
 echo "Build Time: $current_time" >> $bin_path/VERSION
 
-cd src && make && cd ..
-tar --transform 's,^,fsa/,S' -czf build/fsa_${date_str}.tar.gz $bin_path 
+tar --transform 's,^,PECAT/,S' -czf build/pecat_0.0.1_${git_version:0:7}.tar.gz $bin_path 
