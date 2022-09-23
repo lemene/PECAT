@@ -71,7 +71,7 @@ protected:
         };
         ~Worker() {  }
         bool Correct(int id, const std::unordered_map<int, const Overlap*>& g, bool uc=true);
-        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, const std::vector<const Overlap*> & cands);
+        void CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>>& cands);
         bool IsCoverageEnough(const std::vector<int> &cov);
         bool ExactFilter(const Alignment& r);
         bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);

@@ -3,7 +3,7 @@
 #include <iostream>
 #include <atomic>
 #include "./utils/logger.hpp"
-#include "utility.hpp"
+#include "../utility.hpp"
 
 namespace fsa {
 ReadCorrect::ReadCorrect() {
@@ -113,7 +113,7 @@ void ReadCorrect::LoadReads() {
         ids.insert(o.b_.id);
     }
 
-    read_store_.Load(rread_fname_, "", true, ids);
+    read_store_.Load(rread_fname_, "", false, ids);
 }
 
 void ReadCorrect::LoadOverlaps(const std::string &fname) {
@@ -227,7 +227,7 @@ void ReadCorrect::Correct() {
                 worker.Clear();
             }
 
-            if (oss_cread.tellp() > flush_block) {
+            if (oss_cread.tellp() > (int)flush_block) {
                 save_oss(oss_cread, oss_scores);
             }
         }
@@ -325,7 +325,7 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_
     
     if (r.Identity() < owner_.min_identity_) return true;
 
-    if (align_size >= owner_.filter1_.min_accept_aligned_length) return false;
+    if (align_size >= (size_t)owner_.filter1_.min_accept_aligned_length) return false;
 
     const double oh_rate = owner_.filter1_.max_overhang_rate;
 
@@ -344,7 +344,7 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r) {
 
     if (r.Identity() < owner_.min_identity_) return true;
 
-    if (r.AlignSize() >= owner_.filter1_.min_accept_aligned_length) return false;
+    if (r.AlignSize() >= (size_t)owner_.filter1_.min_accept_aligned_length) return false;
 
     const double oh_rate = owner_.filter1_.max_overhang_rate;
 
@@ -394,10 +394,6 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
          coverage[i] += coverage[i-1];
      }
 
-     for (size_t i=0; i<coverage.size(); ++i) {
-         DEBUG_printf("coverage %zd %d\n", i, coverage[i]);
-     }
-
     std::vector<std::array<size_t, 2>> ranges;
     int start = -1;
     for (size_t i=0; i<coverage.size(); i++) {
@@ -431,12 +427,12 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     const DnaSeq& target = owner_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)owner_.filter0_.min_length); 
 
-    std::vector<const Overlap*> cands(g.size());
-    std::transform(g.begin(), g.end(), cands.begin(), [](const std::pair<int, const Overlap*>& a) { return a.second; });
+    std::vector<std::pair<const Overlap*, double>> cands(g.size());
+    std::transform(g.begin(), g.end(), cands.begin(), [](const std::pair<int, const Overlap*>& a) { return std::make_pair(a.second, 0.0); });
     CalculateWeight(id, target, cands);
 
-    std::make_heap(cands.begin(), cands.end(), [](const Overlap* a, const Overlap* b) {
-       return a->attached < b->attached;    // CAUTION, calulated by CalculateWeight
+    std::make_heap(cands.begin(), cands.end(), [](const std::pair<const Overlap*, double>& a, const std::pair<const Overlap*, double>& b) {
+       return a.second < b.second;    // CAUTION, calulated by CalculateWeight
     });
     
     size_t heap_size = cands.size();
@@ -447,18 +443,18 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     std::vector<Alignment> flt_als;    // 
     int num_consecu_fail =  0;
     while (heap_size > 0) {
-        auto ol = cands[0];
+        auto ol = cands[0].first;
         const auto& tread = ol->GetRead(id);
         const auto& qread = ol->GetOtherRead(id);
         
         Alignment al(tread.id, qread.id);
 
         auto r = GetAlignment(id, ol, uc, al);
-        DEBUG_printf("alignment: %d, %s(%d %d %d) <-> %s(%d %d %d)\n", r, owner_.read_store_.QueryNameById(al.qid).c_str(), al.query_start, al.query_end, al.QuerySize(), 
-            owner_.read_store_.QueryNameById(al.tid).c_str(), al.target_start, al.target_end, al.TargetSize());
+        DEBUG_printf("alignment: r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f\n", r,
+            al.query_start, al.query_end, al.QuerySize(), ol->SameDirect(),
+            al.target_start, al.target_end, al.TargetSize(), al.distance, al.Identity());
+        
         if (r && !ExactFilter(al)) { 
-            DEBUG_printf("alignment: ok, %s(%d %d %d) <-> %s(%d %d %d)\n", owner_.read_store_.QueryNameById(al.qid).c_str(), al.query_start, al.query_end, al.QuerySize(), 
-            owner_.read_store_.QueryNameById(al.tid).c_str(), al.target_start, al.target_end, al.TargetSize());
             stat_info.aligns[0]++;
             first_als.push_back(al);
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
@@ -472,21 +468,15 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
 
         if (owner_.cands_opts_.IsEndCondition(coverage, first_als.size(), num_consecu_fail)) break;
         
-        std::pop_heap(cands.begin(), cands.begin()+heap_size, [](const Overlap* a, const Overlap* b) {
-            return a->attached < b->attached;     // CAUTION, calulated by CalculateWeight
+        std::pop_heap(cands.begin(), cands.begin()+heap_size, [](std::pair<const Overlap*, double>& a, std::pair<const Overlap*, double>& b) {
+            return a.second < b.second;    // CAUTION, calulated by CalculateWeight
         });
         heap_size--;
     }
 
-    int stub = 500;
-    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.min_coverage_);
-    DEBUG_printf("range: %d, %d\n", range[0], range[1]);
-    for (auto& al : first_als) {
-        DEBUG_printf("range{}: %d, %d\n", al.target_start, al.target_end);
-        
-    }
-        
-    if (range[0] < range[1] && range[1] - range[0] + 2*stub >= owner_.filter0_.min_length) {
+    size_t stub = 500;
+    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.min_coverage_); 
+    if (range[0] < range[1] && range[1] - range[0] + 2*stub >= (size_t)owner_.filter0_.min_length) {
         assert(range[0] >= stub && range[1] + stub <= target.Size());
         range[0] -= stub;
         range[1] += stub;
@@ -517,16 +507,17 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     return false;
 }
 
-void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, const std::vector<const Overlap*> & cands) {
+void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>>& cands) {
     std::vector<double> cand_cov_wts (target.Size()+1);
 
     double wtsum = 0.0;
-    for (auto o : cands) {
+    for (auto &it : cands) {
+        auto o = it.first;
         auto &t = o->GetRead(id);
         auto &q = o->GetOtherRead(id);
 
-        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_;
-        double olwt = o->identity_;
+        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_ / 100;
+        double olwt = o->identity_ / 100;
 
         auto mr = o->MappingTo<2>(t, {0, q.len});
         auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
@@ -551,12 +542,13 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, con
         cand_cov_wts[i] = wtsum - cand_cov_wts[i];
     }
 
-    std::for_each(cands.begin(), cands.end(), [this, id, &cand_cov_wts, wtsum](const Overlap* o) {
+    std::for_each(cands.begin(), cands.end(), [this, id, &cand_cov_wts, wtsum](std::pair<const Overlap*, double>& it) {
+        auto o = it.first;
         auto &t = o->GetRead(id);
         auto &q = o->GetOtherRead(id);
 
-        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_;
-        double olwt = o->identity_;
+        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_ / 100;
+        double olwt = o->identity_ / 100;
 
         auto mr = o->MappingTo<2>(t, {0, q.len});
         auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
@@ -568,7 +560,7 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, con
                     std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
                     std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
         
-        o->attached = 1000*wt;
+        it.second = wt;
     });
 }
 
