@@ -14,7 +14,15 @@ PECAT is a phased error correction and assembly tool for long reads. It includes
 ### Build from source codes
 
 ```shell
-$ git clone https://github.com/lemene/PECAT.git
+$ git clone --recursive https://github.com/lemene/PECAT.git
+$ cd PECAT
+$ make
+```
+or
+```shell
+$ git clone  https://github.com/lemene/PECAT.git
+$ git submodule init
+$ git submodule update
 $ cd PECAT
 $ make
 ```
