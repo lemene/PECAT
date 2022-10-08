@@ -21,9 +21,9 @@ $ make
 or
 ```shell
 $ git clone  https://github.com/lemene/PECAT.git
+$ cd PECAT
 $ git submodule init
 $ git submodule update
-$ cd PECAT
 $ make
 ```
 
