@@ -1,6 +1,6 @@
 
-BUILD_BIN_DIR = ../build/bin
-BUILD_OBJ_DIR = ../build/obj
+BUILD_BIN_DIR = ./build/bin
+BUILD_OBJ_DIR = ./build/obj
 BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 
 

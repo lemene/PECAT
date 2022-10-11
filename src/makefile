@@ -1,6 +1,6 @@
 
-BUILD_BIN_DIR = ./build/bin
-BUILD_OBJ_DIR = ./build/obj
+BUILD_BIN_DIR = ../build/bin
+BUILD_OBJ_DIR = ../build/obj
 BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
