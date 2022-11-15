@@ -153,6 +153,7 @@ polish_filter_options= --filter0 oh=1000:ohr=0.1
 polish_map_options = -x map-ont -k19 -w10
 polish_cns_options =
 ```
+**Note:** For large genomes such as cattle, we strongly suggest adding the parameter `-f 0.005` or `-f 0.002` to `corr_rd2rd_options`, `corr0_rd2rd_options`, `corr1_rd2rd_options` and `align_rd2rd_options`. The parameter is passed to `minimap2`, which means to filter out top 0.005 or 0.002 fraction of repetitive minimizers. It outputs less candidate overlaps, which reduces disk usage and speeds up error correction step and assembling step.
 
 ### Step 2: Correct raw reads
 Correct the raw noisy reads using the following command:
