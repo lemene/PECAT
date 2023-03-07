@@ -72,7 +72,7 @@ else
 	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
 endif
 
-LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a $
+LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a 
 
 
 obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
