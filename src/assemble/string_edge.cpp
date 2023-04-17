@@ -128,6 +128,47 @@ std::string BubbleEdge::ToString(const StringPool &sp) const {
     return oss.str();
 }
 
+std::vector<std::vector<SgEdge*>> BubbleEdge::IdentifyAllPath(SgNode* src, SgNode *dst, const std::unordered_set<const SgEdge*> &edges) const {
+    std::vector<std::vector<SgEdge*>> paths;
+
+    DUMPER["edge"]("IdentifyTwoPath: src=%d, dst=%d\n", src->Id().Value(0), dst->Id().Value(0));
+    std::vector<SgEdge*> stack;
+    for (size_t i = 0; i < src->OutDegree(); ++i)  {
+        auto e = src->OutEdge(i);
+        if (edges.find(e) != edges.end()) {
+            stack.push_back(e);
+            std::vector<size_t> index {0};
+
+            while (stack.size() > 0)  {
+
+                if (stack.back()->OutNode() == dst) {
+                    paths.push_back(stack);
+
+                    stack.pop_back();
+                    index.pop_back();
+                } else {
+                    size_t &idx = index.back();
+                    if (idx < stack.back()->OutNode()->OutDegree()) {
+                        auto next = stack.back()->OutNode()->OutEdge(idx);
+                        idx ++;
+
+                        if (edges.find(next) != edges.end() && std::find(stack.begin(), stack.end(), next) == stack.end()) {
+                            stack.push_back(next);
+                            index.push_back(0);
+                        }
+                    } else {
+                        stack.pop_back();
+                        index.pop_back();
+                    }
+                }
+
+            }
+        }
+
+    }
+    DUMPER["edge"]("IdentifyTwoPath: pathsize=%zd\n", paths.size());
+    return paths;
+}
 
 void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
     if (string_edges_.size() == 0) {
@@ -142,8 +183,10 @@ void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
         //     LOG(INFO)("MaxFlow doable %s", e->Id().ToString(string_graph.GetReadStore().GetStringPool()).c_str());
         // }
         
-        std::vector<std::vector<SgEdge*>> subpaths = SgGraph::MaximumFlow(in_node_, out_node_, doable);
+        //std::vector<std::vector<SgEdge*>> subpaths = SgGraph::MaximumFlow(in_node_, out_node_, doable);
         // LOG(INFO)("MaxFlow %zd, %zd", subpaths.size(), doable.size());
+        std::vector<std::vector<SgEdge*>> subpaths = IdentifyAllPath(in_node_, out_node_, doable);
+        std::vector<std::unordered_set<SgEdge*>> path_edges;
         for (auto & subpath : subpaths) {
             std::list<BaseEdge*> s;
             for (auto & e : subpath) {
@@ -153,7 +196,35 @@ void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
                 auto sp0 = pe->GetSimplePath(0);
                 s.insert(s.end(), sp0.begin(), sp0.end());
             }
+            path_edges.push_back(std::unordered_set<SgEdge*>(s.begin(), s.end()));
             string_edges_.push_back(s);
+        }
+
+        if (subpaths.size() > 2) {
+            auto pair_score = [](const std::unordered_set<SgEdge*>& a, const std::unordered_set<SgEdge*>& b) {
+                size_t count = 0;
+                for (auto i : a) {
+                    if (b.find(i) == b.end()) count++;
+                }
+                for (auto i : b) {
+                    if (a.find(i) == a.end()) count++;
+                }
+                return count;
+            };
+            std::array<size_t, 2> best_pair = {0, 0};
+            int best_score = -1;
+            for (size_t i = 0; i < path_edges.size(); ++i) {
+                for (size_t j = i + 1; j < path_edges.size(); ++j) {
+                    int s = pair_score(path_edges[i], path_edges[j]);
+                    if (s > best_score) {
+                        best_score = s;
+                        best_pair = {i, j};
+                    }
+                }
+            }
+            DUMPER["edge"]("IdentifySimplePaths: pairsize = %zd, %zd\n", path_edges[best_pair[0]].size(), path_edges[best_pair[0]].size());
+
+            string_edges_ = {string_edges_[best_pair[0]], string_edges_[best_pair[1]]};
         }
 
         if (string_edges_.size() > 0) {
@@ -306,7 +377,8 @@ SemiBubbleEdge* SemiBubbleEdge::Reverse(PathGraph &graph) {
 
 
 void SemiBubbleEdge::IdentifySimplePaths(StringGraph& sg) {
-    if (string_edges_.size() == 0) {
+    if (string_edges_.size() != paths_.size()) {
+        string_edges_.clear();
         std::list<std::list<BaseEdge*>> others;
         for (const auto &path : paths_) {
             std::list<BaseEdge*> edges; 
@@ -324,6 +396,7 @@ void SemiBubbleEdge::IdentifySimplePaths(StringGraph& sg) {
         }
 
         assert(string_edges_.size() >= 2);
+        assert(string_edges_.size() == paths_.size());
     }
 }
 

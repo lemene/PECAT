@@ -73,7 +73,8 @@ void OverlapRefine::Running() {
             while (line_in_block.GetLine(line)) {
                 fsa::Overlap ol;
                 int replen = 0;
-                if (fromLine(line, ol, ni, replen)) {
+                auto r = fromLine(line, ol, ni, replen); 
+                if (r > 0) {
                     if (filter0_.Valid(ol, replen)) {
                         (this->*task)(ol, ni);
 

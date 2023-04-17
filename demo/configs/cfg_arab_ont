@@ -2,30 +2,44 @@ project= arab
 reads= $READS
 genome_size= 130000000
 threads=48
-cleanup=0
-compress=0
+cleanup=1
 grid=local
+
 prep_min_length=3000
 prep_output_coverage=80
-corr_iterate_number=2
+
+corr_iterate_number=1
 corr_block_size=4000000000
 corr_filter_options=--filter0=l=5000:al=2500:alr=0.5:aal=5000:oh=3000:ohr=0.3
-corr0_correct_options=--score=weight:lc=16 --aligner edlib:bs=1000:mc=6  --min_coverage 2
-corr_correct_options=--score=weight:lc=10 --aligner edlib:bs=1000:mc=6   --min_coverage 4
-corr_rd2rd_options=-x ava-ont -f 0.001
-corr1_rd2rd_options=-x ava-ont -w30 -k19 -f 0.001
+corr_correct_options=--score=weight:lc=10 --aligner edlib --filter1 oh=1000:ohr=0.01
+corr_rd2rd_options=-x ava-ont -k19
 corr_output_coverage=80
+
 align_block_size=4000000000
-align_rd2rd_options=-X -g3000 -w30 -k19 -m100 -r500
+align_rd2rd_options=-X -g3000 -w30 -k19 -m100 -r500 -f 0.001
 align_filter_options=--filter0=l=5000:aal=6000:aalr=0.5:oh=3000:ohr=0.3 --task=extend --filter1=oh=300:ohr=0.03
 asm1_assemble_options=--max_trivial_length 10000
-phase_method=0
+
+phase_method=2
 phase_rd2ctg_options=-x map-ont -c -p 0.5 -r 1000
-phase_phase_options= --coverage lc=20 --phase_options icr=0.2:icc=6:sc=10
+phase_phase_options= --coverage lc=30 --phase_options icr=0.1:icc=8:sc=10
 phase_use_reads=1
 phase_filter_options= --threshold=1000
-asm2_assemble_options=--max_trivial_length 10000 --reducer0 "best:cmp=6|phase:sc=6"
-polish_map_options = -x map-ont -k19 -w10
+
+phase_clair3_command = singularity exec --containall -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
+phase_clair3_options=--platform=ont --model_path=/opt/models/ont_guppy5/  --include_all_ctgs
+phase_clair3_rd2ctg_options=-x map-ont -c -p 0.5 -r 1000
+phase_clair3_phase_options= --coverage lc=30 --phase_options icr=0.1:icc=6:sc=10 --filter i=70
+phase_clair3_use_reads=0
+phase_clair3_filter_options= --threshold=2500 --rate 0.05
+
+asm2_assemble_options=--max_trivial_length 10000 --contig_format dual,prialt
+
+polish_map_options = -x map-ont -k19 -w10 -I 10g
 polish_use_reads=0
 polish_cns_options =
 
+polish_medaka = 1
+polish_medaka_command =singularity exec --containall -B `pwd -P`:`pwd -P` medaka_1.7.2--aa54076.sif medaka
+polish_medaka_map_options = -x map-ont  -k19 -w10 -I 10g
+polish_medaka_cns_options = --model r941_prom_high_g4011

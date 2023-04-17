@@ -106,7 +106,7 @@ void ContigLinkStore::LoadR2cFile(const std::string &fname) {
         for (size_t i=1; i<cov.size(); ++i) {
             cov[i] += cov[i-1];
         }
-        double ave_cov = std::accumulate(cov.begin(), cov.end(), 0) * 1.0 / (cov.size() -1);
+        // double ave_cov = std::accumulate(cov.begin(), cov.end(), 0) * 1.0 / (cov.size() -1);
     }
 }
 
@@ -147,7 +147,7 @@ void ContigLinkStore::AnalyzeSupport() {
 
 ContigLink::Loc ContigLinkStore::Location(const ContigLink& bunch) const {
     if (bunch.best_c2c != nullptr) {
-        printf("contained :%d\n", bunch.best_c2c->Location(ctg2ctg_max_overhang_));
+        printf("contained :%d\n", (int)bunch.best_c2c->Location(ctg2ctg_max_overhang_));
         return bunch.best_c2c->Location(ctg2ctg_max_overhang_);
     } else if (bunch.BestC2r2c() != nullptr) {
         return bunch.BestC2r2c()->Location(read2ctg_max_overhang_);

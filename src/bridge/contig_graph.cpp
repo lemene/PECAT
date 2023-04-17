@@ -227,8 +227,6 @@ void ContigGraph::Transitive() {
             lens[e->out_node_->id_] = e->Length();
 		}
 
-	 	int max_len = out_edges.back()->Length()  + FUZZ;
-
 		for (auto e : out_edges) {
 			ContigNode* w = e->out_node_;
 			if (w->mark_ == 'I') {
@@ -263,7 +261,7 @@ void ContigGraph::Transitive() {
                 //}
 			}				
 			for (auto e2 : w->out_edges_) {
-				if (e2->Length() < FUZZ) {
+				if (e2->Length() < (size_t)FUZZ) {
 					if (e2->out_node_->mark_ == 'I') {
 						e2->out_node_->mark_ = 'E';
 					}

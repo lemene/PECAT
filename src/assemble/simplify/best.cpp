@@ -96,7 +96,6 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
     
     for (auto &i : cands_) {
         auto &out_bests = i[0];
-        auto &in_bests = i[1];
 
         if (out_bests.size() > 0) {
 
@@ -107,6 +106,7 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
                 Debug("cand best type: %s -> %s, %d %d %d, (%zd/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
                     graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], i, out_bests.size());
  
+                //if (!EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[i].s) && !EdgeScoreSignificantlyGreater2(out_bests[0], out_bests[i])) {
                 if (!EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[i].s)) {
                     Debug("cand best type ok: %s -> %s, %d %d %d, | %zd %d\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
                         graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests[i].e, counts[out_bests[i].e]);
@@ -128,23 +128,6 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
                 }
             }
         }
-
-        // if (out_bests.size() == 1 || (out_bests.size() >= 2 && EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[1].s))) {
-        //     out_bests[0].e->subject_ = true;
-        //     graph_.ReverseEdge(out_bests[0].e)->subject_ = true;
-            
-        //     auto s = out_bests[0].s;
-        //     auto e = out_bests[0].e;
-        //     Debug("cand subject: %s -> %s, %d %d %d, (/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-        //         graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests.size());
-        //     if (out_bests.size()>=2) {
-        //         auto s = out_bests[1].s;
-        //         auto e = out_bests[1].e;
-        //         Debug("cand subject2: %s -> %s, %d %d %d, (/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-        //             graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests.size());
-        //     }
- 
-        // }
 
         if (EdgeScoreSignificantlyGreater(out_bests[0].s, EdgeScore({0, 0, 0}))) {
             ok_out_nodes.insert(graph_.ReverseNode(out_bests[0].e->InNode()));

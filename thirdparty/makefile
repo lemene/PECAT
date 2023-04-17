@@ -1,4 +1,4 @@
-.PHONY: thirdparty pigz 
+.PHONY: thirdparty pigz pldg libksw2 mbio
 
 
 
@@ -8,7 +8,7 @@ TARGET_DIR=../build/bin
 PLGD_PM = $(wildcard ./plgd/Plgd/*.pm) $(wildcard ./plgd/Plgd/Grid/*.pm)  $(wildcard ./plgd/Plgd/Job/*.pm)
 TARGET_PLGD_PM = $(patsubst ./plgd/Plgd/%, ${TARGET_DIR}/Plgd/%, $(PLGD_PM))
 
-thirdparty: pigz pldg libksw2
+thirdparty: pigz pldg libksw2 mbio
 
 pldg: ${TARGET_PLGD_PM}
 	echo ${TARGET_PLGD_PM}
@@ -41,6 +41,10 @@ ${TARGET_DIR}/libksw2.a: ./ksw2/libksw2.a
 	cd ksw2 && make
 	ar -r $@ ./ksw2/*.o
 	
+mbio:
+	cp -rf ./mbio/mbio ${TARGET_DIR}/mbio 
+	cp -rf  ./mbio/scripts ${TARGET_DIR}/scripts
+
 clean:
 	rm -rf ${TARGET_DIR}/Plgd 
 	rm -f ${TARGET_DIR}/pigz

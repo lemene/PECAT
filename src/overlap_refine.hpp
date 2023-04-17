@@ -44,7 +44,7 @@ protected:
     std::string aligner_opts_ {"diff:s=500:e=0.1"};
 
     ReadStore rd_store_;
-    bool (*fromLine)(const std::string& line, Overlap& ol, StringPool::NameId &ni, int &replen);
+    int (*fromLine)(const std::string& line, Overlap& ol, StringPool::NameId &ni, int &replen);
     std::string (*toLine)(const Overlap &ol, const StringPool::NameId& ni);
 };
 

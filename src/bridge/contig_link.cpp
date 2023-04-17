@@ -356,7 +356,6 @@ void ContigLink::AnalyzeLinks(int read2ctg_max_overhang, int ctg2ctg_max_overhan
         });
     }
 
-    printf("best_c2c %zd\n", best_c2c);
 }
 
 void ContigLink::AnalyzeC2cLinks() {

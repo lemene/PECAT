@@ -6,14 +6,83 @@
 #include <array>
 #include <vector>
 #include "align/alignment.hpp"
+#include "../utils/logger.hpp"
 
 
 namespace fsa {
 
+class BitSet {
+public:
+    static const size_t block_size = 256;
+
+    void reset() { 
+        for (auto &b : bits) b.reset();
+    }
+    void set(size_t i, bool torf) {
+        //LOG(INFO)("SSET %d %d", i, torf);
+        while (i >= block_size*bits.size()) {
+            bits.push_back(std::bitset<block_size>());
+        }
+        auto ib = i / block_size;
+        auto off = i % block_size;
+        //LOG(INFO)("off %d %d, %zd", ib, off, bits.size());
+        bits[ib].set(off, torf);
+        //LOG(INFO)("cSET");
+    }
+
+    bool operator [](size_t i) const {
+        //LOG(INFO)("S[]S");
+        if (i < block_size*bits.size()) {
+            auto ib = i / block_size;
+            auto off = i % block_size;
+            return bits[ib][off];
+        } else {
+            return false;
+        }
+        //LOG(INFO)("S[]C");
+    }
+    BitSet operator &(const BitSet& b) const {
+        //LOG(INFO)("SSS");
+        BitSet c;
+        if (bits.size() >= b.bits.size()) {
+            c.bits = b.bits;
+            for (size_t i = 0; i < c.bits.size(); ++i) {
+                c.bits[i] &= bits[i];
+            }
+        } else {
+            c.bits = bits;
+            for (size_t i = 0; i < c.bits.size(); ++i) {
+                c.bits[i] &= b.bits[i];
+            }
+        }
+        
+        //LOG(INFO)("ccc");
+        return c;
+    }
+    size_t count() const {
+        size_t cnt = 0;
+        for (const auto &b : bits) {
+            cnt += b.count();
+        }
+        return cnt;
+    }
+    std::string to_string() const {
+        std::string r;
+        for (const auto &b : bits) {
+            r += b.to_string();
+        }
+        return r;
+    }
+
+    std::vector<std::bitset<block_size>> bits;
+};
+
+//typedef std::bitset<500> MyBitSet;
+typedef BitSet MyBitSet;
 
 class Corrector {
 public:
-    static const int MAX_COV = 440;
+    static const int MAX_COV = 500;
     
     struct Loc {
         static Loc Invalid() { return { -1, 0, -1}; }
@@ -55,7 +124,7 @@ public:
         
         Loc prev {-1, -1, -1};
         size_t count {0};
-        std::bitset<MAX_COV> seqs;
+        MyBitSet seqs;
         //double w;       // weight
     };
 
@@ -76,7 +145,6 @@ public:
 
     
     virtual void SetParameter(const std::string &name, const std::string &v) = 0;
-    virtual void SetParameter(const std::string &name, int v) = 0;
     virtual void SetParameter(const std::string &name, double v) = 0;
 
     virtual void Build(const DnaSeq& target, const std::array<size_t,2> &range, const std::vector<Alignment> &aligned) = 0;

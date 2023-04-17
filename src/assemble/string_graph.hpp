@@ -13,6 +13,7 @@
 #include "../overlap.hpp"
 #include "asm_dataset.hpp"
 #include "string_node.hpp"
+#include "graph/cross_node.hpp"
 #include "string_edge.hpp"
 
 namespace fsa {
@@ -61,6 +62,10 @@ public:
     SgNode* ReverseNode(SgNode* n) {
         return org_nodes_[SgNode::ID::Reverse(n->Id())];
     }
+    const SgNode* ReverseNode(const SgNode* n) {
+        return org_nodes_[SgNode::ID::Reverse(n->Id())];
+    }
+
 
     SgEdge* ReverseEdge(SgEdge* e) {
         return org_edges_[SgEdge::ID::Reverse(e->Id())];
@@ -109,8 +114,16 @@ public:
     std::list<SgNode*> GetEgoNodes(SgNode* n, int max_depth, int max_len) ;
     std::list<SgNode*> GetEgoNodes(SgNode* n, int max_depth, int max_len, int max_nodesize) ;
 
+    std::list<SgNode*> GetNeighborNodes(SgNode* n, int max_depth);
+
     static std::vector<std::vector<SgEdge*>> MaximumFlow(const SgNode* src, const SgNode *dst, const std::unordered_set<const SgEdge*> &edges);
 
+    template<typename C>
+    static size_t PathNodeSize(const C& path)  {
+        return std::accumulate(path.begin(), path.end(), 0, [](size_t a, const typename C::value_type& b) {
+            return a + b->NodeSize();
+        });   
+    }
     AsmDataset &asmdata_;
     
     std::unordered_map<SgNode::ID, SgNode*, SgNode::ID::Hash> org_nodes_;
@@ -218,6 +231,7 @@ public:
     std::list<std::list<BaseEdge*>>& GetPaths() {  return paths_; }
 
     std::vector<BaseEdge*> ShortestPath(const BaseNode* src, const BaseNode *dst, std::unordered_set<BaseEdge*> edges, int(*score)(BaseEdge*) = [](BaseEdge*) {return 1; });
+    std::vector<BaseEdge*> GetPath(BaseNode* src, BaseNode *dst, size_t max_depth);
 
     // To check whether path corresponds to a reversed path.
     bool Assert_PathDual(const std::list<std::list<BaseEdge*>> paths);
@@ -234,6 +248,10 @@ protected:
 
 
 friend class PhaseCrossSimplifier;
+
+public:
+    double desired_edge_quality { 0.0 };
+    double actual_min_identity { 0.0 };
 };
 
 
@@ -265,14 +283,16 @@ public:
     std::vector<PathEdge*> ShortestPath(const PathNode* src, const PathNode *dst, 
         std::unordered_set<PathNode*> candnodes, int(*score)(PathEdge*) = [](PathEdge*) {return 1; });
 
-    BubbleEdge*  FindBubble(PathNode* s, bool check, int depth_cutoff = 100, int width_cutoff = 1600);
     void FindBubbles(bool check);
 
     struct LinearPath {
+        LinearPath() {}
+        LinearPath(const std::vector<PathEdge*>& p, int l = 0, int n = 0, int s = 0)
+            : path(p), length(l), nodesize(n), score(s) {}
         std::vector<PathEdge*> path;
-        int length;
-        int nodesize;
-        int score;
+        int length{0};
+        int nodesize {0};
+        int score {0};
     };
 
     LinearPath FindBridgePath(PathEdge* start, int max_length, int max_nodesize);

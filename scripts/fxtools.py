@@ -9,7 +9,7 @@ import re
 import math
 import multiprocessing as mp
 
-mydir = os.path.split(__file__)
+mydir, _ = os.path.split(__file__)
 sys.path.append(mydir)
 
 import misc
@@ -413,9 +413,13 @@ def fx_purge_overlaps(argv):
             filter = PurgeInconsistentInPaf(args.tile, args.readsnps)
         elif args.overlaps.endswith(".sam"):
             filter = PurgeInconsistentInSam(args.tile, args.readsnps)
+        elif args.overlaps.endswith(".txt"):
+            filter = PurgeInconsistentInTxt(args.tile, args.readsnps)
         else:
             filter = None
-        logger.info("Filtering overlaps" )
+        logger.info("Filtering overlaps")
+
+        filter.extend(args.overlaps)
         for line in open(args.overlaps):
             if not filter(line, name2id):
                 print(line, end="")
@@ -573,6 +577,7 @@ def fx_eval_phased3(argv):
     parser.add_argument("overlaps", type=str)
     parser.add_argument("filtered", type=str)
     parser.add_argument("--detail", action="store_true")
+    parser.add_argument("--max_count", type=int, help="max number of read's overlaps")
 
     try:
         args = parser.parse_args(argv)
@@ -583,10 +588,17 @@ def fx_eval_phased3(argv):
 
         ols = prj.load_overlap_ids(args.overlaps)
         flt = prj.load_overlap_ids(args.filtered)
+
+        reads = defaultdict(int)
+        for r0, r1 in ols:
+            reads[r0] += 1
+            reads[r1] += 1
+
         # ols, flt are sorted
 
         TP, TN, FP, FN = 0, 0, 0, 0
         for r0, r1 in ols:
+            if reads[r0] >= args.max_count or reads[r1] >= args.max_count: continue
             s = binfo.cmp(r0, r1)
             if s == -1:
                 if (r0, r1) not in flt:
@@ -895,6 +907,7 @@ def fx_eval_select(argv):
     parser.add_argument("binfos", type=str)
     parser.add_argument("select", type=str)
     parser.add_argument("--weight", type=str, default="0.2:0.8")
+    parser.add_argument("--detail", action="store_true")
     try:
         args = parser.parse_args(argv)
 
@@ -929,8 +942,10 @@ def fx_eval_select(argv):
                 if select == 1 and j == 1:
                     TP += 1
                 elif select == 1 and j == -1:
+                    if args.detail: print("FP %s %s" % (a,b))
                     FP += 1
                 elif select == 0 and j == 1:
+                    if args.detail: print("FN %s %s" % (a,b))
                     FN += 1
                 elif select == 0 and j == -1:
                     TN += 1
@@ -1209,6 +1224,7 @@ def fx_gen_dipref(argv):
         parser.print_usage()
         exit(-1)
 
+
 def fx_split_shasta(argv):
     parser = argparse.ArgumentParser("Generate a primary/alternate-style contigs from shasta contigs.")
     parser.add_argument("shasta", help="the shasta conitgs", type=str)
@@ -1261,6 +1277,33 @@ def fx_split_shasta(argv):
         print("-----------------")
         parser.print_usage()
         exit(-1)
+
+def fx_hamming_error(argv):
+    parser = argparse.ArgumentParser("Calculate hamming error from merqury result")
+    parser.add_argument("hapmer_count", help="xxx.hapmer.count in merqury result", type=str)
+
+    try:
+        args = parser.parse_args(argv)
+
+        counts = defaultdict(lambda: [0,0])
+
+        for i, line in enumerate(open(args.hapmer_count)):
+            if i == 0: continue
+
+            its = line.split()
+            ss = (int(its[2]), int(its[3]))
+            counts[its[0]][0] += max(ss)
+            counts[its[0]][1] += min(ss)
+
+        for k,v in counts.items():
+            print(k, "(%):", 100*v[1]/(v[0]+v[1]))
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+        exit(-1)
+
 
 if __name__ == '__main__':
     script_entry(sys.argv, locals())

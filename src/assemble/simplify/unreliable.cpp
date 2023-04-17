@@ -8,8 +8,8 @@ bool UnreliableSimplifier::ParseParameters(const std::vector<std::string> &param
 
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
-        if (false) {
-   
+        if (it[0] == "l") {
+            min_length_ = (size_t) std::stoul(it[1]);
         } else {
             if (!ParseParameter(it)) {
                 return false;
@@ -19,6 +19,11 @@ bool UnreliableSimplifier::ParseParameters(const std::vector<std::string> &param
     return true;
 }
 
+std::string UnreliableSimplifier::GetParameters() const {
+    std::ostringstream oss;
+    oss << "l=" << min_length_;
+    return oss.str();
+}
 
 
 void UnreliableSimplifier::Running() {
@@ -132,8 +137,18 @@ void UnreliableSimplifier::Running() {
 
     //MultiThreadRun((size_t)graph_.Options().thread_size, work_func);
     MultiThreadRun(1, work_func);
+    Debug("Remove edges: %zd\n", removed.size());
+    //graph_.ReduceEdges(removed, BaseEdge::RT_UNRELIABLE);
+    for (auto r : removed) {
+        if (!r->IsReduce()) {
+    Debug("Remove edges: %lld, %s\n", r, ToString(r).c_str());
+            r->Reduce(BaseEdge::RT_UNRELIABLE);
+            graph_.ReverseEdge(r)->Reduce(BaseEdge::RT_UNRELIABLE);
+    Debug("Remove edges done: %s\n", ToString(r).c_str());
 
-    graph_.ReduceEdges(removed, BaseEdge::RT_UNRELIABLE);
+        }
+    }
+
 
 }
 

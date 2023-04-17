@@ -10,8 +10,16 @@ namespace fsa {
 
 void PhsDataset::Load() {
 
+
     LOG(INFO)("Preload reads and contigs");
     PreloadReads();
+
+    if (!opts_.vcf_fname_.empty()) {
+        LOG(INFO)("Load VCF");
+        LoadSnpFromVcf(opts_.vcf_fname_, rd_store_.GetStringPool());
+        opts_.phase_opts_.using_vcf = true;
+        LOG(INFO)("Set using vcf");
+    }
 
     LOG(INFO)("Load overlaps");
     LoadOverlaps(opts_.ol_fname_);
@@ -50,7 +58,7 @@ void PhsDataset::LoadOverlaps(const std::string &fname) {
         LOG(ERROR)("No overlap was loaded");
     }
 
-    //ol_store_.Save(opts_.OutputPath("load.paf"));
+    ol_store_.Save(opts_.OutputPath("load.paf"));
 }
 
 
@@ -65,6 +73,55 @@ void PhsDataset::LoadAva(const std::string &fname) {
         LOG(ERROR)("No overlap was loaded");
     }
     ol_ava_.Group(ava_groups_, opts_.thread_size_);
+}
+
+void PhsDataset::LoadSnpFromVcf(const std::string &fname, StringPool& string_pool) {
+    GzFileReader vcf(fname);
+
+    size_t count = 0;
+    auto line = vcf.GetNoEmptyLine();
+    for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
+        if (line[0] == '#') continue;
+        const int CHROM = 0;
+        const int POS = 1;
+        const int REF = 3;
+        const int ALT = 4;
+        const int FILTER = 6;
+        const int SAMPLE = 9;
+        auto its = SplitStringBySpace(line);
+        assert(its.size() >= 10);
+        std::array<uint8_t,2> bases = {(uint8_t)-1, (uint8_t)-1};
+        if (its[FILTER] == "PASS" && its[SAMPLE].size() >= 3) {
+
+            if (its[SAMPLE].find("0/1") == 0 ) {
+                if (its[REF].size() == 1 && its[ALT].size() == 1) {
+                    bases[0] = DnaSeq::Serial(its[REF][0]);
+                    bases[1] = DnaSeq::Serial(its[ALT][0]);
+                    count ++;
+                }
+
+            } else if (its[SAMPLE].find("1/2") == 0) {
+                if (its[ALT].size() == 3) { //A,C
+                    bases[0] = DnaSeq::Serial(its[ALT][0]);
+                    bases[1] = DnaSeq::Serial(its[ALT][2]);
+                    count ++;
+                }
+            } else {
+                // pass
+            }
+        }
+
+        if (bases[0] != (uint8_t)-1) {
+            auto id = string_pool.QueryIdByString(its[CHROM]);
+            auto pos = std::stoi(its[POS]) - 1;
+            if (bases[0] > bases[1]) std::swap(bases[0], bases[1]);
+
+            snps_[id][pos] = bases;
+        }
+
+        
+    }
+    LOG(INFO)("Load SNPs: count = %zd", count);
 }
 
 std::unordered_set<int> PhsDataset::QueryGroup(int id) {
@@ -94,7 +151,9 @@ void PhsDataset::LoadReads() {
 
 void PhsDataset::PreloadReads() {
     rd_store_.Load(opts_.rd_fname_, "", false, std::unordered_set<Seq::Id>());
+    std::array<size_t, 2> ctg_id_range { rd_store_.GetIdRange()[1], 0};
     rd_store_.Load(opts_.ctg_fname_, "", false, std::unordered_set<Seq::Id>());
+    ctg_id_range[1] = rd_store_.GetIdRange()[1];
     
     if (!opts_.ctgname_fname_.empty()) {
         GzFileReader reader(opts_.ctgname_fname_);
@@ -109,9 +168,9 @@ void PhsDataset::PreloadReads() {
             LOG(ERROR)("Failed to load file: %s", opts_.ctgname_fname_.c_str());
         }
     } else {
-        contig_ids_ = rd_store_.IdsInFile(opts_.ctg_fname_);
-        for (auto id : contig_ids_) {
-            contig_names_.insert(rd_store_.QueryNameById(id));
+        for (size_t i = ctg_id_range[0]; i < ctg_id_range[1]; ++i) {
+            contig_names_.insert(rd_store_.QueryNameById(i));
+            contig_ids_.insert(i);
         }
     }
 

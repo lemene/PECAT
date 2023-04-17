@@ -41,7 +41,7 @@ public:
     }
 
     bool IsCompatible(const Variants &a, const Variants &b, const Overlap &ol) const;
-    const std::vector<Variants>* GetVariants(int a) {
+    const std::vector<Variants>* GetVariants(int a) const {
         auto iter = reads.find(a); 
         return iter != reads.end() ? &iter->second : (std::vector<Variants>*)nullptr;
     }

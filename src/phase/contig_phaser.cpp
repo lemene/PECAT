@@ -21,8 +21,15 @@ void ContigPhaser::Phase() {
     variants_.assign(GetReadStore().GetSeqLength(ctg_), Variant());
 
     read_infos_ = CollectReads(ctg_);
-    FindVariantsInContig(ctg_, read_infos_, variants_);
-    ConfirmVariants(variants_);
+
+    if (opts_.vcf_fname_.empty()) {
+        FindVariantsInContig(ctg_, read_infos_, variants_);
+        ConfirmVariants(variants_);
+        ScanContig();
+    } else {
+        GetVariantsFromSnps(read_infos_, variants_);
+    }
+    
     FindVariantsInReads(read_infos_, variants_);
     ClassifyReads(read_infos_);
 }
@@ -33,8 +40,12 @@ std::unordered_map<ReadOffset, ReadInfo> ContigPhaser::CollectReads(Seq::Id ctg)
     std::unordered_map<Seq::Id, std::vector<const Overlap*>> rgs;
     for (size_t i=0; i < ol_store_.Size(); ++i) {
         const auto &o = ol_store_.Get(i);
+//        auto th = opts_.filter_opts_.MaxOverhang(o.a_.len);
+        
         if (o.b_.id == ctg) {
-            rgs[o.a_.id].push_back(&o);
+//            if (th < 0 || o.a_.start < th || (o.a_.len - o.a_.end) < th) {            
+                rgs[o.a_.id].push_back(&o);
+//            }
         }
     }
 
@@ -44,27 +55,27 @@ std::unordered_map<ReadOffset, ReadInfo> ContigPhaser::CollectReads(Seq::Id ctg)
             double bidt = b->AlignedLength()*b->identity_;
             return aidt > bidt || (aidt == bidt && a->b_.start > b->b_.start);
         });
-
-        // 检查范围避免重复
-        std::vector<std::array<int,2>> ranges;
+        
+        std::vector<const Overlap*> added;
         for (size_t i = 0; i < rs.second.size() && (int)i < opts_.max_count; ++i) {
-            const auto& o = *rs.second[i];
+            const auto o = rs.second[i];
 
-            bool repeat = false;
-            const int SUB = 1000;
-            for (const auto &r : ranges) {
-                //repeat = o.b_.start + SUB < r[1] && o.b_.end >= r[0] + SUB;
-                auto rr = std::min<int>(o.b_.end, r[1]) - std::max<int>(o.b_.start, r[0]);
-                repeat = rr > (o.b_.end - o.b_.start) / 2;
-                if (repeat) break;
+            bool covered = false;
+            for (auto ad : added) {
+                if (o->b_.id == ad->b_.id) {
+                    auto rr = std::min<int>(o->b_.end, ad->b_.end) - std::max<int>(o->b_.start, ad->b_.start);
+                    covered = rr > (o->b_.end - o->b_.start) / 2 ;
+                    if (covered) break;
+                }
             }
 
-            if (!repeat) {
-                ReadOffset rid = ReadOffset::Make(o);
-                read_infos[rid] = {o.a_.id, &o};
-                ranges.push_back({o.b_.start, o.b_.end});
+            if (!covered) {
+                ReadOffset rid = ReadOffset::Make(*o);
+                read_infos[rid] = {o->a_.id, o};
+                added.push_back(o);
             }
         }
+        
     }
     return read_infos;
 }
@@ -139,6 +150,9 @@ void ContigPhaser::FindVariantsInContig(Seq::Id c, const std::unordered_map<Read
                 rd_off += d.len;
                 break;
 
+            case 'S':
+            case 'H':
+                break;
             case '=':
             default:
                 LOG(ERROR)("Not support cigar type '%c'.", d.type);
@@ -153,9 +167,118 @@ void ContigPhaser::FindVariantsInContig(Seq::Id c, const std::unordered_map<Read
     }
 }
 
+
+static bool HasHomopolymer(size_t n, const std::vector<int>& bs, size_t start, size_t end) {
+    size_t count = 1;
+    for (size_t i = start+1; i < end; ++i) {
+        if (bs[i] == bs[i-1]) {
+            count++;
+        } else {
+            count = 1;
+        }
+        if (count >= n) break;
+    }
+    return count >= n;
+}
+
 void ContigPhaser::ConfirmVariants(std::vector<Variant> &vars) {
+
+    const auto &ctg = rd_store_.GetSeq(ctg_);
+    assert(ctg.Size() == vars.size());
+    // homopolymers
     for (size_t i=0; i<vars.size(); ++i) {
         vars[i].Comfirm(opts_.cov_opts_);
+
+        if (vars[i].Valid()) {
+            // 
+            if (i < 5 || i + 5 >= vars.size()) {
+                vars[i].Disable();
+                continue;
+            }
+            const int N = 7;
+            std::vector<int> subctg(N);
+            for (size_t j = 0; j < N; ++j) {
+                assert(i-N/2+j < ctg.Size());
+                subctg[j] = ctg[i-N/2 + j];
+            }
+
+            if (HasHomopolymer(4, subctg, 0, subctg.size())) {
+                vars[i].Disable();
+                continue;
+            }
+            if (vars[i].var[0] < 4 && vars[i].var[0] != subctg[N/2]) {
+                int b = subctg[N/2];
+                subctg[N/2] = vars[i].var[0];
+                if (HasHomopolymer(4, subctg, 0, subctg.size())) {
+                    vars[i].Disable();
+                }
+                subctg[N/2] = b;
+                continue;
+            }
+            
+            if (vars[i].var[1] < 4 && vars[i].var[1] != subctg[N/2]) {
+                int b = subctg[N/2];
+                subctg[N/2] = vars[i].var[1];
+                if (HasHomopolymer(4, subctg, 0, subctg.size())) {
+                    vars[i].Disable();
+                }
+                subctg[N/2] = b;
+                continue;
+            }
+        }
+    }
+
+    // std::vector<size_t> density(vars.size(), 0);
+    // const size_t R = 10000;
+    // auto end = vars.size() >= R ? vars.begin()+R : vars.end();
+    // size_t count = std::count_if(vars.begin(), end, [](const Variant &a) {
+    //     return a.Valid();
+    // });
+
+    // std::fill(density.begin(), density.begin() + (size_t)(end - vars.begin()), count);
+
+    // for (size_t i = 0; i + R < vars.size(); ++i) {
+    //     if (vars[i].Valid()) {
+    //         count--;
+    //         assert(count >= 0);
+    //     }
+    //     if (vars[i+R].Valid()) {
+    //         count++;
+    //     }
+    //     density[i+R] = count;
+    //     for (size_t j = i+1; j < i + R; ++j) {
+    //         if (density[j] < count) density[j] = count;
+    //     }
+
+    // }
+    // const size_t C = 3;
+    // for (size_t i = 0; i < vars.size(); ++i) {
+    //     if (vars[i].Valid() && density[i] < C) {
+    //         vars[i].Disable();
+    //     }
+    // }
+}
+
+void ContigPhaser::GetVariantsFromSnps(const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars) {
+    auto snp = dataset_.snps_.find(ctg_);
+
+    for (auto &iter : read_infos) {
+        const Overlap& o = *(iter.second.o);
+        assert(o.b_.id == ctg_);
+        
+        // 计算Coverage
+        for (auto i = o.b_.start; i < o.b_.end; ++i) {
+            vars[i].IncCov();
+        }
+    }
+
+    if (snp != dataset_.snps_.end()) {
+        for (const auto& s : snp->second) {
+            if (opts_.cov_opts_.Effective(vars[s.first].counts[9])) {
+                vars[s.first].var[0] = s.second[0];
+                vars[s.first].var[1] = s.second[1];
+            }
+        }
     }
 }
 
@@ -223,6 +346,9 @@ void ContigPhaser::FindVariantsInReads(std::unordered_map<ReadOffset, ReadInfo>&
                 rd_off += d.len;
                 break;
 
+            case 'S':
+            case 'H':
+                break;
             case '=':
             default:
                 LOG(ERROR)("Not support cigar type '%c'.", d.type);
@@ -300,24 +426,52 @@ std::unordered_map<ReadOffset, std::unordered_set<ReadOffset>> ContigPhaser::Gro
 
                 if (count[0] >= shared_variants) {
                     if (dataset_.HasAva() && !dataset_.QueryAva(iri.id, jri.id)) continue;
-                    groups[jid].insert(iid);
-                    groups[iid].insert(jid);
 
+                        groups[jid].insert(iid);
+                        groups[iid].insert(jid);             
+                    // if (IsValidPair(*iri.o, *jri.o) && IsValidPair(*jri.o, *iri.o)) {
+                    //     groups[jid].insert(iid);
+                    //     groups[iid].insert(jid);
+                    // } else {
+                    //     printf("removej(%zd,%zd) %s-%s\n",i, j, dataset_.QueryNameById(iri.id).c_str()
+                    //                                            , dataset_.QueryNameById(jri.id).c_str());
+                    //     printf("%s\n%s\n", iri.o->ToM4Line().c_str(), jri.o->ToM4Line().c_str());
+                    // }
 
-                    if ((int)groups[jid].size() >= opts_.cov_opts_.valid_range[1]*2) {
-                        discards.insert(jid);
-                        groups.erase(jid);
-                    }
-                    if ((int)groups[iid].size() >= opts_.cov_opts_.valid_range[1]*2) {
-                        discards.insert(iid);
-                        groups.erase(iid);
-                    }
                 }
 
             }
         }
     }
     return groups;
+}
+
+bool ContigPhaser::IsValidPair(const Overlap &irio, const Overlap& jrio) {
+    auto ioh = opts_.filter_opts_.MaxOverhang(irio.a_.len);
+    if (irio.a_.start > ioh) {
+        auto r = irio.MappingToTarget<2>({0, irio.a_.start});
+        if (r[0] > r[1]) std::swap(r[0], r[1]);
+
+        auto s = std::max(r[0], jrio.b_.start);
+        auto e = std::max(r[1], jrio.b_.end);
+        if (e > s && e - s > ioh) {
+            return false;
+        }
+    }
+
+    if (irio.a_.len - irio.a_.end > ioh) {
+        auto r = irio.MappingToTarget<2>({irio.a_.end, irio.a_.len});
+        if (r[0] > r[1]) std::swap(r[0], r[1]);
+
+        auto s = std::max(r[0], jrio.b_.start);
+        auto e = std::max(r[1], jrio.b_.end);
+        if (e > s && e - s > ioh) {
+            return false;
+        }
+
+    }
+
+    return true;
 }
 
 void ContigPhaser::ClassifyReads(std::unordered_map<ReadOffset, ReadInfo>& read_infos) {
@@ -405,6 +559,59 @@ void ContigPhaser::ClassifyReads(std::unordered_map<ReadOffset, ReadInfo>& read_
     }
 }
 
+
+
+void ContigPhaser::ScanContig() {    
+    const auto &ctg = rd_store_.GetSeq(ctg_);  
+    assert(ctg.Size() == variants_.size());
+
+    auto get_kmers_freq = [](const DnaSeq& c, size_t s, size_t K, size_t W) {
+        std::unordered_map<size_t, size_t> kmer_counts;
+
+        size_t kmer = 0;
+        for (size_t i = 0; i < K; ++i) {
+            kmer += c[s+i] << 2*i;
+        }
+        kmer_counts[kmer] += 1;
+        for (size_t i = 1; i < W; ++i) {
+            kmer >>= 2;
+            kmer += c[s+i+K-1] << ((K-1)*2);
+            kmer_counts[kmer] += 1;
+        }
+
+        std::vector<size_t> counts(kmer_counts.size());
+        std::transform(kmer_counts.begin(), kmer_counts.end(), counts.begin(), [](const std::pair<size_t, size_t>& a){
+            return a.second;
+        });
+
+        std::sort(counts.begin(), counts.end(), [](size_t a, size_t b) { return a > b; });
+        size_t sum = 0;
+        for (size_t i = 0; i < std::min<size_t>(3, counts.size()); ++i) {
+            sum += counts[i];
+        }
+
+        return sum * 1.0 / W;
+    };
+
+    const size_t W = 100;
+    const size_t K = 5;
+    size_t curr = 0;
+    while (curr + W + K < ctg.Size()) {
+        auto freq = get_kmers_freq(ctg, curr, K, W);
+        if (freq >= 0.66) {
+            for (size_t i = 0; i < W; ++i) {
+                variants_[curr+i].Disable();
+            }
+            curr += W;
+        } else if (0.66 > freq && freq >= 0.5) {
+            curr += 1;
+        } else if (0.5 >= freq && freq >= 0.25) {
+            curr += W / 2;
+        } else {
+            curr += W;
+        }
+    }
+}
 
 void ContigPhaser::DumpReadInfos(std::ostream& of) const {
     for (auto &i : read_infos_) {

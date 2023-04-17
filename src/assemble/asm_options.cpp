@@ -4,7 +4,6 @@
 
 namespace fsa {
 void AsmOptions::SetArguments(ArgumentParser &ap) {
-    //ap.AddNamedOption(bestn, "bestn", " output best n overlaps on 5' or 3' end for each read");
     ap.AddNamedOption(min_identity, "min_identity", "minimum identity of edges in the string graph");
     ap.AddNamedOption(output_directory, "output_directory", "directory for output files");
     ap.AddNamedOption(thread_size, "thread_size", "number of threads");
@@ -22,12 +21,15 @@ void AsmOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(reducer1, "reducer1", "parameters of reducer1");
 
     ap.AddNamedOption(min_contig_length, "min_contig_length", "minimum length of contigs");
+    ap.AddNamedOption(contig_format, "contig_format", "\"prialt\" = primary/alterate format, \"dual\" = dual format");
     ap.AddNamedOption(select_branch, "select_branch", "selecting method when encountering branches in the graph, \"no\" = do not select any branch, \"best\" = select the most probable branch", "\"no|best\"");
     ap.AddNamedOption(phased, "phased", "phased read names from the previous steps");
     ap.AddNamedOption(variants, "variants", "variants in reads");
     ap.AddNamedOption(max_bubble_length, "max_bubble_length", "");
     ap.AddNamedOption(max_trivial_length, "max_trivial_length", "maximun trivial branch length, the branch will be removed if its length its length is less than this value");
     ap.AddNamedOption(diploid_rate, "contig_dup_rate", "conting is marked as a duplicate of another conting. If the proportion of its reads inconsistent with other contings exceeds this value.");
+    ap.AddNamedOption(hic_info, "hic_info", "information of alignment between hic sequences and the first round of assembly");
+    
     // for debuging the program
     ap.AddNamedOption(skip_purge, "skip_purge", "it is for debuging");
     ap.AddNamedOption(debug_name, "debug_name", "");
@@ -59,9 +61,9 @@ void AsmOptions::UpdateByGenomeSize(size_t gsize) {
 
     if (max_trivial_length < 0) {
         if (genome_size < 100000000) {
-            max_trivial_length = 10000;
+            max_trivial_length = 1000;
         } else if (genome_size < 500000000) {
-            max_trivial_length = 50000;
+            max_trivial_length = 10000;
         } else if (genome_size < 1000000000) {
             max_trivial_length = 100000;            
         } else {

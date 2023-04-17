@@ -24,10 +24,14 @@ public:
     std::unordered_map<ReadOffset, ReadInfo> CollectReads(Seq::Id ctg);
     void FindVariantsInContig(Seq::Id c, const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars);
     void ConfirmVariants(std::vector<Variant> &vars);
+    void GetVariantsFromSnps(const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars);
     void FindVariantsInReads(std::unordered_map<ReadOffset, ReadInfo>& read_infos, const std::vector<Variant> &vars);
     // return ignored overlaps {iid, jid}
     std::unordered_map<ReadOffset, std::unordered_set<ReadOffset>> GroupReads(std::unordered_map<ReadOffset, ReadInfo>& read_infos, int shared);
     void ClassifyReads(std::unordered_map<ReadOffset, ReadInfo>& read_infos);   
+    bool IsValidPair(const Overlap &irio, const Overlap& jrio);
+
+    void ScanContig();
 
     void DumpVariants(std::ostream& of) const;
     void DumpReadInfos(std::ostream& of) const;

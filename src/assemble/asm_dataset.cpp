@@ -440,6 +440,7 @@ void AsmDataset::FilterContained() {
             const Overlap& o = ol_store_.Get(i);
 
             if (IsReserved(o)) {
+                //auto loc = o.Location(opts_.filter0.max_overhang);
                 auto loc = o.Location(0);
                 if (loc == Overlap::Loc::Equal) {
                     set_contained(std::max(o.a_.id, o.b_.id), std::min(o.a_.id, o.b_.id));
@@ -806,61 +807,84 @@ double AsmDataset::GetOverlapQuality(const Overlap &ol) {
 void AsmDataset::GroupAndFilterDuplicate() {
     LOG(INFO)("Group overlaps and remove duplicated");
 
-    std::vector<std::pair<const Overlap*, OlReason>> ignored;
+    std::vector<const Overlap*> removed;
     std::mutex mutex;
 
-    auto add_overlap = [this](int low, int a, int b, const Overlap& o, std::vector<std::unordered_map<Seq::Id, const Overlap*>>& group) {
+    auto add_overlap = [this](int low, int a, int b, const Overlap& o, 
+                              std::vector<std::unordered_map<Seq::Id, const Overlap*>>& group,
+                              std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &dups,
+                              std::vector<const Overlap*> &rmd) {
         
         auto it = group[a-low].find(b);
         if (it == group[a-low].end()) {
             group[a-low][b] = &o;
         } else {
             if (BetterAlignedLength(o, *(it->second))) {
-            //if (GetOverlapQuality(o) > GetOverlapQuality(*(it->second))) {
-                SetOlReason(*(it->second), OlReason::Duplicate());
+                //SetOlReason(*(it->second), OlReason::Duplicate());
+                rmd.push_back(it->second);
                 it->second = &o;
             } else {
-                SetOlReason(o, OlReason::Duplicate());
+                rmd.push_back(&o);
+                //SetOlReason(o, OlReason::Duplicate());
             }
         }
-
+        dups[a-low][b].push_back(&o);
     };
 
     auto split_func = [this]() {
         auto r = ol_store_.GetReadIdRange();
         return SplitRange(opts_.thread_size, r[0], r[1]);
     };
-    auto comb_func = [this, &ignored, &mutex](int low, std::vector<std::unordered_map<Seq::Id, const Overlap*>>&& group) {
+    auto comb_func = [this, &removed, &mutex](int low, std::vector<std::unordered_map<Seq::Id, const Overlap*>>&& group,
+                                              std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &&dups,
+                                              std::vector<const Overlap*> &rmd) {
         std::lock_guard<std::mutex> lock(mutex);
+        assert(group.size() == dups.size());
         for (size_t i=0; i<group.size(); ++i) {
             if (group[i].size() > 0) {
                 groups_[low+(int)i] = std::move(group[i]);
             }
+
+            for (auto&& d : dups[i]) {
+                if (d.second.size() > 1) {
+                    std::sort(d.second.begin(), d.second.end(), [](const Overlap* a, const Overlap* b) {
+                        return a->AlignedLength() > b->AlignedLength();
+                    });
+                    dup_groups_[low+(int)i][d.first] = std::move(d.second);
+                }
+            }
         }
+        removed.insert(removed.end(), rmd.begin(), rmd.end());
     };
 
     auto work_func = [this, add_overlap, comb_func](std::array<Seq::Id, 2> r) {
         std::vector<std::unordered_map<Seq::Id, const Overlap*>> group(r[1] - r[0]);
-        std::vector<std::pair<const Overlap*, OlReason>> ignored;
+        std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> dups(r[1] - r[0]);
+        std::vector<const Overlap*> rmd;    // removed
 
         for (size_t i=0; i < ol_store_.Size(); ++i) {
             const auto &o = ol_store_.Get(i);
             if (IsReserved(o)) {
                 if (o.a_.id >= r[0] && o.a_.id < r[1]) {
-                    add_overlap(r[0], o.a_.id, o.b_.id, o, group);
+                    add_overlap(r[0], o.a_.id, o.b_.id, o, group, dups, rmd);
                 }
                 if (o.b_.id >= r[0] && o.b_.id < r[1]) {
-                    add_overlap(r[0], o.b_.id, o.a_.id, o, group);
+                    add_overlap(r[0], o.b_.id, o.a_.id, o, group, dups, rmd);
                 }
             }
         }
 
-        comb_func(r[0], std::move(group));
+        comb_func(r[0], std::move(group), std::move(dups), rmd);
     };
 
     MultiThreadRun((int)opts_.thread_size, split_func, work_func);
 
+    for (auto r : removed) {
+        SetOlReason(*r, OlReason::Duplicate());
+    }
     LOG(INFO)("Overlap size: %zd/%zd", ReservedSize(), ol_store_.Size());
+
+    Check_Group();
 }
 
 void AsmDataset::CheckOverlapEnd() {
@@ -982,7 +1006,7 @@ void AsmDataset::ExtendOverlapToEnd() {
         [this](const std::array<size_t, 2> &range) {
             for (size_t i=range[0]; i<range[1]; ++i) {
                 const Overlap& o = ol_store_.Get(i);
-                if (IsReserved(o)) {
+                if (IsReserved(o) || GetOlReason(o).type == OlReason::RS_DUPLICATE) {
                     auto oh = o.Overhang();
                     int th = std::max(oh[0], oh[1]);
                     if (th > 0) {
@@ -997,20 +1021,56 @@ void AsmDataset::ExtendOverlapToEnd() {
 std::array<int, 3> AsmDataset::AnalyzeCoverage(int id, const std::unordered_map<int, const Overlap*>& group) {
     if (group.size() > 0) {
         std::vector<int> cov(group.begin()->second->GetRead(id).len + 1, 0);
-        //const int redundance = - (cov.size() > 3000 ? 1000 : cov.size() / 3);
         const int redundance = - std::min<int>(500, cov.size()/10);
 
         for (const auto &ig : group) {
             const Overlap& o = *ig.second;
             if (IsReserved(o)) {
-                auto& r = o.GetRead(id);
-                if (std::max(0, r.start-redundance) >= std::min(r.len, r.end+redundance)) continue;
 
-                cov[std::max(0, r.start-redundance)] ++;
-                cov[std::min(r.len, r.end+redundance)] --;
-                if ( opts_.debug_name == rd_store_.QueryNameById(id)) {
-                    assert(std::max(0, r.start-redundance) < std::min(r.len, r.end+redundance));
-                    printf("cov %s\n", OverlapStore::ToPafLine(o, StringPool::UnsafeNameId(rd_store_.GetStringPool())).c_str());
+                bool added = false;
+                // duplication
+                auto dup0 = dup_groups_.find(id);
+                if (dup0 != dup_groups_.end()) {
+                    auto dup1 = dup0->second.find(ig.first);
+                    if (dup1 != dup0->second.end()) {
+                        // int start = cov.size() - 1;
+                        // int end = 0;
+                        // for (auto dup_o : dup1->second) {
+                        //     auto& r = dup_o->GetRead(id);
+                        //     start = std::min(start, r.start);
+                        //     end = std::max(end, r.end);
+                        // }
+                        // if (std::max<size_t>(0, start-redundance) < std::min<size_t>(cov.size()-1, end+redundance)) {
+
+                        //     cov[std::max<size_t>(0, start-redundance)] ++;
+                        //     cov[std::min<size_t>(cov.size()-1, end+redundance)] --;
+                        // }
+
+                        for (auto dup_o : dup1->second) {
+                            auto& r = dup_o->GetRead(id);
+                            
+                            if (std::max<size_t>(0, r.start-redundance) < std::min<size_t>(cov.size()-1, r.end+redundance)) {
+
+                                cov[std::max<size_t>(0, r.start-redundance)] ++;
+                                cov[std::min<size_t>(cov.size()-1, r.end+redundance)] --;
+                            }
+                        }
+
+                        added = true;
+                    }
+                } 
+                
+                if (!added) {
+                    
+                    auto& r = o.GetRead(id);
+                    if (std::max(0, r.start-redundance) < std::min(r.len, r.end+redundance)) {
+                        cov[std::max(0, r.start-redundance)] ++;
+                        cov[std::min(r.len, r.end+redundance)] --;
+                    }
+                    if ( opts_.debug_name == rd_store_.QueryNameById(id)) {
+                        assert(std::max(0, r.start-redundance) < std::min(r.len, r.end+redundance));
+                        printf("cov %s\n", OverlapStore::ToPafLine(o, StringPool::UnsafeNameId(rd_store_.GetStringPool())).c_str());
+                    }
                 }
             }
         }
@@ -1054,7 +1114,12 @@ std::array<int, 3> AsmDataset::AnalyzeCoverage(int id, const std::unordered_map<
         auto a2 = std::accumulate(cov.begin()+2*inv, cov.end(), 0) / inv;
         read_infos_[id].coverage = {a0, a1, a2};
 
-        auto c_minmax = std::minmax_element(std::max(0, -redundance) + cov.begin(), cov.end() -1 - std::max(0, -redundance));
+        int oh = std::max(0, -redundance) + opts_.filter0.max_overhang;
+        
+        if ( opts_.debug_name == rd_store_.QueryNameById(id)) {
+        LOG(INFO)("XXXX %d, %d, %d", oh, redundance, opts_.filter0.max_overhang);
+        }
+        auto c_minmax = std::minmax_element(oh + cov.begin(), cov.end() -1 - oh);
         return {covtype, *c_minmax.first, *c_minmax.second };
 
     } else {
@@ -1257,14 +1322,14 @@ std::vector<std::array<int,2>> FindCorners(const std::vector<T>& line, bool log)
 
         if (last != curr && (curr != 0 || s0_count >= max_s0_count)) {
             size_t end = i;//i - s0_count*stepsize;
-            if (log) {
-                printf("slope test %d, %d, %d  %f %zd\n", last != 0, (curr == 0 && s0_count >= max_s0_count || curr != 0) , is_cliff(line[i], line[index], i-index, max_slope), line[index], i-index);
-            }
-            if (last != 0 && (curr == 0 && s0_count >= max_s0_count || curr != 0) && is_cliff(line[end], line[index], end-index, max_slope)) {
+            // if (log) {
+            //     printf("slope test %d, %d, %d  %f %zd\n", last != 0, (curr == 0 && s0_count >= max_s0_count || curr != 0) , is_cliff(line[i], line[index], i-index, max_slope), line[index], i-index);
+            // }
+            if (last != 0 && ((curr == 0 && s0_count >= max_s0_count) || curr != 0) && is_cliff(line[end], line[index], end-index, max_slope)) {
                 cliffs.push_back({(int)index, (int)end});
-                if (log) {
-                    printf("cliff %zd - %zd, %f %f\n", end, line[end],  index, line[index]);
-                }
+                // if (log) {
+                //     printf("cliff %zd - %zd, %f %f\n", end, line[end],  index, line[index]);
+                // }
             }
             last = curr;
             index = i;
@@ -1274,9 +1339,9 @@ std::vector<std::array<int,2>> FindCorners(const std::vector<T>& line, bool log)
     size_t end = line.size() - 1 ;//- s0_count * stepsize;
     if (last != 0 && is_cliff(line[end], line[index], end-index, max_slope)) {
         cliffs.push_back({(int)index, (int)end});
-        if (log) {
-            printf("cliff %zd - %zd, %f %f\n", end, line[end],  index, line[index]);
-        }
+        // if (log) {
+        //     printf("cliff %zd - %zd, %f %f\n", end, line[end],  index, line[index]);
+        // }
     }
 
 
@@ -1450,6 +1515,19 @@ std::unordered_set<Seq::Id> AsmDataset::GetNearbyReads(Seq::Id tid) {
     return nearby;
 }
 
+std::unordered_set<Seq::Id> AsmDataset::GetOverlapReads(Seq::Id tid) const {
+    std::unordered_set<Seq::Id> nearby;
+
+    auto g = groups_.find(tid);
+    if (g != groups_.end()) {
+        for (auto &i : g->second) {
+            auto &o = *i.second;
+            auto &qread = o.GetOtherRead(tid);
+            nearby.insert(qread.id);
+        }
+    }
+    return nearby;
+}
 
 std::unordered_set<const Overlap*> AsmDataset::GetExtendOverlaps(Seq::Id tid, int end) const {
     std::unordered_set<const Overlap*> extend;
@@ -1480,6 +1558,74 @@ std::unordered_set<const Overlap*> AsmDataset::GetExtendOverlaps(Seq::Id tid, in
     return extend;
 }
 
+
+std::unordered_set<const Overlap*> AsmDataset::GetExtendOverlapsEx(Seq::Id tid, int end) const {
+    std::unordered_set<const Overlap*> extend;
+
+    DUMPER["test"]("extend: %s %d\n", string_pool_.QueryStringById(tid).c_str(), end);
+    auto g = groups_.find(tid);
+    if (g != groups_.end()) {
+        for (auto &i : g->second) {
+            auto &o = *i.second;
+            auto &qread = o.GetOtherRead(tid);
+            
+            DUMPER["test"]("extend_checkt: %s %s\n", string_pool_.QueryStringById(tid).c_str(), string_pool_.QueryStringById(qread.id).c_str());
+
+            if (!( (end == 0 && o.Location(qread.id, 0) == Overlap::Loc::Left) ||
+                   (end == 1 && o.Location(qread.id, 0) == Overlap::Loc::Right) )) {
+
+                DUMPER["test"]("extend_checkt: 0\n");
+                auto oltype = GetOlReason(o).type;
+                if (oltype != OlReason::RS_OK) {
+                    auto qri = read_infos_.find(qread.id);
+                    auto tri = read_infos_.find(tid); 
+                    if (qri->second.filtered.type == RdReason::RS_CONTAINED || tri->second.filtered.type == RdReason::RS_CONTAINED) {
+                        auto dup0 = dup_groups_.find(tid);
+                        if (dup0 != dup_groups_.end()) {
+                            auto dup00 = dup0->second.find(qread.id);
+                            if (dup00 != dup0->second.end()) {
+                                DUMPER["test"]("extend_insert dupsize: %zd\n", dup00->second.size());
+                                for (auto idup: dup00->second) {
+                                    DUMPER["test"]("extend_insert dupcheck: %d, %s\n", idup->Location(qread.id, 0), o.ToM4Line().c_str());
+                                    if ((end == 0 && idup->Location(qread.id, 0) == Overlap::Loc::Left) ||
+                                        (end == 1 && idup->Location(qread.id, 0) == Overlap::Loc::Right)) {
+                                            
+                                            DUMPER["test"]("extend_insert dup: %s\n", o.ToM4Line().c_str());
+                                            extend.insert(idup);
+                                            break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                }
+                    
+            } else {
+                DUMPER["test"]("extend_checkt: 1\n");
+                auto oltype = GetOlReason(o).type;
+                if (oltype == OlReason::RS_OK) {
+                    
+                    DUMPER["test"]("extend_insert 0: %s\n", o.ToM4Line().c_str());
+                    extend.insert(&o);
+                } else if (oltype == OlReason::RS_FILTERED_READ) {
+                                    
+                    DUMPER["test"]("extend_insert 1\n");
+                    auto qri = read_infos_.find(qread.id);
+                    auto tri = read_infos_.find(tid); 
+                    if (qri->second.filtered.type == RdReason::RS_CONTAINED || tri->second.filtered.type == RdReason::RS_CONTAINED) {
+                        extend.insert(&o);
+                        DUMPER["test"]("extend_insert 1: %s\n", o.ToM4Line().c_str());
+                    }
+                }
+            }
+
+        }
+    }
+
+    return extend;
+}
+
 std::unordered_set<const Overlap*> AsmDataset::GetBackOverlaps(Seq::Id tid, int end) const {
     std::unordered_set<const Overlap*> extend;
 
@@ -1489,8 +1635,11 @@ std::unordered_set<const Overlap*> AsmDataset::GetBackOverlaps(Seq::Id tid, int 
             auto &o = *i.second;
             auto &qread = o.GetOtherRead(tid);
 
-            if ((end == 0 && o.Location(qread.id, 0) == Overlap::Loc::Left) ||
-                (end == 1 && o.Location(qread.id, 0) == Overlap::Loc::Right)) continue;
+           //if ((end == 0 && o.Location(qread.id, 0) == Overlap::Loc::Left) ||
+           //     (end == 1 && o.Location(qread.id, 0) == Overlap::Loc::Right)) continue;
+
+           if ((end == 0 && o.Location(qread.id, 0) != Overlap::Loc::Right) ||
+               (end == 1 && o.Location(qread.id, 0) != Overlap::Loc::Left)) continue;
 
             auto oltype = GetOlReason(o).type;
             if (oltype == OlReason::RS_OK) {
@@ -1509,6 +1658,13 @@ std::unordered_set<const Overlap*> AsmDataset::GetBackOverlaps(Seq::Id tid, int 
     return extend;
 }
 
+void AsmDataset::ReplaceOverlapInGroup(const Overlap* new_ol, const Overlap* old_ol) {
+    assert(new_ol->a_.id == old_ol->a_.id && new_ol->b_.id == old_ol->b_.id);
+
+    groups_[new_ol->a_.id][new_ol->b_.id] = new_ol;
+    groups_[new_ol->b_.id][new_ol->a_.id] = new_ol;
+}
+
 std::unordered_set<Seq::Id> AsmDataset::ReservedReads() {
     std::unordered_set<Seq::Id> reserved;
 
@@ -1523,6 +1679,47 @@ std::unordered_set<Seq::Id> AsmDataset::ReservedReads() {
     return reserved;
 }
 
+void AsmDataset::Check_Group() const {
+
+    auto get_overlap_in_groups = [this](int a, int b) -> const Overlap* {
+        auto it0 = groups_.find(a);
+        if (it0 != groups_.end()) {
+            auto it1 = it0->second.find(b);
+            if (it1 != it0->second.end()) {
+                return it1->second;
+            }
+        }
+        return nullptr;
+    };
+
+    
+    auto get_overlaps_in_dups = [this](int a, int b) -> const std::vector<const fsa::Overlap*>* {
+        auto it0 = dup_groups_.find(a);
+        if (it0 != dup_groups_.end()) {
+            auto it1 = it0->second.find(b);
+            if (it1 != it0->second.end()) {
+                return &it1->second;
+            }
+        }
+        return nullptr;
+    };
+    
+    for (size_t i=0; i < ol_store_.Size(); ++i) {
+        const auto &o = ol_store_.Get(i);
+
+        assert(get_overlap_in_groups(o.a_.id, o.b_.id) == get_overlap_in_groups(o.b_.id, o.a_.id));
+        
+        auto dup_a = get_overlaps_in_dups(o.a_.id, o.b_.id);
+        auto dup_b = get_overlaps_in_dups(o.b_.id, o.a_.id);
+        if (dup_a != nullptr && dup_b != nullptr) {
+            assert(dup_a->size() == dup_b->size());
+            assert(dup_a->size() > 1);
+        } else {
+            assert(dup_a == dup_b); // dup_a == nullptr && dup_b == nullptr
+        }
+
+    }
+}
 
 void AsmDataset::Dump() const {
     LOG(INFO)("Dump infos");

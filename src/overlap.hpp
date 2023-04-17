@@ -19,6 +19,7 @@ public:
         bool Valid(const Overlap &ol, int replen=0, bool bothside=true) const;
         double Identity(const Overlap &ol) const { return large_indel_ > 0 ? IdentityIgnoringIndel(ol, large_indel_) : ol.identity_; }
         double IdentityIgnoringIndel(const Overlap &ol, int indel) const;
+        int MaxOverhang(int len) const;
 
  
         int min_length { 0 };                   // l

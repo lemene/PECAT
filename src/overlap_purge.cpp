@@ -29,8 +29,8 @@ void OverlapPurge::Running() {
     LOG(INFO)("Group overlaps");
     ol_store_.Group(groups_, thread_size_);
 
-    std::array<int, 2> range = rd_store_.GetIdRange();
-    for (int i=range[0]; i<range[1]; ++i) {
+    std::array<size_t, 2> range = rd_store_.GetIdRange();
+    for (size_t i=range[0]; i<range[1]; ++i) {
         read_ids_.push_back(i);
     }
 

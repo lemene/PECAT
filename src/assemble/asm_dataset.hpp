@@ -86,8 +86,11 @@ public:
     void UpdateFilteredRead();
     std::string QueryNameById(Seq::Id id) const { return rd_store_.QueryNameById(id); }
     std::unordered_set<Seq::Id> GetNearbyReads(Seq::Id);
+    std::unordered_set<Seq::Id> GetOverlapReads(Seq::Id) const;
     std::unordered_set<const Overlap*> GetExtendOverlaps(Seq::Id tid, int end) const ;
+    std::unordered_set<const Overlap*> GetExtendOverlapsEx(Seq::Id tid, int end) const ;
     std::unordered_set<const Overlap*> GetBackOverlaps(Seq::Id tid, int end) const ;
+
     const Overlap* QueryOverlap(Seq::Id a, Seq::Id b) const {
         auto iter0  = groups_.find(a);
         if (iter0 != groups_.end()) {
@@ -97,9 +100,13 @@ public:
         return nullptr;
     }
 
+    void ReplaceOverlapInGroup(const Overlap* new_ol, const Overlap* old_ol);
+
     std::unordered_set<Seq::Id> ReservedReads();
     void ExtendReservedReads();
 
+    /* */
+    void Check_Group() const;
     /** Record internal state and variables */
     void Dump() const;      
     void DumpOverlaps(const std::string &fname) const;
@@ -144,6 +151,7 @@ public:
    
     AsmOptions& opts_;
     std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
+    std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> dup_groups_;
 
     std::unordered_map<Seq::Id, ReadStatInfo> read_infos_;
 
@@ -155,6 +163,8 @@ public:
     
     std::shared_ptr<ReadVariants> read_variants_;
     std::shared_ptr<PhaseInfoFile> phased_reads_;
+
+    size_t mean_of_read_length { 0 };
 };
 
 }

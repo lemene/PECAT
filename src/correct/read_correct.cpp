@@ -6,6 +6,8 @@
 #include "../utility.hpp"
 
 namespace fsa {
+
+
 ReadCorrect::ReadCorrect() {
 }
 
@@ -17,7 +19,6 @@ ArgumentParser ReadCorrect::GetArgumentParser() {
 
     ap.AddNamedOption(filter0_opts_, "filter0", "overlap filtering options using at loading step", "");
     ap.AddNamedOption(filter1_opts_, "filter1", "overlap filtering options using at loading step", "");
-    ap.AddNamedOption(thread_size_, "thread_size", "thread size");
     ap.AddNamedOption(graph_fname_, "graph_fname", "The file recording graph");
     ap.AddNamedOption(infos_fname_, "infos_fname", "The file recording score infos");
     ap.AddNamedOption(output_directory_, "output_directory", "The directory for temporary files");
@@ -28,9 +29,7 @@ ArgumentParser ReadCorrect::GetArgumentParser() {
     ap.AddNamedOption(cands_opts_str_, "candidate", "options for selecting candidate overlaps");
     ap.AddNamedOption(min_identity_, "min_identity", "");
     ap.AddNamedOption(min_local_identity_, "min_local_identity", "");
-    ap.AddNamedOption(min_coverage_, "min_coverage", "");
-    ap.AddNamedOption(use_cache_, "use_cache", "use cache for alignment");
-
+    opts_.SetArguments(ap);
     return ap;
 }
 
@@ -43,6 +42,7 @@ void ReadCorrect::CheckArguments() {
 
     cands_opts_.From(cands_opts_str_);          // 合并用户设置
     cands_opts_str_ = cands_opts_.ToString();   // 输出所有参数
+    if (opts_.debug) SetDebug();
 }
 
 void ReadCorrect::CandidateOptions::From(const std::string& str) {
@@ -85,22 +85,26 @@ bool ReadCorrect::ReadCorrect::CandidateOptions::IsEnough(const std::vector<int>
         return a + (c > maxcov ? maxcov : c); 
     } ) * 1.0 / maxcov / cov.size();
 
-    return filled / (maxcov * cov.size()) >= percent;
+    size_t base = std::accumulate(cov.begin(), cov.end(), 0);
+    return filled / (maxcov * cov.size()) >= percent || base > coverage * (cov.size() - 1);
 }
 
 
 void ReadCorrect::Running() {
     LoadReadIds();
 
+    LOG(INFO)("Memory: %zd", GetMemoryUsage());
     LoadOverlaps(overlap_fname_);
     LoadReads();
 
+    LOG(INFO)("Memory: %zd", GetMemoryUsage());
     // TODO 根据read_ids来分组，不考虑其它的
-    ol_store_.Group(groups_, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()), thread_size_);
+    ol_store_.Group(groups_, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()), opts_.thread_size);
     LOG(INFO)("Group %zd %zd", groups_.size(), read_ids_.size());
 
-    if (use_cache_) GroupReadIds();
+    if (opts_.use_cache) GroupReadIds();
 
+    LOG(INFO)("Memory: %zd", GetMemoryUsage());
     Correct();
 }
 
@@ -112,19 +116,21 @@ void ReadCorrect::LoadReads() {
         ids.insert(o.a_.id);
         ids.insert(o.b_.id);
     }
-
     read_store_.Load(rread_fname_, "", false, ids);
+    LOG(INFO)("SIZE %zd %zd", ids.size(), read_store_.Size());
 }
 
 void ReadCorrect::LoadOverlaps(const std::string &fname) {
     std::unordered_set<Seq::Id> ids(read_ids_.begin(), read_ids_.end());
     
-    ol_store_.LoadFast(fname, "", (size_t)thread_size_, [this, &ids](Overlap &o) {
+    ol_store_.LoadFast(fname, "", (size_t)opts_.thread_size, [this, &ids](Overlap &o) {
         bool rel = ids.find(o.a_.id) != ids.end() || ids.find(o.b_.id) != ids.end();
         return rel && filter0_.Valid(o);
     });
 
     LOG(INFO)("Load %zd overlaps from file %s", ol_store_.Size(), fname.c_str());
+
+    dataset_.Load(ol_store_.GetStringPool());
 }
 
 
@@ -132,21 +138,24 @@ void ReadCorrect::LoadOverlaps(const std::string &fname) {
 void ReadCorrect::LoadReadIds() {
     read_store_.Load(rread_fname_, "", false);
 
+    std::unordered_set<Seq::Id> ids;
+
     if (!read_name_.empty()) {
-        read_ids_.push_back(read_store_.QueryIdByName(read_name_));
+        ids.insert(read_store_.QueryIdByName(read_name_));
     } else if (!read_name_fname_.empty()) {
         std::ifstream file(read_name_fname_);
         std::string line;
         while (std::getline(file, line)) {
-            read_ids_.push_back(read_store_.QueryIdByName(line));
+            ids.insert(read_store_.QueryIdByName(line));
         }
 
     } else {
-        std::array<int, 2> range = read_store_.GetIdRange();
-        for (int i=range[0]; i<range[1]; ++i) {
-            read_ids_.push_back(i);
+        std::array<size_t, 2> range = read_store_.GetIdRange();
+        for (size_t i=range[0]; i<range[1]; ++i) {
+            ids.insert(i);
         }
     }
+    read_ids_.assign(ids.begin(), ids.end());
 }
 
 void ReadCorrect::Correct() {
@@ -205,20 +214,20 @@ void ReadCorrect::Correct() {
 
     auto work_func = [&](size_t i) {
         Worker worker(*this);
-        std::unique_ptr<Dispatcher> dispatcher(use_cache_ ? 
+        std::unique_ptr<Dispatcher> dispatcher(opts_.use_cache ? 
             (Dispatcher*)new GroupDispatcher(progress, worker) : 
             (Dispatcher*)new SimpleDispatcher(progress));
 
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
         bool uc = false;
-
         for (auto tid=dispatcher->Get(uc); tid != Seq::NID; tid = dispatcher->Get(uc)) {
+            
             auto it = groups_.find(tid);
-            if (it != groups_.end()) {
+            if (it != groups_.end() && it->second.size() > 0) {
                 if (worker.Correct(it->first, it->second, uc)) {
                     if ( worker.GetCorrected().size() > 0) {
-                        SaveCRead(oss_cread, it->first, worker.GetCorrected());
+                        SaveCRead(oss_cread, it->first, worker.GetCorrected(), worker.GetTrueRange());
                         if (save_infos) worker.SaveReadInfos(oss_scores, it->first, read_store_);
                     } else {
                         LOG(WARNING)("Corrected Read(%s) is emtpy", read_store_.QueryNameById(tid).c_str());
@@ -239,9 +248,9 @@ void ReadCorrect::Correct() {
     };
 
  
-    LOG(INFO)("thread size %zd, totalsize %d", thread_size_, read_ids_.size());
+    LOG(INFO)("thread size %zd, totalsize %d", opts_.thread_size, read_ids_.size());
     if (of_cread.is_open()) {
-        MultiThreadRun((size_t)thread_size_, work_func);
+        MultiThreadRun((size_t)opts_.thread_size, work_func);
     } else {
         LOG(INFO)("Failed to open file: %s", rread_fname_.c_str());
     }
@@ -250,15 +259,11 @@ void ReadCorrect::Correct() {
 }
 
 
-void ReadCorrect::SaveCRead(std::ostream &os, int tid, const std::string &cread) {
+void ReadCorrect::SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t,2> &range) {
     
-    auto result = SplitString(cread, [](char c) { return islower(c); });
-
-    auto iter = std::max_element(result.begin(), result.end(), [](const std::string& a, const std::string &b) { return a.size() < b.size(); });
-    //if (iter != result.end() && (int)iter->size() >= min_length_) {
-    if (iter != result.end()) {
-        os << ">" << read_store_.QueryNameById(tid) << "\n" << *iter << "\n";
-    }
+    os << ">" << read_store_.QueryNameById(tid) << " range=" << range[0] << "-" << range[1] << "\n" 
+       <<  cread << "\n";
+    
 }
 
 
@@ -287,14 +292,17 @@ void ReadCorrect::GroupReadIds() {
             done[i] = true;
 
             while (s < grouped_ids_.size()) {
-                auto &ols = groups_[grouped_ids_[s]];
-                for (auto &o : ols) {
-                    auto d = done.find(o.first);
-                    if (d != done.end() && !d->second) {
-                        grouped_ids_.push_back(o.first);
-                        d->second = true;
-                        if (grouped_ids_.size() - group_ticks.back() >= group_size[1]) {
-                            break;
+                auto it = groups_.find(grouped_ids_[s]);
+                if (it != groups_.end()) {
+                    auto &ols = it->second;
+                    for (auto &o : ols) {
+                        auto d = done.find(o.first);
+                        if (d != done.end() && !d->second) {
+                            grouped_ids_.push_back(o.first);
+                            d->second = true;
+                            if (grouped_ids_.size() - group_ticks.back() >= group_size[1]) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -362,7 +370,7 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
     const auto& qread = o->GetOtherRead(id);
 
     DEBUG_printf("start align %s %s\n", owner_.read_store_.QueryNameById(qread.id).c_str(), owner_.read_store_.QueryNameById(tread.id).c_str());
-    if (owner_.use_cache_ && uc) {
+    if (owner_.opts_.use_cache && uc) {
         if (!cache_.GetAlignment(qread.id, tread.id, o->SameDirect(), al)) {
             std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
             auto r = aligner_.Align(owner_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
@@ -475,7 +483,8 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     }
 
     size_t stub = 500;
-    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.min_coverage_); 
+    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.opts_.min_coverage); 
+    DEBUG_printf("Range: %zd - %zd\n", range[0], range[1]);
     if (range[0] < range[1] && range[1] - range[0] + 2*stub >= (size_t)owner_.filter0_.min_length) {
         assert(range[0] >= stub && range[1] + stub <= target.Size());
         range[0] -= stub;
@@ -494,11 +503,10 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
             if (owner_.cands_opts_.IsEnough(aligned_.size())) break;
         }
 
-
+        DEBUG_printf("al count: %zd\n", aligned_.size());
         for (auto &al : aligned_) {
             al.Rearrange();
         }
-
         graph_.Build(target, range, aligned_);
         graph_.Consensus();
         return true;

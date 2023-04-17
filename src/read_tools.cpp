@@ -2,7 +2,11 @@
 
 #include "overlap_store.hpp"
 #include "read_store.hpp"
+#include "sequence_store.hpp"
 #include "file_io.hpp"
+#include "utils/project_file.hpp"
+
+#include "phase/hic_read_infos.hpp"
 
 namespace fsa {
 
@@ -204,7 +208,7 @@ void Program_SplitName::LoadReadnames(const std::string& fname) {
     LOG(INFO)("load read names");
     LoadReadFile(fname, "", [&](const SeqReader::Item& item) {
         auto id = string_pool_.GetIdByStringUnsafe(item.head);
-        if (lengths_.size() <= id) {
+        if ((int)lengths_.size() <= id) {
             lengths_.push_back(0);
         }
         lengths_[id] = (int)item.seq.size();
@@ -219,7 +223,7 @@ void Program_SplitName::LoadReadnames(const std::string& fname) {
     LOG(INFO)("minimum length = %zd", minlen);
 
     for (size_t i = 0; i < lengths_.size(); ++i) {
-        if (lengths_[i] >= minlen) {
+        if (lengths_[i] >= (int)minlen) {
             read_ids_index_[i] = read_ids_.size();
             read_ids_.push_back(i);
         }
@@ -366,7 +370,7 @@ void Program_SplitName::SaveOverlaps(const std::string &fn_ols, const std::strin
 
         assert(osss.size() == ofs.size());
         for (size_t i = 0; i < osss.size(); ++i) {
-            if (osss[i].tellp() >= flushsize) {
+            if ((size_t)osss[i].tellp() >= flushsize) {
                 ofs[i] << osss[i].str();
                 osss[i].str("");
             }

@@ -188,6 +188,7 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
     int te = range[3];
     int qe = !rc ? range[1] : qseq.size() - range[0];
 
+    // TODO 
     auto new_s = FindExactMatch(tseq, qseq, {ts, qs});
     DEBUG_printf("pos0: %d %d %d %d\n", qs, qe, ts,te);
     ts = new_s[0];
@@ -196,13 +197,13 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
 
 
     auto r = worker->Align((const char*)&qseq[0], qseq.size(),
-                       (const char*)&tseq[0], tseq.size(), {qs, qe}, {ts, te}, al); 
+                       (const char*)&tseq[0], tseq.size(), {(size_t)qs, (size_t)qe}, {(size_t)ts, (size_t)te}, al); 
     if (r) {
         
         bool valid = false;
         DEBUG_printf("q:%s\nt:%s\n", query.ToString()->c_str(), target_->ToString()->c_str());
         DEBUG_printf("alq: %s\nalt: %s\n", al.aligned_query.c_str(), al.aligned_target.c_str());
-        DEBUG_printf("global idents: %f\n", al.Identity());
+        DEBUG_printf("global idents: %f > %f\n", al.Identity(), min_identity_);
         
         if (al.Identity() >= min_identity_ ) {
             valid = al.TrimEnds();
@@ -210,7 +211,7 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
                 auto idents = ComputeIdentity(al.aligned_query,  al.aligned_target, local_window_size_);
                 valid = idents[1] >= min_local_identity_;
                 
-                DEBUG_printf("local idents: %f\n", idents[1]);
+                DEBUG_printf("local idents: %f > %f\n", idents[1], min_local_identity_);
             }
     
         }
@@ -232,19 +233,7 @@ std::array<int, 2> Aligner::FindExactMatch(const std::vector<uint8_t>& tseq, con
     std::vector<uint64_t> tks(w, 0);
     std::vector<uint64_t> qks(w, 0);
 
-    auto print_seq = [w](const std::vector<uint8_t> &seq, int s) {
-        printf("--");
-        for (int i=0; i<w; ++i) {
-            printf("%c", "ACGT"[seq[s+i]]);
-        }
-        printf("\n");
-        fflush(stdout);
-
-    };
-
-    //print_seq(tseq,s[0]);
-    //print_seq(qseq, s[1]);
-    assert(tseq.size() > s[0] + w && qseq.size() > s[1] + w);
+    assert((int)tseq.size() > s[0] + w && (int)qseq.size() > s[1] + w);
 
     auto calc_kmer = [](const uint8_t* s, int k) {
         uint64_t kmer = 0;
@@ -271,21 +260,6 @@ std::array<int, 2> Aligner::FindExactMatch(const std::vector<uint8_t>& tseq, con
     for (int i=1; i<w; ++i) {
         qks[i] = move_kmer(qks[i-1], k, qseq[s[1]+k+i-1]);
     }
-
-    auto print_kseq = [w](const std::vector<uint64_t> &ks) {
-        printf("kk ");
-        for (size_t i=0; i<ks.size(); ++i) {
-            printf("%04x ", (int)ks[i]);
-        fflush(stdout);
-        }
-        printf("\n");
-        fflush(stdout);
-
-    };
-
-    //print_kseq(tks);
-    //print_kseq(qks);
-
 
     for (int it = 0; it < w; ++it) {
         for (int iq = 0; iq < w; ++iq) {

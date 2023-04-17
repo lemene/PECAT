@@ -7,7 +7,7 @@ namespace fsa {
 class BubbleSimplifier : public Simplifier {
 public:
     BubbleSimplifier(PathGraph& graph) : Simplifier(graph), graph_(graph) {
-        name_ = "Bubble";
+        name_ = "bubble";
         desc_ = "Detect bubble structures";
     }
 

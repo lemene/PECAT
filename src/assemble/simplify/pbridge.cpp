@@ -14,6 +14,8 @@ bool PathBridgeSimplifier::ParseParameters(const std::vector<std::string> &param
             max_length = (size_t) std::stoul(it[1]);
         } else if (it[0] == "nodesize") {
             max_nodesize = (size_t) std::stoul(it[1]);
+        } else if (it[0] == "level") {
+            level = (size_t) std::stoul(it[1]);
         } else {
             return false;
         }
@@ -106,13 +108,16 @@ void PathBridgeSimplifier::Running() {
 
     std::unordered_map<PathEdge*, PathGraph::LinearPath> removed_path;
     for (auto &n : nodes) {
+        //Debug("bbb: node: %s, outdegree=%zd, iscross=%d\n", ToString(n).c_str(), n->OutDegree(), IsCross(n));
+        Debug("bbb: node: %s, outdegree=%zd\n", ToString(n).c_str(), n->OutDegree());
 
-        Debug("bbb: node: %s\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
         bool nontrivial = false;
         std::vector<PathGraph::LinearPath> conds;
         for (size_t i = 0; i < n->OutDegree(); ++i) {
             auto e = n->OutEdge<PathEdge>(i);
             auto p = graph_.FindBridgePath1(e, max_length, max_nodesize);
+                
+            Debug("bbb: conds0: %s, (%zd, %d, %d, %d)\n", ToString(e).c_str(), p.path.size(), p.score, p.nodesize, p.length);
 
             if (p.path.size() > 0 && is_simple_path(p.path) && graph_.HasBridgeJunction(p, max_nodesize)) {
                 CalcPathScore(p);
@@ -157,7 +162,7 @@ void PathBridgeSimplifier::Running() {
             assert(iter != removed_path.end());
             Debug("bbb: rz e - : %d %s\n", iter->second.score, i.first->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
             
-            if (iter->second.score <= 0) {
+            if (iter->second.score <= (int)level) {
                 i.first->Reduce("repeat_bridge", true);
                 removed_count ++;
 

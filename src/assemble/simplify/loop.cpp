@@ -8,12 +8,12 @@ void LoopSimplifier::Running() {
 }
 
 
-
 void LoopSimplifier::FindLoops() {
 
     std::vector<SgNode*> cands = graph_.CollectNodes([](SgNode *n) { return n->InDegree() == 2; });
-    std::vector<NodeOrEdge> loops(cands.size());
+    LOG(INFO)("Found cand loop structures: %zd", cands.size()); 
 
+    std::vector<NodeOrEdge> loops(cands.size());
     MultiThreadMap(graph_.Options().thread_size, cands, loops, [&](SgNode* n) {
         return DetectLoop(n);
     });
@@ -62,43 +62,15 @@ void LoopSimplifier::FindLoops() {
 }
 
 
-// void LoopSimplifier::FindLoops2() {
-
-//     std::vector<SgNode*> cands = graph_.CollectNodes([](SgNode *n) { return n->InDegree() == 2; });
-//     std::vector<LoopNode*> loops(cands.size());
-
-//     MultiThreadMap(graph_.Options().thread_size, cands, loops, [&](SgNode* n) {
-//         return DetectLoop(n);
-//     });
- 
-//     LOG(INFO)("Found loop structures: %zd", std::count_if(loops.begin(), loops.end(), [](const LoopNode* n) {
-//         return n != nullptr;
-//     }));
-
-//     for (auto n : loops) {
-//         if (n == nullptr) continue; 
-
-//         if (graph_.QueryNode(n->Id()) == nullptr) {
-//             assert(graph_.QueryNode(n->RId()) == nullptr);
-
-//             auto rn = n->Reverse(graph_);
-//             assert(rn != nullptr);
-//             graph_.InsertLoopNode(n);
-//             graph_.InsertLoopNode(rn);
-
-//         } else {
-//             delete n;
-//         }
-//     }
-// }
-
-
 auto LoopSimplifier::DetectLoop(SgNode* start) -> NodeOrEdge {
     assert(start->InDegree() == 2);
+    Debug("cond: %s %zd %zd\n", ToString(start).c_str(), start->InDegree(), start->OutDegree());
+
     if (start->OutDegree() == 1) {
 
         SgEdge* forward = start->OutEdge(0);
         auto end = forward->OutNode();
+        Debug("cond end: %s %zd %zd\n", ToString(end).c_str(), end->InDegree(), end->OutDegree());
         if (end->OutDegree() == 2) {
             //       <- - <- 
             //       \      /
@@ -155,74 +127,6 @@ auto LoopSimplifier::DetectLoop(SgNode* start) -> NodeOrEdge {
     }
 
     return NodeOrEdge();  
-}
-
-
-//  寻找string graph中的loop，为了简化，loop个边的长度为 1 
-//   
-//   
-LoopEdge* LoopSimplifier::FindLoop(SgNode* start_node, int max_loop_length) {
-    assert(start_node->InDegree() == 2);
-    if (start_node->OutDegree() == 1) {
-
-        SgEdge* start_to_end = start_node->OutEdge(0);
-        auto end_node = start_to_end->OutNode();
-        if (end_node->OutDegree() >= 2) {
-            //       <- - <- 
-            //       \      /
-            //   -> - -> - -> -> 
-            // start_node's outdegree == 1 意味着它只有唯一的延长方式
-            // end_node's outdegree >= 2 找到到一个出边 能够返回 start_node，
-
-            SgEdge* end_to_start = nullptr;
-            for (size_t i = 0; i < end_node->OutDegree(); ++i) {
-                auto e = end_node->OutEdge(i);
-                if (e->OutNode() == start_node) {
-                    end_to_start = e;
-                    break;
-                }
-
-            } 
-
-            if (end_to_start != nullptr) {
-                return new LoopEdge(start_node, end_node, {start_to_end}, {end_to_start});
-            }
-        } else if (end_node == start_node) {    // 
-            //       <- <-
-            //       \   /
-            //   -> - -> 
-            //  loop处于末端
-            assert(end_node->OutDegree() == 1 && end_node->InDegree() == 2); // 前面条件暗含的条件
-
-            return nullptr;
-            // return new LoopEdge(start_node, end_node, {{start_node->out_edges_[0]}});
-        } else {
-            return nullptr;
-        }
-    } else if (start_node->OutDegree() == 2 ) { // out degree > 2 无法确定的 loop展开到哪个分支
-        //       <- <-
-        //       \   /
-        //   -> - -> - -> 
-        //  气泡处于中间，但start_node和end_node相同
-
-        auto end_node = start_node;
-
-        PathEdge* end_to_start = nullptr;
-        for (size_t i = 0; i < end_node->OutDegree(); ++i) {
-            auto e = end_node->OutEdge(i);
-            if (e->OutNode() == start_node) {
-                end_to_start = (PathEdge*)e;
-                break;
-            }
-        }
-    
-        if (end_to_start != nullptr) {
-            return nullptr;
-        }
-    }
-
-    return nullptr;
-
 }
 
 

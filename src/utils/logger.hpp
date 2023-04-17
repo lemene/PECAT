@@ -75,10 +75,24 @@ protected:
 
 extern Logger LOGGER;
 
+void DebugPrintf(const char *const format, ...);
+void SetDebug();
 extern bool print_rubbish;
-#define DEBUG_printf if (print_rubbish) printf
+#define DEBUG_printf if (print_rubbish) DebugPrintf
 
-#define DEBUG_local_printf if (local_print_rubbish) printf
+#define DEBUG_local_printf if (local_print_rubbish) DebugPrintf
+
+struct LogBlock { 
+    LogBlock(const std::string& m) : msg(m) {
+        LOG(INFO)("Enter %s", msg.c_str());
+    }
+    ~LogBlock() {
+        LOG(INFO)("Level %s", msg.c_str());
+    }
+    std::string msg;
+};
+
+#define LOG_BLOCK(n) LogBlock __##n(#n)
 
 } // namespace fsa {
 

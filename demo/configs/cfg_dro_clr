@@ -1,26 +1,36 @@
-project=dro
+project= dro
 reads= $READS
 genome_size=140000000
 threads=48
-grid=local
+cleanup=1
+
+grid=local:1
+
 prep_min_length=3000
 prep_output_coverage=80
+
 corr_iterate_number=1
 corr_block_size=4000000000
-corr_filter_options=--filter0=:al=5000:alr=0.5:aalr=0.5:oh=1000:ohr=0.1
-corr_correct_options=--score=weight:lc=10 --aligner diff:s=1000 
+corr_filter_options=--filter0=:al=5000:alr=0.5:aal=8000:aalr=0.5:oh=2000:ohr=0.2
+corr_correct_options=--score=weight:lc=10 --aligner diff --filter1 oh=1000:ohr=0.01
 corr_rd2rd_options=-x ava-pb
 corr_output_coverage=80
+
 align_block_size=4000000000
 align_rd2rd_options=-X -g3000 -w30 -k19 -m100 -r500
-align_filter_options=--filter0=l=5000:al=5000:aal=6000:aalr=0.5:oh=1000:ohr=0.1 --task=extend --filter1=oh=100:ohr=0.01
-asm1_assemble_options=
-phase_method=0
+align_filter_options=--filter0=l=3000:al=3000:alr=0.5:aalr=0.5:oh=1000:ohr=0.1 --task=extend --filter1=oh=100:ohr=0.01
+
+asm1_assemble_options=--max_trivial_length 10000
+
 phase_rd2ctg_options=-x map-pb -c -p 0.5 -r 1000
 phase_use_reads=1
-phase_phase_options=
-asm2_assemble_options=
+phase_phase_options= --phase_options icr=0.2
+phase_filter_options= --threshold=1000
+
+asm2_assemble_options=--max_trivial_length 10000 --contig_format dual,prialt
+
 polish_use_reads=1
-polish_map_options = -x map-pb
+polish_map_options = -x asm20
 polish_cns_options =
+
 

@@ -14,7 +14,6 @@ void ReadVariants::Load(const std::string& fname) {
     GzFileReader reader(fname);
 
     if (reader.Valid()) {
-        size_t count = 0;
         std::string line = reader.GetLine();
         while (!line.empty()) {
             auto items = SplitStringBySpace(line);
@@ -22,8 +21,8 @@ void ReadVariants::Load(const std::string& fname) {
 
             if (items.size() > item_start) {
                 Variants v;
-                v.contig = string_pool_.QueryIdByString(items[0]);
-                auto rid = string_pool_.QueryIdByString(items[1]);
+                v.contig = string_pool_.GetIdByString(items[0]);
+                auto rid = string_pool_.GetIdByString(items[1]);
                 v.d = std::stoi(items[2]);
                 v.offset = std::stoi(items[3]);
 
@@ -116,9 +115,17 @@ std::array<int, 2> ReadVariants::GetClosestSnps(const Overlap& ol) const  {
                 if (ira.d != irb.d && ol.SameDirect()) continue;
 
                 auto atob = irb.d == 0 ? (ira.offset - irb.offset) : -(ira.offset - irb.offset) ;
-                if (std::abs(atob - offset) < distance) {
-                    distance = std::abs(atob - offset);
+                int new_distance = std::abs(atob - offset);
+                if (std::abs(new_distance - distance) < 500) {
+                    auto new_result = GetSnps(ira, irb);
+                    if (result[0] + result[1] < new_result[0] + new_result[1]) {
+                        result = new_result;
+                        distance = new_distance;
+                    }
+
+                } else if (new_distance < distance) {
                     result = GetSnps(ira, irb);
+                    distance = new_distance;
                 }
             }
         }

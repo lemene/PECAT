@@ -13,9 +13,12 @@ public:
     virtual bool ParseParameters(const std::vector<std::string> &params);
     virtual std::string GetParameters() const;
     virtual void Running();
+protected:
+    bool IsTrivialEdge(const SgEdge* e, int min_nodesize, int min_length);
+protected:
     StringGraph& graph_;   
-    int max_nodesize = 1;
-    int max_length = -1;
+    int min_nodesize {3};
+    int min_length {-1};
 };
 
 

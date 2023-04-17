@@ -115,66 +115,52 @@ void PhaseInfoFile::Load(const std::string &fname, size_t thread_size) {
 
 }
 
-bool PhaseInfoFile::Contain(const Overlap &o, int threshold) const {
+bool PhaseInfoFile::Contain(const Overlap &o, int threshold, bool both) const {
+
+    int off_1to0 = o.MappingToSource<1>({0})[0];
+    int off_0to1 = o.MappingToTarget<1>({0})[0];
+    return Contain(o.a_.id, o.b_.id, o.SameDirect(), off_0to1, off_1to0, threshold, both);
+}
+
+
+size_t PhaseInfoFile::MinDistance(const Overlap &o, bool both) const {
+    size_t min_distance0 = MAX_DISTANCE;
     auto ia = phased_.find(o.a_.id);
     if (ia != phased_.end()) {
         auto iab = ia->second.find(o.b_.id);
         if (iab != ia->second.end()) {
-            if (threshold >= 0) {
-                int offset = o.MappingToSource<1>({0})[0];
-                for (auto &l : iab->second) {
-                    if ((o.SameDirect() && l.strand == 0 || !o.SameDirect() && l.strand == 1 ) && std::abs(offset - l.offset) < threshold) {
-                        return true;
-                    }
+            int offset = o.MappingToSource<1>({0})[0];
+            for (auto &l : iab->second) {
+                if (((o.SameDirect() && l.strand == 0) || (!o.SameDirect() && l.strand == 1) ) && std::abs(offset - l.offset) < min_distance0) {
+                    min_distance0 = std::abs(offset - l.offset);
                 }
-            } else {
-                return true;
             }
         }
     }
 
+    size_t min_distance1 = MAX_DISTANCE;
     auto ib = phased_.find(o.b_.id);
     if (ib != phased_.end()) {
         auto iba = ib->second.find(o.a_.id);
         if (iba != ib->second.end()) {
-            if (threshold >= 0) {
-                int offset = o.MappingToTarget<1>({0})[0];
-                for (auto &l : iba->second) {
-                    if ((o.SameDirect() && l.strand == 0 || !o.SameDirect() && l.strand == 1 ) && std::abs(offset - l.offset) < threshold) {
-                        return true;
-                    }
+
+            int offset = o.MappingToTarget<1>({0})[0];
+            for (auto &l : iba->second) {
+                if (((o.SameDirect() && l.strand == 0) || (!o.SameDirect() && l.strand == 1) ) && std::abs(offset - l.offset) < min_distance1) {
+                    min_distance1 = std::abs(offset - l.offset);
                 }
-            } else {
-                return true;
             }
+            
         }
         
     }
-
-
-    return false;
+    return both ? std::max(min_distance0, min_distance1) : std::min(min_distance0, min_distance1);
 }
 
 bool PhaseInfoFile::Contain(const std::string &name0, const std::string &name1) {
     int id0 = string_pool_.QueryIdByString(name0);
     int id1 = string_pool_.QueryIdByString(name1);
-    auto ia = phased_.find(id0);
-    if (ia != phased_.end()) {
-        auto iab = ia->second.find(id1);
-        if (iab != ia->second.end()) {
-            return true;
-        }
-    }
-
-    auto ib = phased_.find(id1);
-    if (ib != phased_.end()) {
-        auto iba = ib->second.find(id0);
-        if (iba != ia->second.end()) {
-            return true;
-        }
-    }
-
-    return false;
+    return Contain(id0, id1);
 }
 
 bool PhaseInfoFile::Contain(int id0, int id1) const {
@@ -197,16 +183,21 @@ bool PhaseInfoFile::Contain(int id0, int id1) const {
     return false;
 }
 
-bool PhaseInfoFile::Contain(int id0, int id1, bool d, int off_0to1, int off_1to0, int threshold) const {
-
+bool PhaseInfoFile::Contain(int id0, int id1, bool d, int off_0to1, int off_1to0, int threshold, bool both) const {
+    std::array<bool,2> test = {false, false};
     auto ia = phased_.find(id0);
     if (ia != phased_.end()) {
         auto iab = ia->second.find(id1);
         if (iab != ia->second.end()) {
-            for (auto &l : iab->second) {
-                if ((l.strand == 0 && d || l.strand == 1 && !d) && std::abs(off_1to0 - l.offset) < threshold) {
-                    return true;
+            if (threshold >= 0) {
+                for (auto &l : iab->second) {
+                    if (((l.strand == 0 && d) || (l.strand == 1 && !d)) && std::abs(off_1to0 - l.offset) < threshold) {
+                        test[0] = true;
+                        break;
+                    }
                 }
+            } else {
+                test[0] = true;
             }
         }
     }
@@ -215,15 +206,20 @@ bool PhaseInfoFile::Contain(int id0, int id1, bool d, int off_0to1, int off_1to0
     if (ib != phased_.end()) {
         auto iba = ib->second.find(id0);
         if (iba != ia->second.end()) {
-            for (auto &l : iba->second) {
-                if ((l.strand == 0 && d || l.strand == 1 && !d) && std::abs(off_0to1 - l.offset) < threshold) {
-                    return true;
+            if (threshold >= 0) {
+                for (auto &l : iba->second) {
+                    if (((l.strand == 0 && d) || (l.strand == 1 && !d)) && std::abs(off_0to1 - l.offset) < threshold) {
+                        test[1] = true;
+                        break;
+                    }
                 }
+            } else {
+                test[1] = true;
             }
         }
     }
 
-    return false;
+    return both ? (test[0] && test[1]) : (test[0] || test[1]);
 }
 
 std::unordered_set<int> PhaseInfoFile::Get(int id) const {

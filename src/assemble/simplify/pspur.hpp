@@ -13,6 +13,8 @@ public:
 
     virtual bool ParseParameters(const std::vector<std::string> &params);
     virtual void Running();
+
+    void RemoveDeadEnds();
     bool TestInExtend(SgEdge* e, int minlen, int minnode);
     PathGraph& graph_;   
 

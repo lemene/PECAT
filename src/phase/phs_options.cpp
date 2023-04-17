@@ -10,6 +10,7 @@ void PhsOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(ol_fname_, "ol_fname", "alignment filename");
     ap.AddNamedOption(rd_fname_, "rd_fname", "Read filename");
     ap.AddNamedOption(ctg_fname_, "ctg_fname", "Contig filename");
+    ap.AddNamedOption(vcf_fname_, "vcf_fname", "VCF filename that contains snp information");
     ap.AddNamedOption(output_directory_, "output_directory", "");
     ap.AddNamedOption(ctgname_fname_, "ctgname_fname", "contig names that are processed");
     ap.AddNamedOption(filter_opts_str_, "filter", "overlap filtering options");

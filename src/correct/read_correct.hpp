@@ -1,5 +1,4 @@
-#ifndef FSA_READ_CORRECT_HPP
-#define FSA_READ_CORRECT_HPP
+#pragma once
 
 #include <string>
 #include <vector>
@@ -10,6 +9,8 @@
 #include "alignment_graph.hpp"
 #include "utils/program.hpp"
 #include "align/alignment_cache.hpp"
+#include "crr_options.hpp"
+#include "crr_dataset.hpp"
 
 namespace fsa {
 class ReadCorrect : public Program {
@@ -32,7 +33,7 @@ public:
         bool IsEnough(size_t number) const { return (int)number >= max_number; }
 
         double percent { 0.95 };             // p Percentage of filled matrix
-        double overhang_weight   { 0.1 };                // w overhang的比重
+        double overhang_weight   { 0.0 };                // w overhang的比重
         int failures { 10 };               // f 连续失败次数
         int max_number { 200 };             //  // MAX_COV - 1
         int coverage { 80 };                    // 需要多少层数据
@@ -44,7 +45,7 @@ protected:
     void LoadOverlaps(const std::string &fname);
     void LoadReadIds();
     void Correct();
-    void SaveCRead(std::ostream &os, int tid, const std::string &cread);
+    void SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t, 2> &range);
     
     std::string OutputPath(const std::string &fname) { return output_directory_+"/"+fname; }
 
@@ -62,16 +63,15 @@ protected:
 
     class Worker {
     public:
-        Worker(ReadCorrect& owner) : owner_(owner) {
+        Worker(ReadCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
             graph_.SetParameter("score", owner.score_);
-            graph_.SetParameter("min_coverage", owner.min_coverage_);
             aligner_.SetParameter("min_identity", owner.min_identity_);  
             aligner_.SetParameter("min_local_identity", owner.min_local_identity_);
             aligner_.SetParameter("aligner", owner_.aligner_);
         };
         ~Worker() {  }
         bool Correct(int id, const std::unordered_map<int, const Overlap*>& g, bool uc=true);
-        void CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>>& cands);
+        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>> & cands);
         bool IsCoverageEnough(const std::vector<int> &cov);
         bool ExactFilter(const Alignment& r);
         bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);
@@ -80,7 +80,9 @@ protected:
         void ClearCache() { return cache_.Clear(); }
         void ResetCache(const std::vector<Seq::Id> &ids, size_t size) { return cache_.Reset(ids, size); }
         const std::string GetCorrected() const { return graph_.GetSequence(); }
+        const std::array<size_t, 2> & GetTrueRange() const { return graph_.GetTrueRange(); }
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rd) { graph_.SaveReadInfos(os, tid, rd); }
+   
         StatInfo stat_info;
     protected:
         ReadCorrect& owner_;
@@ -97,7 +99,7 @@ protected:
         Seq::Id Get() {
             auto curr = index.fetch_add(1);
             if (curr % log_block_size == 0) {
-             LOG(INFO)("done %zd, all %zd", curr, owner.read_ids_.size());
+             LOG(INFO)("done %zd, all %zd %zd", curr, owner.read_ids_.size(), GetMemoryUsage());
             }
             return curr < owner.read_ids_.size() ? owner.read_ids_[curr] : Seq::NID;
         }
@@ -107,7 +109,7 @@ protected:
             if (curr < owner.group_ticks.size()-1) {
                 if (owner.group_ticks[curr] - last_log >= log_block_size) {
                     last_log = owner.group_ticks[curr];
-                    LOG(INFO)("done %zd/%zd", owner.group_ticks[curr], owner.grouped_ids_.size());
+                    LOG(INFO)("done %zd/%zd %zd", owner.group_ticks[curr], owner.grouped_ids_.size(), GetMemoryUsage());
                 }
                 assert(owner.group_ticks[curr+1]-owner.group_ticks[curr] <= ids.size());
                 for (size_t i=owner.group_ticks[curr]; i<owner.group_ticks[curr+1]; ++i) {
@@ -145,15 +147,12 @@ protected:
     std::string cands_opts_str_ { "n=200:c=80:f=10:p=0.95:ohwt=0.1"};
     CandidateOptions cands_opts_ { cands_opts_str_ };
 
-    int min_coverage_ { 4 };
     double min_identity_ { 60 };
     double min_local_identity_ { 50 };
 
-    bool use_cache_ { false };
 
     std::string read_name_ {""};
     std::string read_name_fname_ { "" };
-    int thread_size_{ 4 };
 
     std::string aligner_ { "diff" };
     std::string aligner_parameter { "" };
@@ -177,9 +176,11 @@ protected:
     std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
 
     StatInfo stat_info_;
+
+    CrrOptions opts_;
+    CrrDataset dataset_ { opts_ };
 };
 
 } // namespace fsa {
-    
-#endif // FSA_READ_CORRECT_HPP
+
 

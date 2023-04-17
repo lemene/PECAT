@@ -151,7 +151,7 @@ SimpleAlign::Result SimpleAlign::Align(const std::string &query, const std::stri
                 best_xy = node.x + node.len + node.y + node.len;
             }
 
-            if ( node.x + node.len  >= query.size() || node.y + node.len  >= target_.size()) {
+            if ( node.x + node.len  >= (int)query.size() || node.y + node.len >= (int)target_.size()) {
                 last_node[0] = dxy;
                 last_node[1] = d;
                 break;

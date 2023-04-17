@@ -197,6 +197,7 @@ public:
         }
         std::array<int, 3> Distance(const Group& b, double support_rate) const;
         std::array<int, 3> Distance(const Group& b, double support_rate, int support) const;
+        int MaxDistance(const Group &b, double support_rate, int support) const;
 
     
         std::vector<std::array<int,2>> StatVars(const std::unordered_map<int, int>& mapper) const;
@@ -226,6 +227,7 @@ public:
     std::vector<Group> Divide(const Group& g);
     std::vector<Group> Combine(const std::vector<Group>& groups);
     std::vector<Group> Combine2(const std::vector<Group>& groups);
+    std::vector<Group> Combine3(const std::vector<Group>& groups);
     void FindConsistent(const Group& g0);
     void FindInconsistent(const Group& g0, const Group& gx);
 

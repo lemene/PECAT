@@ -33,7 +33,7 @@ public:
 
 
     EdgeScore GetEdgeScore(const BaseEdge *e) {
-        std::array<int,3> score = { e->Score(), 0, 0 };     
+        std::array<int,3> score = { (int)e->Score(), 0, 0 };     
         if (rvs_ != nullptr) {
             auto mm = rvs_->GetClosestSnps(*(e->ol_));
             score[1] = mm[0];
@@ -43,13 +43,6 @@ public:
     }
 
     bool EdgeScoreGreater(const EdgeScore &a, const EdgeScore &b) {
-        // if ((a[1] + a[2]) < threshold_count || (b[1] + b[2]) < threshold_count) {
-        //     return a[1] - a[2] > b[1] - b[2];
-        // } else {
-        //     double ra = (a[1] - a[2])*1.0 / (a[1] + a[2]) ;
-        //     double rb = (b[1] - b[2])*1.0 / (b[1] + b[2]) ;
-        //     return ra > rb;
-        // }
         if (a[1]*snp_weight_ - a[2] > b[1]*snp_weight_ - b[2]) {
             return true;
         } else if (a[1]*snp_weight_ - a[2] == b[1] * snp_weight_ - b[2]) {
@@ -57,25 +50,24 @@ public:
         } else {
             return false;
         }
+        // auto rate_score = [](const EdgeScore &a) {
+        //     auto s = a[1] + a[2] == 0;
+        //     return s > 0 ? 1.0*a[2] / s : 0.0;
+        // };
+        // auto arscore = rate_score(a);
+        // auto brscore = rate_score(b);
+        // if (a[2] < b[2]) {
+        //     return true;
+        // } else if (a[2] == b[2] && arscore < brscore) {
+        //     return true;
+        // } else if (a[2] == b[2] && arscore == brscore) {
+        //     return a[0] > b[0];
+        // } else {
+        //     return false;
+        // }
     }
 
     bool EdgeScoreSignificantlyGreater(const EdgeScore &a, const EdgeScore &b) {
-
-        // if (((a[1] - a[2]) - (b[1] - b[2]))  / 2>= threshold_count) {
-        //     double ra = (a[1] + a[2]) > 0 ? (a[1] - a[2])*1.0 / (a[1] + a[2]) : 0.0;
-        //     double rb = (b[1] + b[2]) > 0 ? (b[1] - b[2])*1.0 / (b[1] + b[2]) : 0.0;
-        //     if ((ra - rb)/2 >= threshold_rate) {
-        //         return true;
-        //     }
-        // }
-        // return false;
-        // auto get_score = [this](const EdgeScore &a) {
-        //     return a[1]*snp_weight_ + a[2] == 0 ? 0.0 : (a[1]*snp_weight_ - a[2]) / (a[1]*snp_weight_+a[2]);
-        // };
-        // double sa = get_score(a);
-        // double sb = get_score(b);
-        // return sa - sb >= 0.33;
-
         auto ascore = a[1] * snp_weight_ - a[2];
         auto bscore = b[1] * snp_weight_ - b[2];
 
@@ -85,6 +77,50 @@ public:
             return ascore - bscore >= std::max<double>(th_count, std::abs(bscore)*th_rate[1]);
         }
 
+        // auto rate_score = [](const EdgeScore &a) {
+        //     auto s = a[1] + a[2];
+        //     return s > 0 ? 1.0*a[2] / s : 0.0;
+        // };
+        // size_t count = th_count;
+        // double rate = th_rate[0];
+        // auto arscore = rate_score(a);
+        // auto brscore = rate_score(b);
+        // return a[2] + count < b[2] && arscore * rate < brscore;
+    }
+    bool EdgeScoreSignificantlyGreater2(const BestItem &a, const BestItem &b) {
+ 
+        size_t count = th_count;
+        double rate = th_rate[0];
+        
+        auto rate_score = [](const EdgeScore &a) {
+            auto s = a[1] + a[2];
+            return s > 0 ? 1.0*a[2] / s : 0.0;
+        };
+
+        if (a.e->OutNode()->InDegree() == 1 && b.e->OutNode()->InDegree() >= 2 && rvs_ != nullptr) {
+            if (a.s[1] - a.s[2] >= (int)count && (a.s[1] - a.s[2]) - (b.s[1] - b.s[2]) >= (int)count) {
+                auto a_in_node = a.e->InNode();
+                auto arscore = rate_score(a.s);
+
+                for (size_t i = 0; i < b.e->OutNode()->InDegree(); ++i) {
+                    if (b.e->OutNode()->InEdge(i) != b.e) {
+                        auto n = b.e->OutNode()->InNode<BaseNode>(i);
+                        assert(rvs_ != nullptr);
+                        auto mm = rvs_->Test(n->ReadId(), a_in_node->ReadId());
+                        auto bs = b.s;
+                        bs[1] += mm[0];
+                        bs[2] += mm[1];
+                        auto brscore = rate_score(bs);
+                        
+                        if (a.s[2] + (int)count < bs[2] && arscore * rate < brscore) {
+                            return true;
+                        }
+                        
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     auto FindBestOutEdge(BaseNode* n) -> std::vector<BestItem>;

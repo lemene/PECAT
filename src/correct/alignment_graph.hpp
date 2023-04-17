@@ -13,6 +13,8 @@
 namespace fsa {
 
 class ReadStore;
+class CrrOptions;
+class CrrDataset;
 
 class AlignmentGraph : public Corrector {
 public:
@@ -34,7 +36,7 @@ public:
         const Link* best_link{ nullptr };
 
         std::vector<Link> links;
-        std::bitset<MAX_COV> seqs;
+        MyBitSet seqs;
     };
 
     struct NodeGroup {
@@ -60,30 +62,46 @@ public:
         uint coverage {0};
         int selected {0};
         double weight {0};
-        std::bitset<MAX_COV> queries;
+        MyBitSet queries;
 
     };
 
     struct Score {
-        Score(Seq::Id id, size_t colsize) : qid(id), branches(colsize, nullptr) {}
+        Score(Seq::Id id, size_t ts, size_t te, size_t colsize) 
+         : qid(id), tstart(ts), tend(te), branches(colsize, nullptr) {}
+        
         int qid { -1 };             // query read id
+        size_t tstart { 0 };        // alignment in target
+        size_t tend { 0 };
         int cross { 0 };            // number of positions where have 
+        int all_cross { 0 };
         int t_in_cross { 0 };       // 
         int q_in_cross { 0 };       //
         int q_t_one { 0 };          //
         int q_t_two { 0 };          //
 
+        struct BlockScore {
+            int cross {0};
+            int all_cross { 0 };
+            int q_t_one { 0 };
+            int q_t_two { 0 };
+            double Weight() const {
+                return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
+            }
+        };
+        std::vector<BlockScore> block_scores;
+
         double Weight() const {
-            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / cross ;
+            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph() const {
-            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / cross ;
+            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph(const std::array<double, 2>& r, const std::array<double,2>& wr) const {
             auto s = WeightInGraph();
-            return r[0] == r[1] ? 0.5 : 0.1 + (s - r[0])/(r[1]-r[0]) * (wr[1] - wr[0]);
+            return r[0] == r[1] ? 0.5 : wr[0] + (s - r[0])/(r[1]-r[0]) * (wr[1] - wr[0]);
         }
 
         std::vector<const Link*> branches;
@@ -91,14 +109,28 @@ public:
 
     struct QueryInfos {
 
+        void Clear() {
+            scores_.clear();
+            selected_.clear();
+            windows.clear();
+        }
         void SelectReads(int minsel);
+        void SelectReads2(size_t minsel, const std::array<size_t,2> &range);
+        void SelectReads3(size_t minsel, const std::array<size_t,2> &range);
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rs) const ;
 
         double FindScoreThreshold();
         double FindScoreThreshold1();
         double FindScoreThreshold2();
+        double FindScoreThreshold3(const std::vector<double>& score) const;
+        size_t GetBlockSize() const;
+        std::array<size_t, 3> GetWindowSize(const std::array<size_t, 2> &range) const;
+
+        void SplitWindows(const std::array<size_t, 2> &range);
         std::vector<Score> scores_;
         std::unordered_set<int> selected_;
+        
+        std::vector<std::array<size_t, 2>> windows;
     };
 
 
@@ -111,13 +143,16 @@ public:
     struct Options {
         int BranchThreshold(int cov);
         std::array<int, 2>      range {{10, 200}};
-        std::array<float, 2>    rate {{0.5, 0.2}};
+        std::array<float, 2>    rate {{0.4, 0.25}};
     };
 
-    AlignmentGraph();
+    struct BlockRange {
+
+    };
+
+    AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds);
 
     void SetParameter(const std::string &name, const std::string &v);
-    void SetParameter(const std::string &name, int v);
     void SetParameter(const std::string &name, double v);
 
     void ParseScoreParamter(const std::string &opts);
@@ -134,7 +169,9 @@ public:
     Loc Locate(const Node& node);
 
     Node* Get(const Loc& loc) {
-        if (loc.col == -1) return nullptr;
+        if (loc.col < 0 || loc.col >= (int)cols.size()) return nullptr;
+        if (loc.row < 0 || loc.row >= (int)cols[loc.col].Size()) return nullptr;
+        if (loc.base < 0 || loc.base >= (int)cols[loc.col].rows[loc.row].Size()) return nullptr;
         return &cols[loc.col].rows[loc.row].base[loc.base];
     }
 
@@ -149,24 +186,39 @@ public:
     std::string ReconstructSimple(const Segment& seg);
     std::string ReconstructComplex(const Segment& seg);
 
-    std::vector<std::string> RestoreSegment(const Segment &seg);
+    // std::vector<std::string> RestoreSegment(const Segment &seg);
 
     const std::string& GetSequence() const { return sequence_; }
     const std::string& GetQuality() const { return quality_; }
+    const std::array<size_t, 2>& GetTrueRange() const { return true_range_; }
 
 
     void ComputeSimilarity();
-    void SelectReads();
+    void ComputeSimilarity4();
+    struct ImportantBranch {
+        size_t c;   // column
+        struct LinkCol{
+            const Link* l;
+            uint8_t     r;    // 0-5
+        } ;
+        std::array<LinkCol,2> links;
+        bool valid { true };
+    };
 
+    std::vector<int> ExtendLeft(const Loc& start, size_t n, const MyBitSet& seqs);
+    std::vector<int> ExtendRight(const Loc& right, size_t n, const MyBitSet& seqs);
+    std::vector<ImportantBranch> CollectImportantBranches();
+    void VerifyImportantBranches1(std::vector<ImportantBranch>& cands);
+    void VerifyImportantBranchesByVariants(std::vector<ImportantBranch>& cands);
+    bool VerifiyImportantBranch(const std::vector<ImportantBranch>& cands, size_t start, size_t end);
+    void VerifyImportantBranchesByDensity(std::vector<ImportantBranch> &cands);
+    void VerifyImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, std::unordered_set<size_t>& removed);
+    void ReactivateImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, const std::unordered_set<size_t>& removed);
+    
     std::vector<const Link*> CollectLinks(size_t i);
-    std::vector<const Link*> CollectLinks1(size_t i);
-    std::vector<const Link*> CollectLinks2(size_t i);
 
-    Link* AllocLink(size_t sz);
-    NodeGroup* AllocNodeGroup(size_t sz);
     void SaveGraph(const std::string& fname, size_t s, size_t e) const;
     void SaveReadInfos(std::ostream &os, int tid, const ReadStore& rs) const { query_infos_.SaveReadInfos(os, tid, rs); }
-
 protected:
     void AddTarget(const DnaSeq &target, const std::array<size_t, 2> &range);
     void AddQuery(size_t qid, size_t query_start, const std::string &aligned_query,  size_t target_start, const std::string &aligned_target);
@@ -176,26 +228,28 @@ protected:
 protected:
     static DnaSerialTable2 Base2Num;
 
+    Seq::Id tid_;
     std::vector<Column> cols;
-    std::vector<const Link*> branches_;     // target每个base所在的分支，nullptr表示该base不在分支上
-    std::vector<bool> branch_flags_;        // base是否有分支
     const DnaSeq* target_;
     std::array<size_t,2> range_;
+    std::array<size_t,2> true_range_ {{0, 0}};
     std::array<double, 2> score_range_;
-    std::array<double, 2> weight_range_ { {0.2, 0.8 }};
+    std::array<double, 2> weight_range_ { {0.4, 0.8 }};
     std::array<double, 3> branch_score_ { {0.4, 0.3, 0.8} };
     double reduction_ { 0.8 };
     int min_selected { 20 };
     int max_bubble_length_ { 100 };
-    int min_coverage_ { 4 };
     Options opts_;
+
+    const CrrOptions &sopts_;
+    const CrrDataset &dataset_;
+
     std::vector<Tag> tags_;
 
     std::string sequence_;
     std::string quality_;
     double (AlignmentGraph::*LinkScore)(size_t, size_t, const Link&) { nullptr };
-    const Node* (AlignmentGraph::*FindBestPath)() {nullptr };
-
+    void (AlignmentGraph::*VerifyImportantBranches0)(std::vector<ImportantBranch>& cands) { nullptr };
     QueryInfos query_infos_;
 };
 

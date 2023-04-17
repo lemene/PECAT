@@ -53,14 +53,12 @@ void KmerBin::Running() {
 
     std::atomic<size_t> index { 0 };
     auto work_func = [&](int threadid) {
-        const size_t block_size = 10000;
         std::ostringstream  oss;
         thread_local std::vector<InfoItem> infos;
         size_t curr = index.fetch_add(1);
         while (curr < rd_store.Size()) {
             const auto& item = rd_store.GetSeq(curr);
             auto count = CountKmers(k, *(item.ToString()), patkmers, matkmers, offkmers);
-            std::array<double, 2> rate { count[0]*1.0/ patkmers.Size(), count[1]*1.0/ matkmers.Size()};
             std::array<double, 2> thresholds { std::max<double>(th_count_, count[0]*th_rate_), std::max<double>(th_count_, count[1]*th_rate_)};
             
             InfoItem info;
@@ -69,8 +67,6 @@ void KmerBin::Running() {
             info.pat_only = count[0];
             info.mat_only = count[1];
             info.found = count[2];
-            // info.type = rate[0] > rate[1] ? 1 : 
-            //             rate[0] < rate[1] ? -1 : 0;
             info.type = count[0]*1.0 / patkmers.Size() > (count[1]*1.0 + thresholds[1]) / matkmers.Size() ? 1 :
                         (count[0]*1.0+thresholds[0]) / patkmers.Size() < count[1]*1.0 / matkmers.Size() ? -1 : 0;
 
@@ -170,12 +166,19 @@ std::array<size_t, 3> KmerBin::CountKmers(size_t k, const std::string& seq,
         std::for_each(s.begin(), s.end(), [](char &c) { c = ::toupper(c); });
         std::string s_rc = Seq::ReverseComplement(s);
 
-        auto kid = KmerStringToId(s <= s_rc ? s : s_rc);
+        auto kid = KmerStringToId(s);
+        auto vkid = KmerStringToId(s_rc);
 
-        if (patkmers.Find(kid)) count[0] ++;
-        if (matkmers.Find(kid)) count[1] ++;
-        if (offkmers.Find(kid)) count[2] ++;
 
+        if (patkmers.Find(kid) || patkmers.Find(vkid)) count[0] ++;
+        if (matkmers.Find(kid) || matkmers.Find(vkid)) count[1] ++;
+        if (offkmers.Find(kid) || offkmers.Find(vkid)) count[2] ++;
+        if (thread_size_ == 1) {
+            if (patkmers.Find(kid)) printf("%zd 1, %s\n", i, s.c_str());
+            if (patkmers.Find(vkid)) printf("%zd 1, %s\n", i, s_rc.c_str());
+            if (matkmers.Find(kid)) printf("%zd -1, %s\n", i, s.c_str());
+            if (matkmers.Find(vkid)) printf("%zd -1, %s\n", i, s_rc.c_str());
+        }
     }
     return count;
 }
@@ -225,14 +228,6 @@ size_t KmerBin::GetKmerLength(const std::string &fname) {
     }
     return 0;
 }
-
-size_t KmerBin::CountLines(const std::string& fname) {
-    struct Item {
-        KmerId kmer;
-        int count;
-    };
-    std::vector<Item> all;
-} 
 
 void KmerBin::KmerSet::BuildIndex() {
     index.assign(1024, {kmers.size(),0});

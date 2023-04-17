@@ -6,32 +6,9 @@
 
 #include "file_io.hpp"
 #include "./utils/logger.hpp"
+#include "./utility.hpp"
 
 namespace fsa {
-
-int ReadStore::GetIdByNameSafe(const std::string &name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return GetIdByNameUnsafe(name);
-}
-
-int ReadStore::GetIdByNameUnsafe(const std::string &name) {
-    int id = string_pool_.GetIdByStringUnsafe(name);
-    while (items_.size() <= id) {
-        items_.push_back(Item());
-    }
-    return id;
-}
-
-Seq::Id ReadStore::QueryIdByName(const std::string &name) const {
-    return string_pool_.QueryIdByString(name);
-}
-
-const std::string& ReadStore::QueryNameById(int id) const {
-    return string_pool_.QueryStringById(id);
-}
-
-
-
 
 void ReadStore::Load(const std::string &fname, const std::string &type, bool all, const std::unordered_set<Seq::Id>& seqids) {
     std::string t = type != "" ? type : DetectFileType(fname);
@@ -50,54 +27,16 @@ void ReadStore::Load(const std::string &fname, const std::string &type, bool all
 
 
 void ReadStore::LoadFasta(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids) {
-    std::unordered_set<Seq::Id> ids;
-
-    FastaReader* reader = new FastaReader(fname);
-    readers_.push_back(reader);
-
-    if (reader->IsValid()) {
-        SeqReader::Item item;
-        while (reader->Next(item)) {
-            assert(!item.head.empty());
-            Seq::Id id = GetIdByNameUnsafe(item.head);
-            Insert(id, item, reader, all || seqids.find(id) != seqids.end());
-            ids.insert(id);
-        }
-        if (!reader->IsFileEnd()) {
-            LOG(WARNING)("No all reads in file are loaded: %s", fname.c_str());
-        }
-    } else {
-        LOG(ERROR)("Failed to open file: %s", fname.c_str());
-    }
-    ids_in_file_[fname] = ids;
-    LOG(INFO)("Load %zd reads from fasta file: %s", ids.size(), fname.c_str());
+    FastaReader reader(fname);
+    LoadReader(reader, all, seqids);
 }
 
 
 void ReadStore::LoadFastq(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids) {
-    std::unordered_set<Seq::Id> ids;
-
-    FastqReader* reader = new FastqReader(fname);
-    readers_.push_back(reader);
-    
-    if (reader->IsValid()) {
-        SeqReader::Item item;
-
-        while (reader->Next(item)) {
-            assert(!item.head.empty());
-            Seq::Id id = GetIdByNameSafe(item.head);
-            Insert(id, item, reader, all || seqids.find(id) != seqids.end());
-            ids.insert(id);
-        }
-        if (!reader->IsFileEnd()) {
-            LOG(WARNING)("No all reads in file are loaded: %s", fname.c_str());
-        }
-    } else {
-        LOG(ERROR)("Failed to open file: %s", fname.c_str());
-    }
-    ids_in_file_[fname] = ids;
-    LOG(INFO)("Load %zd reads from fastq file: %s", ids.size(), fname.c_str());
+    FastqReader reader(fname);
+    LoadReader(reader, all, seqids);
 }
+
 
 void ReadStore::LoadFofn(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids) {
     std::ifstream in(fname);
@@ -113,14 +52,6 @@ void ReadStore::LoadFofn(const std::string &fname, bool all, const std::unordere
         LOG(ERROR)("Failed to open file: %s", fname.c_str());
     }
 }
-
-const std::unordered_set<Seq::Id>& ReadStore::IdsInFile(const std::string &fname) const {
-    auto iter = ids_in_file_.find(fname);
-    assert(iter != ids_in_file_.end());
-    return iter->second;
-}
-
-
 
 std::string ReadStore::DetectFileType(const std::string &fname) {
 
@@ -146,28 +77,38 @@ std::string ReadStore::DetectFileType(const std::string &fname) {
     }
 }
 
-void ReadStore::Insert(Seq::Id id, const SeqReader::Item &item, SeqReader *reader, bool loadseq) {
-    assert(id >= 0 && id < (int)string_pool_.Size());
+void ReadStore::LoadReader(SeqReader& reader, bool all, const std::unordered_set<Seq::Id>& seqids) {
+    const std::string& fname = reader.GetFileName();
 
-    if (loadseq) items_[id].seq = item.seq;
-    items_[id].id = item.id;
-    items_[id].reader = reader;
-}
+    size_t count = 0;
+    if (reader.IsValid()) {
+        SeqReader::Item item;
 
-void ReadStore::LoadItem(Item &item) const {
-    if (item.seq.Size() == 0 && item.reader != nullptr) {
-        SeqReader::Item i;
-        auto r = item.reader->Get(item.id, i);
-        if (r) {
-            item.seq = i.seq;
-        } else {
-            LOG(ERROR)("Failed to load a read");
+        while (reader.Next(item)) {
+            AddItem(item, all, seqids);
+            count++;
         }
+        if (!reader.IsFileEnd()) {
+            LOG(WARNING)("No all reads in file are loaded: %s", fname.c_str());
+        }
+    } else {
+        LOG(ERROR)("Failed to open file: %s", fname.c_str());
     }
+    LOG(INFO)("Load %zd reads from file: %s", count, fname.c_str());
 }
 
-void ReadStore::SaveIdToName(const std::string &fname) const {
-    string_pool_.Save(fname);
+void ReadStore::AddItem(const SeqReader::Item &item, bool all, const std::unordered_set<Seq::Id>& seqids) {
+
+    assert(!item.head.empty());
+    // TODO not support muli-threads
+    Seq::Id id = string_pool_.GetIdByStringUnsafe(item.head);
+    assert(id >= 0);
+    assert((size_t)id >= offset_ && (size_t)id - offset_ <= items_.size());
+    while (items_.size() <= id - offset_) {
+        items_.push_back(Item());
+    }
+    
+    if (all || seqids.find(id) != seqids.end()) items_[id - offset_].seq = item.seq;
 }
 
 

@@ -137,22 +137,31 @@ void LocalPhaser::Group::Centroid::SetRange2(const Group& g, const Centroid& alt
 
     std::vector<std::array<size_t, 3>> finals = CombineRange(ranges, cs, g, alt_cs, alt_g, opts);
  
+    range[0] = g.vars.size();
+    range[1] = 0;
     for (size_t i = 0; i < finals.size(); ++i) {
         DEBUG_local_printf("rs1(%zd) %zd %zd\n", i, finals[i][0], finals[i][1]);
+        if (finals[i][1] - finals[i][0] >= (size_t)opts.min_inconsist_count) {
+            range[0] = std::min(range[0], finals[i][0]);
+            range[1] = std::max(range[1], finals[i][1]);
+        }
     }
-
-
-    std::sort(finals.begin(), finals.end(), [](const std::array<size_t, 3>& a, const std::array<size_t, 3>& b) {
-        return a[2] > b[2];
-    });
-
-    if (finals.size() > 0) {
-        range[0] = finals[0][0];
-        range[1] = finals[0][1];
-    } else {
+    if (range[0] > range[1]) {
         range[0] = 0;
         range[1] = 0;
     }
+
+    // std::sort(finals.begin(), finals.end(), [](const std::array<size_t, 3>& a, const std::array<size_t, 3>& b) {
+    //     return a[2] > b[2];
+    // });
+
+    // if (finals.size() > 0) {
+    //     range[0] = finals[0][0];
+    //     range[1] = finals[0][1];
+    // } else {
+    //     range[0] = 0;
+    //     range[1] = 0;
+    // }
 }
 
 std::vector<std::array<size_t, 3>> LocalPhaser::Group::Centroid::SplitRange(const std::vector<int> &cs, const Group &group, const std::vector<int> &alt_cs, const Group &alt_group, double rate, int count)
@@ -163,7 +172,7 @@ std::vector<std::array<size_t, 3>> LocalPhaser::Group::Centroid::SplitRange(cons
     size_t num = 0;
     for (size_t i = 0; i < cs.size(); ++i) {
         if (cs[i] != 0) {
-            if (start == -1) {
+            if (start == (size_t)-1) {
                 start = i;
                 curr = i;
                 num = 1;
@@ -214,7 +223,7 @@ std::vector<std::array<size_t, 3>> LocalPhaser::Group::Centroid::SplitRange(cons
             }
         }
     }
-    if (start != -1) {
+    if (start != (size_t)-1) {
         ranges.push_back({start, curr+1, num});
     }
 
@@ -228,20 +237,52 @@ std::vector<std::array<size_t,3>> LocalPhaser::Group::Centroid::CombineRange(con
 
     std::vector<std::array<size_t, 3>> finals;
 
-    for (size_t ir = 0; ir < ranges.size();) {
+    // for (size_t ir = 0; ir < ranges.size();) {
+    //     size_t end = ir;
+    //     for (size_t jr = ir + 1; jr < ranges.size(); ++jr) {
+    //         int count = opts.min_link_support_count;
+    //         int rate = opts.min_link_support_rate;
+    //         std::array<size_t,2> stat = linkmaps[jr * ranges.size() + ir];
+    //         if (stat[0] - stat[1] >= std::max<size_t>(count, std::ceil(rate*(stat[0]+stat[1])))) {
+    //             end = jr;
+    //         } else {
+    //             const auto &alt_stat = alt_linkmaps[jr * ranges.size() + ir];
+    //             stat[0] += alt_stat[0];
+    //             stat[1] += alt_stat[1];
+
+    //             if (stat[0] - stat[1] >= std::max<size_t>(count, std::ceil(rate*(stat[0]+stat[1])))) {
+    //                 end = jr;
+    //             }
+    //         }
+    //         DEBUG_local_printf("map (%zd %zd) %zd %zd\n", ir, jr, stat[0], stat[1]);
+            
+    //         DEBUG_local_printf("map %d %d %zd\n", count, (int)std::ceil((rate-(1-rate))*(stat[0]+stat[1])), end);
+    //     }
+
+    //     std::array<size_t, 3> nr = ranges[ir]; ir++;
+    //     for (; ir <= end; ++ir) {
+    //         nr[1] = ranges[ir][1];
+    //         nr[2] += ranges[ir][2];
+    //     }
+    //     finals.push_back(nr);
+    // }
+
+    std::vector<std::array<size_t,2>> linked;
+    for (size_t ir = 0; ir < ranges.size(); ++ir) {
         size_t end = ir;
         for (size_t jr = ir + 1; jr < ranges.size(); ++jr) {
             int count = opts.min_link_support_count;
-            int rate = opts.min_link_support_rate;
+            double rate = opts.min_link_support_rate;
             std::array<size_t,2> stat = linkmaps[jr * ranges.size() + ir];
-            if (stat[0] - stat[1] >= std::max<size_t>(count, std::ceil(rate*(stat[0]+stat[1])))) {
+            
+            if ((int)stat[0] - (int)stat[1] >= std::max<int>(count, std::ceil(rate*(stat[0]+stat[1])))) {
                 end = jr;
             } else {
                 const auto &alt_stat = alt_linkmaps[jr * ranges.size() + ir];
                 stat[0] += alt_stat[0];
                 stat[1] += alt_stat[1];
 
-                if (stat[0] - stat[1] >= std::max<size_t>(count, std::ceil(rate*(stat[0]+stat[1])))) {
+                if ((int)stat[0] - (int)stat[1] >= std::max<int>(count, std::ceil(rate*(stat[0]+stat[1])))) {
                     end = jr;
                 }
             }
@@ -249,13 +290,33 @@ std::vector<std::array<size_t,3>> LocalPhaser::Group::Centroid::CombineRange(con
             
             DEBUG_local_printf("map %d %d %zd\n", count, (int)std::ceil((rate-(1-rate))*(stat[0]+stat[1])), end);
         }
+        linked.push_back({ir, end});
+        DEBUG_local_printf("linked: %zd - %zd\n", ir, end);
+    }
 
-        std::array<size_t, 3> nr = ranges[ir]; ir++;
-        for (; ir <= end; ++ir) {
-            nr[1] = ranges[ir][1];
-            nr[2] += ranges[ir][2];
+    size_t irange = 0;
+    for (size_t i = 1; i < linked.size(); ++i) {
+        assert(i > irange && linked[i][0] > linked[irange][0]);
+        if (linked[i][0] <= linked[irange][1]) {
+            linked[irange][1] = std::max<size_t>(linked[i][1], linked[irange][1]);
+        } else {
+            irange ++;
+            linked[irange] = linked[i];
         }
+    }
+
+    assert(irange <= linked.size());
+    if (ranges.size() > 0) {
+    for (size_t i = 0; i <= irange; ++i) {
+
+        std::array<size_t, 3> nr = ranges[linked[i][0]]; 
+        for (size_t j = linked[i][0]+1; j <= linked[i][1]; ++j) {
+            nr[1] = ranges[j][1];
+            nr[2] += ranges[j][2];
+        }
+        DEBUG_local_printf("Final Range: (%zd - %zd) (%zd, %zd, %zd)\n", linked[i][0], linked[i][1], nr[0], nr[1], nr[2]);
         finals.push_back(nr);
+    }
     }
 
     return finals;
@@ -276,18 +337,21 @@ std::vector<std::array<size_t,2>> LocalPhaser::Group::Centroid::GetRangeLink(con
             DEBUG_local_printf("ToC: %s | %zd = %d %d\n", local_read_store->QueryNameById(q->query->id).c_str(), ir, stat[0], stat[2]);
         }
         for (size_t ib = 0; ib < bs.size(); ++ib) {
-            if (bs[ib][0] + bs[ib][2] == 0) continue;
+            if (bs[ib][0] + bs[ib][2] < (size_t)count) continue;
             for (size_t jb = 0; jb < ib; ++jb) {
-                if (bs[jb][0] + bs[jb][2] == 0) continue;
+                if (bs[jb][0] + bs[jb][2] < (size_t)count) continue;
 
                 std::array<size_t,2> &stat = linkmaps[ib*ranges.size() + jb];
                 size_t th_ib = std::max<size_t>(count, std::ceil((bs[ib][0]+bs[ib][2])*rate));
                 size_t th_jb = std::max<size_t>(count, std::ceil((bs[jb][0]+bs[jb][2])*rate));
                 if (bs[ib][2] - bs[ib][0] >= th_ib && bs[jb][2] - bs[jb][0] >= th_jb) {
                     stat[0] += 1;
-                } else if (bs[ib][0] - bs[ib][2] >= th_ib && bs[jb][0] - bs[jb][2] >= th_jb) {
+                } else {
                     stat[1] += 1;
                 }
+                //} else if (bs[ib][0] - bs[ib][2] >= th_ib && bs[jb][0] - bs[jb][2] >= th_jb) {
+                //    stat[1] += 1;
+                //}
             }
         }
     }
@@ -299,7 +363,6 @@ auto LocalPhaser::Group::Centroid::Compare(const Query &q) const -> CompareResul
     assert(locs.size() == q.vars.size());
 
     CompareResult rs;
-    double d = 0.0;
     //for (size_t i = 0; i < locs.size(); ++i) {
     for (size_t i = range[0]; i < range[1]; ++i) {
         if (locs[i].cov > 0) {
@@ -359,7 +422,7 @@ size_t LocalPhaser::DistributeQuery(const std::vector<Group::Centroid>& cs, cons
     for (size_t i = 0; i < cs.size(); ++i) {
         auto cmp = cs[i].Compare(*q);
 
-        if (cmp.common_size >= opts_.min_similar_count && cmp.Coverage() >= opts_.min_similar_coverage && cmp.Similary() >= opts_.min_similar_rate) { // TODO
+        if ((int)cmp.common_size >= opts_.min_similar_count && cmp.Coverage() >= opts_.min_similar_coverage && cmp.Similary() >= opts_.min_similar_rate) { // TODO
             result.push_back({i, cmp.Similary()});
         }
     }
@@ -439,12 +502,16 @@ std::vector<LocalPhaser::Group> LocalPhaser::BiKMeans(const Group& g0) {
     
 std::array<double,2> LocalPhaser::Group::CalcGroupSSE(const PhsOptions::PhaserOptions& opts) const {
     auto centroid = GetCentroid().Values(0.5, 1);
+    std::array<double, 2> max_dis = { 0.0, 0.0 };
     std::array<size_t,3> all_stat = {0, 0, 0};
     for (auto q : queries) {
         auto stat = q->Stat(centroid);
         all_stat[0] += stat[0];
         all_stat[1] += stat[1];
         all_stat[2] += stat[2];
+
+        max_dis[0] = std::max<double>(max_dis[0], all_stat[0]);
+        max_dis[1] = std::max<double>(max_dis[1], all_stat[0]*1.0 / (all_stat[0]+all_stat[2]));
     }
     DEBUG_local_printf("group sse: (%zd,%zd,%zd) / %zd\n", all_stat[0], all_stat[1], all_stat[2], queries.size());
 
@@ -474,7 +541,7 @@ void LocalPhaser::Run() {
     for (auto &q : queries_) {
         PrintGroups("init", {Group(&q)});
     }
-    auto groups = Combine2(Divide(Group(queries_)));
+    auto groups = Combine3(Divide(Group(queries_)));
 
     std::vector<size_t> inconsist;
     for (size_t i = 1; i < groups.size(); ++i) {
@@ -483,7 +550,9 @@ void LocalPhaser::Run() {
             inconsist.push_back(i);
         }
     }
-    FindConsistent(groups[0]);
+    if (inconsist.size() > 0) {
+        FindConsistent(groups[0]);
+    }
 
     if (correct_) {
         if (inconsist.size() > 0) {
@@ -539,7 +608,7 @@ auto LocalPhaser::Divide(const Group& g) -> std::vector<Group> {
         auto sse = w.CalcGroupSSE(opts_);
 
         DEBUG_local_printf("w(%zd), SSE: %f %f <-> %f %f\n", w.Size(), sse[0], sse[1], opts_.min_inconsist_rate / 3, opts_.min_inconsist_count*1.0 * opts_.min_support_count/2 / 3);
-        if (w.Size() <= opts_.min_support_count /2 || (
+        if ((int)w.Size() <= opts_.min_support_count /2 || (
             sse[1] < opts_.min_inconsist_count*1.0 * opts_.min_support_count/2 / 3 &&
             sse[0] < opts_.min_inconsist_rate / 3)) {
             groups.push_back(w);
@@ -559,8 +628,9 @@ auto LocalPhaser::Divide(const Group& g) -> std::vector<Group> {
                 groups.push_back(subs[2]);
             } else {
                 if (subs[2].Size() > 0) {
-                    //work.push_back(subs[2]);
+        
                     auto ws = subs[2].Split();
+                    PrintGroups("ws2", ws);
                     work.insert(work.end(), ws.begin(), ws.end());
                     DEBUG_local_printf("Connected %d\n", subs[2].Connected());
                 }
@@ -640,7 +710,7 @@ auto LocalPhaser::Combine2(const std::vector<Group> &groups) -> std::vector<Grou
     }
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
-        return a.vstat[2] > b.vstat[2];
+        return a.vstat[2] > b.vstat[2] || (a.vstat[2] == b.vstat[2] && a.nstat[2] > b.nstat[2]);
     });
 
     PrintGroups("before combine", groups);
@@ -707,8 +777,13 @@ auto LocalPhaser::Combine2(const std::vector<Group> &groups) -> std::vector<Grou
         for (size_t ic = 0; ic < combine.size(); ++ic) {
             auto ndis = combine[ic].Distance(it, opts_.min_support_rate);
             auto vdis = combine[ic].Distance(it, opts_.min_support_rate, opts_.min_support_count);
-            DEBUG_local_printf("mmm %zd(%zd),%zd(%zd): %d %d %f : %d %d \n", i,it.Size(), ic, combine[ic].Size(), vdis[0], vdis[2], opts_.min_inconsist_rate*(vdis[0] + vdis[2]), ndis[0], ndis[2]);
-            if ((vdis[0] == 0 || vdis[0] < opts_.min_inconsist_rate*(vdis[0] + vdis[2]) || vdis[0] < opts_.min_consist_count) &&
+            // auto v2dis = combine[ic].Distance(it, opts_.min_support_rate, opts_.min_support_count/2);
+            auto max_distance = combine[ic].MaxDistance(it, opts_.min_support_rate, opts_.min_support_count);
+            DEBUG_local_printf("mmm %zd(%zd),%zd(%zd): %d %d %f : %d %d %d---\n", 
+                i,it.Size(), ic, combine[ic].Size(), vdis[0], vdis[2], opts_.min_inconsist_rate*(vdis[0] + vdis[2]), 
+                ndis[0], ndis[2], max_distance);
+            if ((vdis[0] == 0 || vdis[0] < (opts_.min_inconsist_rate*(vdis[0] + vdis[2]) && max_distance < opts_.min_consist_count)
+                || vdis[0] < opts_.min_consist_count) &&
                 (ndis[0] == 0 || ndis[0] < opts_.min_inconsist_rate*(ndis[0] + ndis[2]))) {
                 double s = ndis[0] + ndis[2] > 0 ? (ndis[2] - ndis[0]) *1.0 / (ndis[0]+ndis[2]) : 0;
                 scores.push_back({(int)ic, (int)(s*100), ndis[2]});
@@ -759,17 +834,134 @@ auto LocalPhaser::Combine2(const std::vector<Group> &groups) -> std::vector<Grou
     return combine;
 }
 
+auto LocalPhaser::Combine3(const std::vector<Group> &groups) -> std::vector<Group> {
+
+    struct Item {
+        size_t i;
+        std::array<int, 3> nstat;
+        std::array<int, 3> vstat;
+        std::array<int, 3> vstat2;
+        double Score() const {
+            std::array<double, 3> stat;
+            stat[0] = vstat[0]*1.0 + vstat2[0]*0.5 + nstat[0]*0.1;
+            stat[1] = vstat[1]*1.0 + vstat2[1]*0.5 + nstat[1]*0.1;
+            stat[2] = vstat[2]*1.0 + vstat2[2]*0.5 + nstat[2]*0.1;
+            return stat[0] + stat[2] == 0 ? 0.0 : (stat[2]-stat[0]) / (stat[0]+stat[2]);
+        }
+    };
+
+    std::vector<Item> items;
+    for (size_t i = 0; i < groups.size(); ++i) {
+        items.push_back({ i, groups[i].StatDiffs(opts_.min_support_rate),
+                             groups[i].StatDiffs(opts_.min_support_rate, opts_.min_support_count),
+                             groups[i].StatDiffs(opts_.min_support_rate, opts_.min_support_count/2)});
+    }
+
+    std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
+        return a.Score() > b.Score();
+    });
+
+    PrintGroups("before combine", groups);
+
+    // find the group that contains the target
+    size_t n0 = std::find_if(items.begin(), items.end(), [this, &groups](const Item& a) {
+        return groups[a.i].queries.find(target_in_queires_) != groups[a.i].queries.end();
+    }) - items.begin();
+    assert(n0 < items.size());
+
+    DEBUG_local_printf("Node0: %zd (%zd,%zd): %d %d\n", 
+                    n0, items[n0].i, groups[items[n0].i].Size(), items[n0].vstat[2] , items[n0].vstat[0]);
+
+    std::vector<Group> combine;
+    
+    combine.push_back(groups[items[n0].i]);
+    std::unordered_set<size_t> c0nodes { items[n0].i };
+    for (size_t i = 0; i < items.size(); ++i) {
+        auto& it = groups[items[i].i];
+        DEBUG_local_printf("CombineToNode0: %zd (%zd,%zd): %d %d\n", 
+                        i,items[i].i,it.Size(), items[i].vstat[2] , items[i].vstat[0]);
+        if (i == n0) continue;
+        if (items[i].vstat[2] > items[i].vstat[0]) {
+            
+            auto ndis = combine[0].Distance(it, opts_.min_support_rate);
+            auto vdis = combine[0].Distance(it, opts_.min_support_rate, opts_.min_support_count);
+            auto vdis2 = combine[0].Distance(it, opts_.min_support_rate, opts_.min_support_count/2);
+            
+            DEBUG_local_printf("cmb0 %zd(%zd): %d %d %f : %d, %d, %d %d\n", 
+                            i,it.Size(), vdis[0], vdis[2], opts_.min_inconsist_rate*(vdis[0] + vdis[2]), 
+                            vdis2[0], vdis2[2],
+                            ndis[0], ndis[2]);
+
+            if ((vdis[0] == 0 || vdis[0] < std::min<double>(opts_.min_inconsist_count, opts_.min_inconsist_rate*(vdis[0] + vdis[2]))) &&
+                (vdis2[0] == 0 || vdis2[0] < opts_.min_inconsist_rate*(vdis2[0] + vdis2[2]))) {
+
+                DEBUG_local_printf("Combine0 add %zd\n", i);
+                combine[0].Merge(groups[items[i].i]);
+                c0nodes.insert(items[i].i);
+            }
+        
+        } else {
+            break;
+        }
+    }
+
+    std::vector<std::array<int,3>> others;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (c0nodes.find(items[i].i) != c0nodes.end()) continue;
+        auto& it = groups[items[i].i];
+        auto d1 = combine[0].Distance(it, opts_.min_support_rate, opts_.min_support_count);
+        auto d2 = combine[0].Distance(it, opts_.min_support_rate);
+        others.push_back({(int)items[i].i, d1[0], d2[0]});
+    }
+
+    std::sort(others.begin(), others.end(), [](const std::array<int,3> &a, const std::array<int,3>& b) {
+        return a[1] > b[1] || (a[1] == b[1] && a[2] > b[2]);
+    });
+
+    PrintGroups("nodes", combine);
+    for (auto &io : others) {
+        auto& it = groups[io[0]];
+
+        std::vector<std::array<int, 3>> scores;
+        for (size_t ic = 0; ic < combine.size(); ++ic) {
+            auto ndis = combine[ic].Distance(it, opts_.min_support_rate);
+            auto vdis = combine[ic].Distance(it, opts_.min_support_rate, opts_.min_support_count);
+            DEBUG_local_printf("mmm (%zd,%zd),%zd(%zd): %d %d %f : %d %d\n", 
+                io[0],it.Size(), ic, combine[ic].Size(), vdis[0], vdis[2], opts_.min_inconsist_rate*(vdis[0] + vdis[2]), 
+                ndis[0], ndis[2]);
+            if ((vdis[0] == 0 || (vdis[0] < opts_.min_inconsist_rate*(vdis[0] + vdis[2]) && vdis[0] < opts_.min_inconsist_count*2)
+                || vdis[0] < opts_.min_consist_count) &&
+                (ndis[0] == 0 || ndis[0] < opts_.min_inconsist_rate*(ndis[0] + ndis[2]))) {
+
+                double s = ndis[0] + ndis[2] > 0 ? (ndis[2] - ndis[0]) *1.0 / (ndis[0]+ndis[2]) : 0;
+                scores.push_back({(int)ic, (int)(s*10000), ndis[2]});
+                DEBUG_local_printf("- mmm %f \n", s);
+
+            }
+        }
+
+        std::sort(scores.begin(), scores.end(), [](const std::array<int, 3>& a, const std::array<int, 3>& b) {
+            return a[1] > b[1] || (a[1] == b[1]  && a[2] > b[2]) || (a[1] == b[1] && a[2] == b[2] && a[0] < b[0]);
+        });
+
+        if (scores.size() > 0 ) {
+            combine[scores[0][0]].Merge(it);
+        } else {
+            combine.push_back(it);
+        }
+    }
+
+    PrintGroups("after combine", combine);
+    
+    return combine;
+}
+
 void LocalPhaser::FindConsistent(const Group& g0) {
     for (auto q : g0.queries) {
         if (q->query->id == target_->id) continue;
 
         if (g0.IsConsistentWithGroup0(*q, opts_)) {
-            // const int stub = 50;
-            // if (q->query->o->a_.start <= stub && q->query->o->a_.len - q->query->o->a_.end < stub &&
-            //     target_->o->a_.start <= stub && target_->o->a_.len - target_->o->a_.end < stub ) {
-
                 consistent_[ReadOffset::Make(*(target_->o))].push_back(GetMapItem(*target_, *(q->query)));
-    //            }
         }
     }
 }
@@ -950,23 +1142,34 @@ std::array<int, 3> LocalPhaser::Group::Distance(const Group& b, double support_r
     return count;
 }
 
+int LocalPhaser::Group::MaxDistance(const Group& b, double support_rate, int support) const {
+
+    int max_distance = 0;
+    int count = 0;
+    
+    for (size_t i = 0; i < vars.size(); ++i) {
+        auto &av = vars[i];
+        auto &bv = b.vars[i];
+        auto t = av.GetValidType(support_rate, support) * bv.GetValidType(support_rate, support);
+        if (t == -1) {
+            count ++;
+        } else if (t == 1) {
+            if (max_distance < count) {
+                max_distance = count;
+            }
+            count = 0;
+        }
+    }
+    return max_distance;
+}
+
 bool LocalPhaser::Group::IsInconsistentWithGroup0(const Group &b, const PhsOptions::PhaserOptions &opts, const std::vector<int>& coverage) const {
 
-    // std::array <int, 3> count = {0, 0, 0};   // { diff, amb, same }
-
-    // for (size_t i = 0; i < vars.size(); ++i) {
-
-    //     // auto th = std::max<int>(opts.min_coverage_count, coverage[i]*opts.min_coverage_rate);
-    //     // if (vars[i].cov >= th && b.vars[i].cov >= th) {
-    //     //     int at = vars[i].GetValidType(opts);
-    //     //     int bt = b.vars[i].GetValidType(opts);
-    //     //     count[at * bt + 1] += 1;
-    //     // }
-        
-    // }
     auto count = Distance(b, opts.min_support_rate, opts.min_support_count);
-    DEBUG_local_printf("IsInconsistentWithGroup0: (%d, %d, %d)\n", count[0], count[1], count[2]);
-    return count[0] >= opts.min_inconsist_count && count[0] >= opts.min_inconsist_rate*(count[0] + count[2]);
+    auto max_distance = MaxDistance(b, opts.min_support_rate, opts.min_support_count);
+    DEBUG_local_printf("IsInconsistentWithGroup0: (%d, %d, %d, %d)\n", count[0], count[1], count[2], max_distance);
+    return count[0] >= opts.min_inconsist_count && (count[0] >= opts.min_inconsist_rate*(count[0] + count[2]));
+        //count[0] >= opts.min_inconsist_count*2 ;
 }
 
 
@@ -979,10 +1182,8 @@ bool LocalPhaser::Group::IsConsistentWithGroup0(const Query &q, const PhsOptions
         auto qt = q.vars[i];
         count[1 + g0t * qt] += 1;
     }
-    auto qcount = q.Stat();
     return count[2] >= opts.min_consist_count && 
-           count[2] >= opts.min_consist_rate * (count[0] + count[2]) &&
-           count[2] >= opts.min_consist_coverage * (qcount[0] + qcount[2]);   // TODO PHS
+           count[2] >= opts.min_consist_rate * (count[0] + count[2]);
 }
 
 bool LocalPhaser::Group::IsInconsistentWithGroup0(const Query& q, const Group &b, const PhsOptions::PhaserOptions &opts) const {
@@ -990,15 +1191,24 @@ bool LocalPhaser::Group::IsInconsistentWithGroup0(const Query& q, const Group &b
 
     std::array<int, 3> count = {0, 0, 0}; // all, diff
 
+    // int distance = 0; distance of two snp
+
     for (size_t i = 0; i < q.vars.size(); ++i) {
         int at = vars[i].GetValidType(opts);
         int bt = b.vars[i].GetValidType(opts);
 
-        if (at * bt == -1 && q.vars[i] != 0) {
-            count[at * q.vars[i] + 1] += 1;
+        //if (at * bt == -1 && q.vars[i] != 0) {
+        if (at * bt != 0 && q.vars[i] != 0) {
+            auto t = at * q.vars[i];
+            count[t + 1] += 1;
+
+            
         }
     }
-    return count[0] >= opts.min_inconsist_count && count[0] >= opts.min_inconsist_rate * (count[0] + count[2]);
+    
+    DEBUG_local_printf("IsInconsistentWithGroup0(reads): (%d, %d, %d)\n", count[0], count[1], count[2]);
+    return count[0] >= opts.min_inconsist_count && (count[0] >= opts.min_inconsist_rate * (count[0] + count[2]));// ||
+           //count[0] >= opts.min_inconsist_count*2 ;
 }
 
 
@@ -1065,20 +1275,24 @@ auto LocalPhaser::Group::Split() const  -> std::vector<Group> {
     }
 
     std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
-        return a.rs[0] < b.rs[0];
+        return a.rs[0] < b.rs[0] || (a.rs[0] == b.rs[0] && a.rs[1] < b.rs[1]);
     });
 
     size_t end = items[0].rs[1];
     std::vector<size_t> split_points;
 
     for (size_t i = 1; i < items.size(); ++i) {
+        DEBUG_local_printf("items(%zd): %zd-%zd\n", i, items[i].rs[0], items[i].rs[1]);
         if (items[i].rs[0] > end) {
             split_points.push_back(i);
+            DEBUG_local_printf("add point\n");
+            end = items[i].rs[1];
         } else {
             end = std::max(end, items[i].rs[1]);
         }
     }
     split_points.push_back(items.size());
+    DEBUG_local_printf("split_points size: %zd\n", split_points.size());
 
     std::vector<Group> gs;
 
@@ -1108,21 +1322,23 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups, const std::vec
     std::sort(ranges.begin(), ranges.end(), [](const std::array<size_t, 2>&a, const std::array<size_t, 2>&b) {
         return a[1] - a[0] > b[1] - b[0];
     });
-    for (size_t i = 1; i < ranges.size(); ++i) {
-        if (ranges[0][0] > ranges[i][0] && ranges[0][0] < ranges[i][1]) {
-            ranges[0][0] = ranges[i][0];
-        }
-        if (ranges[0][1] < ranges[i][1] && ranges[0][1] > ranges[i][0]) {
-            ranges[0][1] = ranges[i][1];
-        }
-    }
-    DEBUG_local_printf("CorrectTarget: final range: %zd - %zd\n", ranges[0][0], ranges[0][1]);
 
+    DEBUG_local_printf("CorrectTarget: final range: %zd - %zd\n", ranges[0][0], ranges[0][1]);
 
     std::vector<std::vector<std::array<int,2>>> accu_vars;
     accu_vars.push_back(groups[0].StatVars(mapper));
     for (auto i : inconsist) {
         accu_vars.push_back(groups[i].StatVars(mapper));
+    }
+
+    std::unordered_set<size_t> valid_position;
+    for (const auto &r : ranges) {
+        if (r[1] - r[0] >= (size_t)opts_.min_inconsist_count) {
+            for (size_t i = r[0]; i < r[1]; ++i) {
+                valid_position.insert(i);
+            }
+        }
+        break;
     }
 
     DEBUG_local_printf("Correct: ");
@@ -1132,26 +1348,34 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups, const std::vec
         auto& tv = tvars[i];
 
         auto choice = 0;
-        if (i >= ranges[0][0] && i < ranges[0][1]) {
+        //if (i >= ranges[0][0] && i < ranges[0][1]) {
+        if (valid_position.find(i) != valid_position.end()) {
+            std::vector<int> choices;
             Group::Loc s0(v[0] - v[1], v[0]+v[1]);
             choice = s0.GetValidType(opts_.min_support_rate, opts_.min_support_count);
+            choices.push_back(choice);
 
-            if (choice == 0) {
-                auto nt = s0.GetNotableType(opts_.min_support_rate);
-                if (nt != 0) {
-                    for (size_t ix = 1; ix < accu_vars.size(); ++ix) {
-                        auto& vx = accu_vars[ix][i];
-                        Group::Loc sx(vx[0] - vx[1], vx[0]+vx[1]);
-                        auto ntx = sx.GetNotableType(opts_.min_support_rate);
-                        if (nt * ntx == -1) {
-                            Group::Loc snew(s0.accu - sx.accu, s0.cov + sx.cov);
-                            choice = snew.GetValidType(opts_.min_support_rate, opts_.min_support_count);
-                        }
+            for (size_t ix = 1; ix < accu_vars.size(); ++ix) {
+                auto& vx = accu_vars[ix][i];
+                Group::Loc sx(vx[0] - vx[1], vx[0]+vx[1]);
+                auto vchoice = sx.GetValidType(opts_.min_support_rate, opts_.min_support_count);
+                DEBUG_local_printf("choice(%d,%d)", choice, vchoice);
+                choices.push_back(vchoice);
+            }
 
-                        if (choice != 0) break;
-
+            bool paired = false;
+            for (size_t i = 0; i < choices.size(); ++i) {
+                for (size_t j = i+1; j < choices.size(); ++j) {
+                    if (choices[i] * choices[j] == -1) {
+                        paired = true;
+                        break;
                     }
                 }
+            }
+            if (paired) {
+                choice = s0.GetValidType(opts_.min_support_rate, opts_.min_support_count/2);
+            } else {
+                choice = 0;
             }
 
         }
@@ -1161,13 +1385,14 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups, const std::vec
         } else if (choice == 1) {
             tv[4] = 0;
         } else {
-            tv[4] = -1;
+            if (!opts_.using_vcf) {
+                tv[4] = -1;
+            }
         }
 
-        DEBUG_local_printf("(%d,%d,%d->%d), ", v[0],v[1], tv[3], tv[4]);
+        DEBUG_local_printf("(%zd|%d,%d,%d->%d), ", i, v[0],v[1], tv[3], tv[4]);
     }
     DEBUG_local_printf("\n");
-
 }
 
 void LocalPhaser::CorrectTarget(const std::vector<Group>& groups) {
@@ -1183,13 +1408,15 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups) {
     std::sort(ranges.begin(), ranges.end(), [](const std::array<size_t, 2>&a, const std::array<size_t, 2>&b) {
         return a[1] - a[0] > b[1] - b[0];
     });
-    for (size_t i = 1; i < ranges.size(); ++i) {
-        if (ranges[0][0] > ranges[i][0] && ranges[0][0] < ranges[i][1]) {
-            ranges[0][0] = ranges[i][0];
+
+    std::unordered_set<size_t> valid_position;
+    for (const auto &r : ranges) {
+        if (r[1] - r[0] >= (size_t)opts_.min_inconsist_count) {
+            for (size_t i = r[0]; i < r[1]; ++i) {
+                valid_position.insert(i);
+            }
         }
-        if (ranges[0][1] < ranges[i][1] && ranges[0][1] > ranges[i][0]) {
-            ranges[0][1] = ranges[i][1];
-        }
+        break;
     }
 
     if (ranges.size() > 0) {
@@ -1201,35 +1428,17 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups) {
             accu_vars.push_back(groups[i].StatVars(mapper));
         }
 
-        DEBUG_local_printf("Correct: ");
+        DEBUG_local_printf("Correct0: ");
         auto& tvars = const_cast<std::vector<std::array<int,5>>&>(target_->vars);
         for (size_t i = 0; i < accu_vars[0].size(); ++i) {
             auto& v = accu_vars[0][i];
             auto& tv = tvars[i];
 
             auto choice = 0;
-            if (i >= ranges[0][0] && i < ranges[0][1]) {
+            //if (i >= ranges[0][0] && i < ranges[0][1]) {
+            if (valid_position.find(i) != valid_position.end()) {
                 Group::Loc s0(v[0] - v[1], v[0]+v[1]);
                 choice = s0.GetValidType(opts_.min_support_rate, opts_.min_support_count);
-
-                // if (choice == 0) {
-                //     auto nt = s0.GetNotableType(opts_.min_support_rate);
-                //     if (nt != 0) {
-                //         for (size_t ix = 1; ix < accu_vars.size(); ++ix) {
-                //             auto& vx = accu_vars[ix][i];
-                //             Group::Loc sx(vx[0] - vx[1], vx[0]+vx[1]);
-                //             auto ntx = sx.GetNotableType(opts_.min_support_rate);
-                //             if (nt * ntx == -1) {
-                //                 Group::Loc snew(s0.accu - sx.accu, s0.cov + sx.cov);
-                //                 choice = snew.GetValidType(opts_.min_support_rate, opts_.min_support_count);
-                //             }
-
-                //             if (choice != 0) break;
-
-                //         }
-                //     }
-                // }
-
             }
 
             if (choice == -1) {
@@ -1237,14 +1446,17 @@ void LocalPhaser::CorrectTarget(const std::vector<Group>& groups) {
             } else if (choice == 1) {
                 tv[4] = 0;
             } else {
-                tv[4] = -1;
+                if (!opts_.using_vcf) {
+                    tv[4] = -1;
+                }
             }
 
-            DEBUG_local_printf("(%d,%d,%d->%d), ", v[0],v[1], tv[3], tv[4]);
+            DEBUG_local_printf("(%zd|%d,%d,%d->%d), ", i,v[0],v[1], tv[3], tv[4]);
         }
         DEBUG_local_printf("\n");
     } else {
-        ClearTarget();
+        // DEBUG_local_printf("ClearTarget\n");
+        // ClearTarget();
     }
 
 
@@ -1359,7 +1571,7 @@ auto LocalPhaser::MergeGroups(std::vector<Group> &groups, double similary, doubl
                     double qcov = cov[0] > 0 ? cov[2]*1.0 / cov[0] : 0.0;
                     double tcov = cov[1] > 0 ? cov[2]*1.0 / cov[1] : 0.0;
                     double sim = nt_stat[0] + nt_stat[2] > 0 ? nt_stat[2]*1.0 / (nt_stat[0]+nt_stat[2]) : 0.0;
-                    if (sim >= similary && (qcov >= coverage || tcov >= coverage ) && nt_stat[0] < diff &&
+                    if (sim >= similary && (qcov >= coverage || tcov >= coverage ) && nt_stat[0] < (size_t)diff &&
                        (vt_stat[0] == 0 || vt_stat[0] < opts_.min_inconsist_rate*(vt_stat[0] + vt_stat[2]))) {
                         groups[ir].Merge(groups[i]);
                         done.insert(i);

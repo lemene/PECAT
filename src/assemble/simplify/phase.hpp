@@ -23,6 +23,7 @@ public:
     virtual bool PreCondition() { rvs_ = graph_.GetAsmData().GetReadVariants(); return rvs_ != nullptr; }
 
     std::vector<std::vector<BaseNode*>> CollectCross();
+    void ReplaceCross(std::vector<BaseNode*>& cand, std::vector<class PhasePath>& paths);
     StringGraph& graph_;   
     ReadVariants* rvs_ { nullptr };
 
@@ -35,6 +36,7 @@ public:
         double min_valid_rate = 0.66;
     };
     Options opts_;
+    const int max_cand_size = 30;
 };
 
 
@@ -46,7 +48,7 @@ class BaseNode;
 class Overlap;
 
 struct PhasePath {
-    PhasePath(AsmDataset &ad, Seq::EndId start, ReadVariants *r, Seq::Id alt, const PhaseCrossSimplifier::Options& opts, FILE* dfile=nullptr) ;
+    PhasePath(AsmDataset &ad, Seq::EndId start, ReadVariants *r, Seq::Id alt, const PhaseCrossSimplifier::Options& opts) ;
     void Extend(const std::vector<BaseNode*> cand, const std::vector<BaseNode*>& ends) ;
 
     void ExtendWithOtherPath(const std::vector<BaseNode*> cand, const std::vector<BaseNode*>& ends, PhasePath& other) ;
@@ -76,14 +78,24 @@ struct PhasePath {
     ReadVariants *rvs;
 
     std::unordered_map<int, std::unordered_map<int, std::vector<std::array<int, 2>>>> variants;
-    
-    
-    const int max_cand_size = 10;
 
-    FILE* debug_file_ { nullptr };
     const PhaseCrossSimplifier::Options& opts;
 };
 
+class CrossPhaser {
+public:
+    CrossPhaser(PhaseCrossSimplifier& owner, const std::vector<BaseNode*> cand);
+    bool Phase();
 
+    void GetSnps(const BaseNode* node, const BaseNode* altnode);
+
+
+    void Debug(const char* const format, ...) const ;
+    std::vector<PhasePath> paths;
+    std::vector<BaseNode*> ends;
+protected:
+    PhaseCrossSimplifier& owner_;
+    std::vector<BaseNode*> cand_;
+};
 
 }

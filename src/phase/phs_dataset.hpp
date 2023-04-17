@@ -9,7 +9,7 @@ class PhsOptions;
 
 class PhsDataset {
 public:
-    PhsDataset(const PhsOptions &opts) : opts_(opts) {}
+    PhsDataset(PhsOptions &opts) : opts_(opts) {}
 
     void Load();
     std::vector<Seq::Id> GetSortedContigs() const;
@@ -38,8 +38,9 @@ protected:
     void LoadOverlaps(const std::string &fname);
     void LoadAva(const std::string &fname);
     
+    void LoadSnpFromVcf(const std::string &fname, StringPool& string_pool);
 public:
-    const PhsOptions &opts_;
+    PhsOptions &opts_;
 
     ReadStore rd_store_;
     OverlapStore ol_store_ { rd_store_.GetStringPool() };
@@ -51,6 +52,7 @@ public:
     std::unordered_set<Seq::Id> contig_ids_;
     std::unordered_map<Seq::Id, size_t> read_ids2_;
 
+    std::unordered_map<Seq::Id, std::unordered_map<size_t, std::array<uint8_t, 2>>> snps_;
 };
 
 } // namespace fsa

@@ -45,7 +45,6 @@ public:
 
     KmerId KmerStringToId(const std::string &str);
     size_t GetKmerLength(const std::string &fname);
-    size_t CountLines(const std::string &fname);
 protected:
     std::string paternal_;
     std::string maternal_;

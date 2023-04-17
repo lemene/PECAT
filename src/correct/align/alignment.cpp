@@ -103,31 +103,31 @@ void Alignment::Rearrange(std::string &alq, std::string &alt) {
     //
     //  alq: ...-A..A-...       ---\    ...A..A...
     //  alt: ...A-..-A...       ---/    ...A..A...
-    auto remove_dash = [] (std::string &alq, std::string &alt) {
-        size_t oldsize = alq.size();
-        for (size_t i=0; i<alt.size(); ++i) {
-            if (alq[i] == alt[i] && alt[i] == '-') {
-                alt.erase(alt.begin()+i);
-                alq.erase(alq.begin()+i);
-                i--;
-            }
-        }
+    // auto remove_dash = [] (std::string &alq, std::string &alt) {
+    //     size_t oldsize = alq.size();
+    //     for (size_t i=0; i<alt.size(); ++i) {
+    //         if (alq[i] == alt[i] && alt[i] == '-') {
+    //             alt.erase(alt.begin()+i);
+    //             alq.erase(alq.begin()+i);
+    //             i--;
+    //         }
+    //     }
 
-        for (size_t i=1; i< alt.size(); ++i) {
-            if (alt[i-1] == '-' && alq[i] == '-'  && alt[i] == alq[i-1]) {
-                alt.erase(alt.begin()+i-1);
-                alq.erase(alq.begin()+i);
-                i--;
-                //std::swap(alt[i-1], alt[i]);
-            } else if (alt[i] == '-' && alq[i-1] == '-'  && alt[i-1] == alq[i]) {
-                alt.erase(alt.begin()+i);
-                alq.erase(alq.begin()+i-1);
-                i--;
-                //std::swap(alq[i-1], alq[i]);
-            }
-        }
-        return oldsize != alq.size();   // modified
-    };
+    //     for (size_t i=1; i< alt.size(); ++i) {
+    //         if (alt[i-1] == '-' && alq[i] == '-'  && alt[i] == alq[i-1]) {
+    //             alt.erase(alt.begin()+i-1);
+    //             alq.erase(alq.begin()+i);
+    //             i--;
+    //             //std::swap(alt[i-1], alt[i]);
+    //         } else if (alt[i] == '-' && alq[i-1] == '-'  && alt[i-1] == alq[i]) {
+    //             alt.erase(alt.begin()+i);
+    //             alq.erase(alq.begin()+i-1);
+    //             i--;
+    //             //std::swap(alq[i-1], alq[i]);
+    //         }
+    //     }
+    //     return oldsize != alq.size();   // modified
+    // };
 
     bool finished = false;
     while (!finished) {
@@ -242,22 +242,6 @@ bool Alignment::TrimEnds(size_t checklen, int stub) {
     } else {
         return false;
     }
-}
-
-int Alignment::Score() const {
-    int score = 0;
-    const int ins = 1;
-    const int del = 1;
-    const int mism = 2; 
-    for (size_t i=0; i<AlignSize(); ++i) {
-        auto bs = GetAlign(i);
-        if (bs[0] != bs[1]) {
-            if (bs[0] == '-') {
- 
-            }
-        }
-    }
-    return score;
 }
 
 } // namespace fsa {

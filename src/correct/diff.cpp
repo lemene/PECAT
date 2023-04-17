@@ -353,8 +353,6 @@ void DiffRunningData::dw_in_one_direction(const char* query, const int query_siz
 						const int right_extend, double error_rate)
 {
 	const idx_t ALN_SIZE = segment_size_;
-	const idx_t U_SIZE = row_size;
-	const idx_t V_SIZE = column_size;
     int extend1 = 0, extend2 = 0;
     int flag_end = 1;
     
@@ -454,12 +452,12 @@ int  DiffRunningData::dw(const char* query, const int query_size, const int quer
 
     for (k = 0, i = 0, j = 0; k < (int)result.right_store1.size(); ++k, ++idx)
     {
-        char ch = encode2char[result.right_store1[k]];
+        char ch = encode2char[(int)result.right_store1[k]];
 		result.out_store1[idx] = ch;
 		if (ch != '-') ++i;
 		
 		ch = result.right_store2[k];
-		ch = encode2char[ch];
+		ch = encode2char[(int)ch];
 		result.out_store2[idx] = ch;
 		if (ch != '-') ++j;
     }

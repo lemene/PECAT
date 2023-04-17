@@ -1,9 +1,14 @@
 #include "misc_tools.hpp"
 
+#include <sstream>
+
 #include "overlap_store.hpp"
 #include "read_store.hpp"
+#include "sequence_store.hpp"
+#include "file_io.hpp"
+#include "utils/project_file.hpp"
 
-#include <sstream>
+#include "phase/hic_read_infos.hpp"
 
 namespace fsa {
 
@@ -13,9 +18,6 @@ void Program_SplitOverlaps::Running() {
     
     std::string itype = OverlapStore::DetectFileType(ifname_);
     assert(itype == "txt" || itype == "txt.gz" || itype == "paf" || itype == "paf.gz" );
-
-    std::array<int,2> names {0, 5};
-    std::array<int, 2> len_off { 1, 6};
 
     std::vector<std::string> ifnames = itype == "txt" ? GetLineFromFile(ifname_) : std::vector<std::string>({ifname_});
     std::shared_ptr<GzFileReader> ifile;
@@ -54,7 +56,6 @@ void Program_SplitOverlaps::Running() {
         return size;
     };
 
-    const int line_size = 100000;
     auto work = [&](size_t threadid) {
 
         int line_size = 10000;
@@ -114,10 +115,10 @@ void Program_SplitOverlaps::Running() {
 
     //SaveReadName(infos.groups);
 
-    auto combine = [&mutex_combine](const std::vector<const std::string*> &lines) {
-        std::lock_guard<std::mutex> lock(mutex_combine);
+    // auto combine = [&mutex_combine](const std::vector<const std::string*> &lines) {
+    //     std::lock_guard<std::mutex> lock(mutex_combine);
        
-    };
+    // };
  
 
     MultiThreadRun((size_t)thread_size_, work);
@@ -177,7 +178,7 @@ void Program_SplitName::LoadReadnames() {
     LOG(INFO)("load read names");
     LoadReadFile(fn_rds_, "", [&](const SeqReader::Item& item) {
         auto id = string_pool_.GetIdByStringUnsafe(item.head);
-        if (lengths_.size() <= id) {
+        if ((int)lengths_.size() <= id) {
             lengths_.push_back(0);
         }
         lengths_[id] = (int)item.seq.size();
@@ -192,7 +193,7 @@ void Program_SplitName::LoadReadnames() {
     LOG(INFO)("minimum length = %zd", minlen);
 
     for (size_t i = 0; i < lengths_.size(); ++i) {
-        if (lengths_[i] >= minlen) {
+        if (lengths_[i] >= (int)minlen) {
             read_ids_index_[i] = read_ids_.size();
             read_ids_.push_back(i);
         }
@@ -230,10 +231,10 @@ void Program_SplitName::GroupReadsByOverlaps() {
     std::mutex mutex_generate;
 
 
-    auto generate = [&reader, &mutex_generate](std::vector<char> &block) {
-        std::lock_guard<std::mutex> lock(mutex_generate);
-        return reader.GetBlock(block, "\n", 1);
-    };
+    // auto generate = [&reader, &mutex_generate](std::vector<char> &block) {
+    //     std::lock_guard<std::mutex> lock(mutex_generate);
+    //     return reader.GetBlock(block, "\n", 1);
+    // };
 
     
     auto combine = [&mutex_combine, &groups](const std::vector<std::vector<int>> &gs) {
@@ -290,7 +291,7 @@ void Program_SplitName::GroupReadsByOverlaps() {
                 }
             }
             if (curr_group_size > block_size_) {
-            printf("%zd\n", curr_group_size);
+            printf("%lld\n", curr_group_size);
                 curr_group += 1;
                 curr_group_size = 0;
             }
@@ -340,7 +341,7 @@ void Program_SplitName::SaveOverlaps(const std::string &opattern) {
 
         assert(osss.size() == ofs.size());
         for (size_t i = 0; i < osss.size(); ++i) {
-            if (osss[i].tellp() >= flushsize) {
+            if (osss[i].tellp() >= (int)flushsize) {
                 ofs[i] << osss[i].str();
                 osss[i].str("");
             }
@@ -399,7 +400,7 @@ void Program_SplitName::Group(const std::vector<std::vector<int>>& groups, const
             curr_group_size += rd_store.GetSeqLength(i);
 
             for (auto j : groups[i]) {
-                if (j < work.size()) { // max_read
+                if (j < (int)work.size()) { // max_read
                     if (work[j] == -1) {
                         work[j] = curr_group;
                         curr_group_size += rd_store.GetSeqLength(j);
@@ -461,11 +462,11 @@ void Program_SplitOverlaps2::Running() {
         infos.Merge(size, wa, lines);
     };
  
-    auto get_name_len_from_paf_line = [](const std::string& line, char* a, int& alen, char* b, int &blen) {
-        int astart, aend, bstart, bend;
-        char buf0[1000], buf1[1000]; 
-        sscanf(line.c_str(), "%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%s", a, &alen, &astart, &aend, buf0, b, &blen, &bstart, &bend, buf1);
-    };
+    // auto get_name_len_from_paf_line = [](const std::string& line, char* a, int& alen, char* b, int &blen) {
+    //     int astart, aend, bstart, bend;
+    //     char buf0[1000], buf1[1000]; 
+    //     sscanf(line.c_str(), "%s\t%d\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%s", a, &alen, &astart, &aend, buf0, b, &blen, &bstart, &bend, buf1);
+    // };
     
 
     const int line_size = 100000;
@@ -559,4 +560,195 @@ void Program_Test::Running() {
     rd_store.Load(ifname_, "", true);
 
 }
+
+void Program_Hic::Running() {
+    StringPool string_pool;
+    HicReadInfos hic_infos(string_pool);
+    hic_infos.Build(fn_hic1_, fn_paf1_, fn_hic2_, fn_paf2_, fn_vars_);
+    hic_infos.Save(fn_snp_in_hic_);
+
+ 
+
+    // LOG(INFO)("Start grouping ols");
+    // std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> groups;
+    // ol_store.GroupQuery(groups, 1);
+
+    // return;
+    // LOG(INFO)("Start load tiles");
+    // auto tiles = LoadTiles(ifname1_, string_pool);
+
+    // std::unordered_map<Seq::Id, std::vector<const Overlap*>> seg_ols_begin;
+    // std::unordered_map<Seq::Id, std::vector<const Overlap*>> seg_ols_end;
+    // for (const auto & t : tiles) {
+    //     const auto &reads = t.second;
+    //     for (size_t i = 0; i < std::min<size_t>(3, reads.size()); ++i) {
+    //         auto &r = reads[i];
+    //         auto iter = groups.find(r);
+    //         if (iter != groups.end()) {
+    //             for (auto &ols : iter->second) {
+    //                 auto &one_seg = seg_ols_begin[t.first];
+    //                 one_seg.insert(one_seg.end(), ols.second.begin(), ols.second.end());
+    //             }
+    //         }
+    //     }
+
+    //     for (size_t i = reads.size() - std::min<size_t>(3, reads.size()); i < reads.size(); ++i) {
+    //         auto &r = reads[i];
+    //         auto iter = groups.find(r);
+    //         if (iter != groups.end()) {
+    //             for (auto &ols : iter->second) {
+    //                 auto &one_seg = seg_ols_end[t.first];
+    //                 one_seg.insert(one_seg.end(), ols.second.begin(), ols.second.end());
+    //             }
+    //         }
+    //     }
+    // }
+
+    // LOG(INFO)("Start load hic mappings");
+    // auto hic1 = IndexHiCMapping(ifname2_, string_pool);
+    // auto hic2 = IndexHiCMapping(ifname3_, string_pool);
+    
+    // std::unordered_map<Seq::Id, std::unordered_set<Seq::Id>> seg_hic1_begin;
+    // std::unordered_map<Seq::Id, std::unordered_set<Seq::Id>> seg_hic1_end;
+    // std::unordered_map<Seq::Id, std::unordered_set<Seq::Id>> seg_hic2_begin;
+    // std::unordered_map<Seq::Id, std::unordered_set<Seq::Id>> seg_hic2_end;
+    // for (auto seg : seg_ols_begin) {
+    //     for (auto ol : seg.second) {
+    //         // 
+    //         auto iter1 = hic1.find(ol->b_.id);
+    //         if (iter1 != hic1.end()) {
+    //             auto& shic = seg_hic1_begin[seg.first];
+    //             const size_t N = 1000;
+    //             for (size_t i = ol->b_.start / N; i < (ol->b_.end - 1) / N + 1; ++i) {
+    //                 shic.insert(iter1->second[i].begin(), iter1->second[i].end());
+    //             }
+    //         }
+
+    //         auto iter2 = hic2.find(ol->b_.id);
+    //         if (iter2 != hic2.end()) {
+    //             auto& shic = seg_hic2_begin[seg.first];
+    //             const size_t N = 1000;
+    //             for (size_t i = ol->b_.start / N; i < (ol->b_.end - 1) / N + 1; ++i) {
+    //                 shic.insert(iter2->second[i].begin(), iter2->second[i].end());
+    //             }
+    //         }
+    //     }
+    // }
+
+    // for (auto seg : seg_ols_end) {
+    //     for (auto ol : seg.second) {
+    //         // 
+    //         auto iter1 = hic1.find(ol->b_.id);
+    //         if (iter1 != hic1.end()) {
+    //             auto& shic = seg_hic1_end[seg.first];
+    //             const size_t N = 1000;
+    //             for (size_t i = ol->b_.start / N; i < (ol->b_.end - 1) / N + 1; ++i) {
+    //                 shic.insert(iter1->second[i].begin(), iter1->second[i].end());
+    //             }
+    //         }
+
+    //         auto iter2 = hic2.find(ol->b_.id);
+    //         if (iter2 != hic2.end()) {
+    //             auto& shic = seg_hic2_end[seg.first];
+    //             const size_t N = 1000;
+    //             for (size_t i = ol->b_.start / N; i < (ol->b_.end - 1) / N + 1; ++i) {
+    //                 shic.insert(iter2->second[i].begin(), iter2->second[i].end());
+    //             }
+    //         }
+    //     }
+    // }
+
+    // LOG(INFO)("Scoring ctgs");
+    // for (auto seg0 : seg_hic1_begin) {
+    //     auto s0 = seg0.first;
+    //     for (auto seg1 : seg_hic1_begin) {
+    //         auto s1 = seg1.first;
+    //         if (s0 >= s1) continue;
+    //         size_t count = CountIntersect(seg_hic1_begin[s0], seg_hic2_begin[s1]) + CountIntersect(seg_hic2_begin[s0], seg_hic1_begin[s1]);
+
+    //         printf("%s:B <-> %s:B -> %zd\n", string_pool.QueryStringById(s0).c_str(), string_pool.QueryStringById(s1).c_str(), count);
+    //     }
+
+    //     for (auto seg1 : seg_hic1_end) {
+    //         auto s1 = seg1.first;
+    //         if (s0 >= s1) continue;
+    //         size_t count = CountIntersect(seg_hic1_begin[s0], seg_hic2_end[s1]) + CountIntersect(seg_hic2_begin[s0], seg_hic1_end[s1]);
+
+    //         printf("%s:B <-> %s:E -> %zd\n", string_pool.QueryStringById(s0).c_str(), string_pool.QueryStringById(s1).c_str(), count);
+    //     }
+    // }
+
+    // for (auto seg0 : seg_hic1_end) {
+    //     auto s0 = seg0.first;
+    //     for (auto seg1 : seg_hic1_begin) {
+    //         auto s1 = seg1.first;
+    //         if (s0 >= s1) continue;
+    //         size_t count = CountIntersect(seg_hic1_end[s0], seg_hic2_begin[s1]) + CountIntersect(seg_hic2_end[s0], seg_hic1_begin[s1]);
+
+    //         printf("%s:E <-> %s:B -> %zd\n", string_pool.QueryStringById(s0).c_str(), string_pool.QueryStringById(s1).c_str(), count);
+    //     }
+
+    //     for (auto seg1 : seg_hic1_end) {
+    //         auto s1 = seg1.first;
+    //         if (s0 >= s1) continue;
+    //         size_t count = CountIntersect(seg_hic1_end[s0], seg_hic2_end[s1]) + CountIntersect(seg_hic2_end[s0], seg_hic1_end[s1]);
+
+    //         printf("%s:E <-> %s:E -> %zd\n", string_pool.QueryStringById(s0).c_str(), string_pool.QueryStringById(s1).c_str(), count);
+    //     }
+    // }
+}
+
+
+std::unordered_map<Seq::Id, std::vector<std::unordered_set<Seq::Id>>> IndexHiCMapping(const std::string &fname, StringPool& sp) {
+
+    std::unordered_map<Seq::Id, std::vector<std::unordered_set<Seq::Id>>> index;
+    size_t i = 0;
+
+    GzFileReader ols(fname);
+    if (ols.Valid()) {
+        for (std::string line = ols.GetNoEmptyLine(); !line.empty(); line = ols.GetNoEmptyLine()) {
+            i++;
+            auto its = SplitStringBySpace(line);    // paf format
+
+            auto ctgid = sp.GetIdByString(its[5]);
+            auto rdid = sp.GetIdByString(its[0]);
+            auto aligned = std::stoul(its[3]) - std::stoul(its[2]);
+            if (aligned < 100) continue;
+
+            const size_t N = 1000;
+            if (index.find(ctgid) == index.end()) {
+                size_t ctglen = std::stoul(its[6]);
+                index[ctgid].assign(ctglen + N-1, std::unordered_set<Seq::Id>());
+            }
+
+            auto start = std::stoul(its[7]) / N;
+            auto end = (std::stoul(its[8])  - 1) / N;
+            index[ctgid][start].insert(rdid);
+            if (end != start) {
+                index[ctgid][end].insert(rdid);
+            }
+
+
+            if (i % 1000000 == 0) {
+                LOG(INFO)("%zd", i);
+            }
+        }
+    } else {
+        LOG(INFO)("Failed to load file: %s", fname.c_str());
+    }
+
+    return index;
+
+}
+
+size_t CountIntersect(const std::unordered_set<Seq::Id>& s0, const std::unordered_set<Seq::Id> &s1) {
+    size_t count = 0;
+    for (auto i : s0) {
+        if (s1.find(i) != s1.end()) {
+            count++;
+        }
+    }
+    return count;
+}
+
 } // namespace fsa

@@ -21,11 +21,9 @@ public:
 
     virtual void Running();
     void FindLoops();
-    void FindLoops2();
 
     NodeOrEdge DetectLoop(SgNode* start);
 
-    LoopEdge* FindLoop(SgNode* s, int max_loop_length = 500000);
 
     PathGraph& graph_;   
     size_t max_length = 5000000;

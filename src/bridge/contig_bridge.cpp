@@ -99,7 +99,8 @@ void ContigBridge::Run() {
     read_store_.Load(read_file_, "", false, contig_graph_.CollectSeqIdsInPaths());   
     LOG(INFO)("Load contig file %s", contig_file_.c_str());
     read_store_.Load(contig_file_, "", true);
-    contigs_ = read_store_.IdsInFile(contig_file_);
+    assert(0 && "TODO remove IdsInFile");
+    //contigs_ = read_store_.IdsInFile(contig_file_);
 
     LOG(INFO)("Save bridged contigs to %s", bridged_contig_file_.c_str());
     SaveBridgedContigs(bridged_contig_file_);

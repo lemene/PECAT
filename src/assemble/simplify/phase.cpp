@@ -91,101 +91,62 @@ std::vector<std::vector<BaseNode*>> PhaseCrossSimplifier::CollectCross() {
 void PhaseCrossSimplifier::Running() {
     assert(rvs_ != nullptr);
 
+    for (size_t _ = 0; _ < 3; _++) {
+
     std::vector<std::vector<BaseNode*>> cands = CollectCross();
 
-    const int max_cand_size = 10;
     for (auto &cand : cands) {
-        if (cand.size() > max_cand_size) continue;
-        Debug("cand(%zd): %s->%s\n", cand.size(), graph_.GetAsmData().QueryNameById(cand.front()->ReadId()).c_str(),
-            graph_.GetAsmData().QueryNameById(cand.back()->ReadId()).c_str());
-
-
-        std::vector<PhasePath> paths;
-        std::vector<BaseNode*> ends;
-
-        for (auto e : cand.back()->GetOutEdges()) {
-            ends.push_back(e->OutNode());
+        CrossPhaser phaser(*this, cand);
+        if (phaser.Phase()) {
+            ReplaceCross(cand, phaser.paths);
         }
+    }
+    } // for (size_t _ = 0; _ < 3; _++) {
+}
 
-        Debug("start dophase\n");
-        for (auto e : cand.front()->GetInEdges()) {
-            Debug(" -- edge: %s %s\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-                graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str());
 
-            auto alt = std::find_if(cand.front()->GetInEdges().begin(), cand.front()->GetInEdges().end(), [e](BaseEdge* a) {
-                return a != e;
-            });
-            if (alt == cand.front()->GetInEdges().end()) continue;
-            assert(alt != cand.front()->GetInEdges().end());
+void PhaseCrossSimplifier::ReplaceCross(std::vector<BaseNode*>& cand, std::vector<PhasePath>& paths) {
+    for (auto c : cand) {
+        for (auto e : c->GetInEdges()) {
+            if (!e->IsReduce()) {
 
-            paths.push_back(PhasePath(graph_.GetAsmData(), e->InNode()->Id().MainNode(), rvs_, (*alt)->InNode()->ReadId(), opts_));
-            PhasePath &path = paths.back();
-
-            path.Extend(cand, ends);
-        }
-
-        Debug("end find %zd %zd\n", paths[0].dst.size(), paths[1].dst.size());
-        if (paths.size() != 2) {
-            LOG(WARNING)("phasepath != 2 indegree = %zd", cand.front()->InDegree());
-            continue;
-        }
-        assert(paths.size() == 2);
-        if (paths[0].dst.size() == 1 && paths[1].dst.size() != 1) {
-            paths[1].ExtendWithOtherPath(cand, ends, paths[0]);
-            Debug("phasepath amb 1\n");
-        } else if (paths[1].dst.size() == 1 && paths[0].dst.size() != 1) {
-            paths[0].ExtendWithOtherPath(cand, ends, paths[1]);
-            Debug("phasepath amb 0\n");
-        }
-
-        if (PhasePath::IsIndependentPath(paths)) {
-
-            //
-            for (auto c : cand) {
-                for (auto e : c->GetInEdges()) {
-                    if (!e->IsReduce()) {
-
-                        e->Reduce(BaseEdge::RT_PHASED);
-                        graph_.ReverseEdge(e)->Reduce(BaseEdge::RT_PHASED);
-                    }
-                }
-                for (auto e : c->GetOutEdges()) {
-                    if (!e->IsReduce()) {
-                        e->Reduce(BaseEdge::RT_PHASED);
-                        graph_.ReverseEdge(e)->Reduce(BaseEdge::RT_PHASED);
-                    }
-                }
+                e->Reduce(BaseEdge::RT_PHASED);
+                graph_.ReverseEdge(e)->Reduce(BaseEdge::RT_PHASED);
             }
-
-            //
-            for (auto &path : paths) {
-                Debug("phasepath path:\n");
-                auto & pathnode = path.tips;
-                for (size_t i = 1; i < pathnode.size(); ++i) {
-                    auto eid = BaseEdge::CreateID(pathnode[i-1], pathnode[i]);
-                    auto eiter = graph_.edges_.find(eid);
-                    if (eiter != graph_.edges_.end()) {
-                        if (eiter->second->IsReduce()) {
-                            eiter->second->Reactivate();
-                            graph_.ReverseEdge(eiter->second)->Reactivate();
-                        }
-                    } else {
-                        auto o = graph_.GetAsmData().QueryOverlap(Seq::EndIdToId(pathnode[i-1]), Seq::EndIdToId(pathnode[i]));
-                        assert (o != nullptr);
-                        graph_.AddOverlap(o);
-                    }
-                }
-
-            }
-
-
         }
+        for (auto e : c->GetOutEdges()) {
+            if (!e->IsReduce()) {
+                e->Reduce(BaseEdge::RT_PHASED);
+                graph_.ReverseEdge(e)->Reduce(BaseEdge::RT_PHASED);
+            }
+        }
+    }
+
+    //
+    for (auto &path : paths) {
+        Debug("phasepath path:\n");
+        auto & pathnode = path.tips;
+        for (size_t i = 1; i < pathnode.size(); ++i) {
+            auto eid = BaseEdge::CreateID(pathnode[i-1], pathnode[i]);
+            auto eiter = graph_.edges_.find(eid);
+            if (eiter != graph_.edges_.end()) {
+                if (eiter->second->IsReduce()) {
+                    eiter->second->Reactivate();
+                    graph_.ReverseEdge(eiter->second)->Reactivate();
+                }
+            } else {
+                auto o = graph_.GetAsmData().QueryOverlap(Seq::EndIdToId(pathnode[i-1]), Seq::EndIdToId(pathnode[i]));
+                assert (o != nullptr);
+                graph_.AddOverlap(o);
+            }
+        }
+
     }
 }
 
 
-PhasePath::PhasePath(AsmDataset &ad, Seq::EndId start, ReadVariants *r, Seq::Id alt, const PhaseCrossSimplifier::Options& _opts, FILE *dfile)
- : asmdata(ad), rvs(r), debug_file_(dfile), opts(_opts) {
+PhasePath::PhasePath(AsmDataset &ad, Seq::EndId start, ReadVariants *r, Seq::Id alt, const PhaseCrossSimplifier::Options& _opts)
+ : asmdata(ad), rvs(r), opts(_opts) {
 
     tips.push_back(start);
     reads.insert(Seq::EndIdToId(start));
@@ -198,19 +159,20 @@ PhasePath::PhasePath(AsmDataset &ad, Seq::EndId start, ReadVariants *r, Seq::Id 
     for (auto ol : ols) {
         auto qread = ol->GetOtherRead(rid);
         auto altol = asmdata.QueryOverlap(qread.id, alt);
+        Debug("add ol %s (%d)\n", asmdata.QueryNameById(qread.id).c_str(), altol==nullptr);
         if (altol == nullptr)  {
             reads.insert(qread.id);
             AddVariants(rvs->GetVariants(qread.id));
-        } else {
-            auto t0 = r->Test(*ol);
-            auto t1 = r->Test(*altol);
+        } 
+    }
 
-            if (t0[0] - t0[1] > t1[0] - t1[1]) {
-                reads.insert(qread.id);
-                AddVariants(rvs->GetVariants(qread.id));
-            }
-
-        }
+    //
+    auto inconsist = asmdata.GetInconsistentOverlaps();
+    assert(inconsist != nullptr);
+    auto alt_inconsist = inconsist->Get(alt);
+    for (auto r : alt_inconsist) {
+        Debug("add alt %s\n", asmdata.QueryNameById(r).c_str());
+        AddVariants(rvs->GetVariants(r));
     }
     PrintVariants();
 }
@@ -459,12 +421,13 @@ std::array<int,2> PhasePath::TestVariants(const std::unordered_map<int, std::uno
 std::unordered_map<int, std::unordered_map<int, int>> PhasePath::GetComfirmVariants() const {
     auto important = [this](std::vector<std::array<int, 2>> d) {
 
+
         std::sort(d.begin(), d.end(), [](const std::array<int,2> &a, const std::array<int,2> &b) {
-            return a[1] > b[1];
+            return (a[0] >= 0 && b[0] >= 0) ? a[1] > b[1] : a[0] > b[0];
         });
 
         int sum = std::accumulate(d.begin(), d.end(), 0, [](int a, const std::array<int,2>& b) {
-            return a + b[1];
+            return a + (b[0] >= 0 ? b[1] : 0);        // remove seq error (-1)
         });
 
         assert(d.size() > 0);
@@ -503,6 +466,64 @@ void PhasePath::Debug(const char* const format, ...) const {
     }
 }
 
+CrossPhaser::CrossPhaser(PhaseCrossSimplifier& owner, const std::vector<BaseNode*> cand)
+ : owner_(owner), cand_(cand) {
+}
+
+bool CrossPhaser::Phase() {
+
+    auto& cand = cand_;
+
+    if ((int)cand.size() > owner_.max_cand_size) return false;
+    Debug("cand(%zd): %s->%s\n", cand.size(), owner_.graph_.GetAsmData().QueryNameById(cand.front()->ReadId()).c_str(),
+        owner_.graph_.GetAsmData().QueryNameById(cand.back()->ReadId()).c_str());
+
+    for (auto e : cand.back()->GetOutEdges()) {
+        ends.push_back(e->OutNode());
+    }
+
+    Debug("start dophase\n");
+    for (auto e : cand.front()->GetInEdges()) {
+        Debug(" -- edge: %s %s\n", owner_.graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+            owner_.graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str());
+
+        auto alt = std::find_if(cand.front()->GetInEdges().begin(), cand.front()->GetInEdges().end(), [e](BaseEdge* a) {
+            return a != e;
+        });
+        if (alt == cand.front()->GetInEdges().end()) return false;
+        assert(alt != cand.front()->GetInEdges().end());
+
+        paths.push_back(PhasePath(owner_.graph_.GetAsmData(), e->InNode()->Id().MainNode(), owner_.rvs_, (*alt)->InNode()->ReadId(), owner_.opts_));
+        PhasePath &path = paths.back();
+
+        path.Extend(cand, ends);
+    }
+
+    Debug("end find %zd %zd\n", paths[0].dst.size(), paths[1].dst.size());
+    if (paths.size() != 2) {
+        LOG(WARNING)("phasepath != 2 indegree = %zd", cand.front()->InDegree());
+        return false;
+    }
+    assert(paths.size() == 2);
+    if (paths[0].dst.size() == 1 && paths[1].dst.size() != 1) {
+        paths[1].ExtendWithOtherPath(cand, ends, paths[0]);
+        Debug("phasepath amb 1\n");
+    } else if (paths[1].dst.size() == 1 && paths[0].dst.size() != 1) {
+        paths[0].ExtendWithOtherPath(cand, ends, paths[1]);
+        Debug("phasepath amb 0\n");
+    }
+
+    return PhasePath::IsIndependentPath(paths);
+}
+
+void CrossPhaser::Debug(const char* const format, ...) const {
+    if (DUMPER.IsWorking()) {
+        va_list arglist;
+        va_start(arglist, format);
+        DUMPER["phase"].Write(format, arglist);
+        va_end(arglist);
+    }
+}
 
 
 } // namespace fsa

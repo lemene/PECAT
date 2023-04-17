@@ -32,11 +32,11 @@ std::vector<int> MatrixGraph::Partition() const {
 }
 
 std::vector<std::set<int>> MatrixGraph::Cluster() const {
-    \
+    
     std::vector<int> types = Partition();
 
     std::map<int, std::set<int>> cluster;
-    for (int i=0; i<types.size(); ++i) {
+    for (int i=0; i<(int)types.size(); ++i) {
         cluster[types[i]].insert(i);
     }
 

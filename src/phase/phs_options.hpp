@@ -26,19 +26,19 @@ public:
 
         // kmean distribute reads
         int     min_similar_count { 2 };
-        double  min_similar_rate { 0.5 };
-        double  min_similar_coverage { 0.3 };
+        double  min_similar_rate { 0.6 };
+        double  min_similar_coverage { 0.6 };
         double  min_similar_diff { 0.01 };
 
         // kmean sse
 
-        int     number_of_iteration { 3 };
+        int     number_of_iteration { 2 };
         int     min_support_count { 6 };
         double  min_support_rate { 0.66 };
 
-        int min_link_support_count { 2 };
+        int min_link_support_count { 1 };
         double min_link_support_rate { 0.33 };
-        int min_link_valid_count { 2 };
+        int min_link_valid_count { 1 };
         double min_link_valid_rate { 0.33 };
         
         // consist    
@@ -50,6 +50,7 @@ public:
         int min_inconsist_count = 4;
         double min_inconsist_rate = 0.05;
         std::string debug;
+        bool using_vcf { false };
     };
 
     void SetArguments(ArgumentParser &ap);
@@ -62,9 +63,12 @@ public:
     std::string Varaints() const { return OutputPath("variants"); }
     std::string Readinfos() const { return OutputPath("readinfos"); }
 
+    bool UsingVcf() const { return !vcf_fname_.empty(); }
+
     std::string ol_fname_;
     std::string rd_fname_;
     std::string ctg_fname_;
+    std::string vcf_fname_;
     std::string output_directory_ {"."};
     std::string ctgname_fname_ {""};
     std::string rd2rd {""};

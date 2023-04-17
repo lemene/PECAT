@@ -43,7 +43,7 @@ struct Variant {
     bool AtD() const { return var[0] == 8 || var[1] == 8; }
     bool AtI(uint8_t v) const { return v+4 == var[0] || v+4 == var[1];}
     void Comfirm(const CoverageOptions& covopts);
-
+    void Disable() { var[0] = 0; var[1] = 0; }
     int Offset(uint8_t b) const {
         return var[0] == b ? 0 : (var[1] == b ? 1 : -1);
     }
@@ -74,6 +74,35 @@ struct ReadInfo {
     }
 };
 
+struct SnpSite {
+    uint32_t ctg;       
+    uint32_t offset;    
+    bool operator == (const SnpSite& a) const {
+        return a.ctg == ctg && a.offset == offset;
+    }
+    struct Hash {
+        size_t operator() (const SnpSite &a) const {
+            return std::hash<uint64_t>()(((uint64_t)a.ctg << 32) + a.offset);
+        }
+    };
+};
+
+struct SnpAllele {
+    SnpSite site;
+    uint8_t base;
+    bool operator == (const SnpAllele& a) const {
+        return a.site == site && a.base == base;
+    }
+    bool operator != (const SnpAllele& a) const {
+        return !(*this == a);
+    }
+    struct Hash {
+        size_t operator() (const SnpAllele &a) const {
+            return 31 * SnpSite::Hash()(a.site) + a.base;
+        }
+    };
+};
+// 
 struct PhaseItem {
     Seq::Id id;
     int strand : 8;

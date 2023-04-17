@@ -1,5 +1,4 @@
-#ifndef FSA_READ_TOOLS_HPP
-#define FSA_READ_TOOLS_HPP
+#pragma once
 
 #include <string>
 #include <unordered_set>
@@ -247,14 +246,5 @@ public:
     }
 };
 
-class ProgramN50 : public Program {
-public:
-    virtual ArgumentParser GetArgumentParser();
-    virtual void Running();
-
-};
-
-
 } // namespace fsa
 
-#endif // FSA_READ_TOOLS_HPP

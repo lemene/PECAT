@@ -57,6 +57,7 @@ std::vector<std::string> SplitString(const std::string &str, const std::string s
     return substrs;
 }
 
+std::unordered_map<int, int> OverlapStore::loading_infos_; // TODO for loading sam file
 std::string OverlapStore::DetectFileType(const std::string &fname) {
     if (fname.size() >= 3 && fname.substr(fname.size()-3) == ".m4") {
         return "m4";
@@ -70,7 +71,11 @@ std::string OverlapStore::DetectFileType(const std::string &fname) {
         return "paf";
     } else if (fname.size() >= 7 && fname.substr(fname.size()-7) == ".paf.gz") {
         return "paf.gz";
-    } else if (fname.size() >= 4 && fname.substr(fname.size()-7) == ".txt") {
+    } else if (fname.size() >= 4 && fname.substr(fname.size()-4) == ".sam") {
+        return "sam";
+    } else if (fname.size() >= 7 && fname.substr(fname.size()-7) == ".sam.gz") {
+        return "sam.gz";
+    } else if (fname.size() >= 4 && fname.substr(fname.size()-4) == ".txt") {
         return "txt";
     } else {
         auto i = fname.find_last_of('.');
@@ -78,7 +83,39 @@ std::string OverlapStore::DetectFileType(const std::string &fname) {
     }
 }
 
-bool OverlapStore::FromM4Line(const std::string &line, Overlap& o, StringPool::NameId& ni) {
+void OverlapStore::PreLoad(const std::string &fname) {
+    auto type = DetectFileType(fname);
+    if (type == "sam" || type == "sam.gz") {
+        GzFileReader in(fname);
+        auto line = in.GetNoEmptyLine();
+        while (line != "" && line[0] == '@') {
+            auto items = SplitStringBySpace(line);
+            std::string name;
+            int len = 0;
+            if (items[0] == "@SQ") {
+                for (size_t i = 1; i < items.size(); ++i) {
+                    auto kv = SplitStringByChar(items[i], ':');
+                    if (kv.size() == 2) {
+                        if (kv[0] == "SN") {
+                            name = kv[1];
+                        } else if (kv[0] == "LN") {
+                            len = std::stoi(kv[1]);
+                        }
+                    }
+                }
+                auto nid = string_pool_.GetIdByString(name);
+                loading_infos_[nid] = len;
+            }
+            line = in.GetNoEmptyLine();
+        }
+    }
+}
+
+void OverlapStore::AfterLoad(const std::string &fname) {
+    loading_infos_.clear();
+}
+
+int OverlapStore::FromM4Line(const std::string &line, Overlap& o, StringPool::NameId& ni) {
 
     std::vector<std::string> items = SplitStringBySpace(line);
 
@@ -104,15 +141,15 @@ bool OverlapStore::FromM4Line(const std::string &line, Overlap& o, StringPool::N
         o.b_.strand = o.a_.strand == o.b_.strand ? 0 : 1;
         o.a_.strand = 0;
 
-        return true;
+        return 1;
     }
     else {
-        return false;
+        return -1;
     }
 }
 
 
-bool OverlapStore::FromM4aLine(const std::string &line, Overlap& o, StringPool::NameId& ni) {
+int OverlapStore::FromM4aLine(const std::string &line, Overlap& o, StringPool::NameId& ni) {
 
     std::vector<std::string> items = SplitStringBySpace(line);
 
@@ -143,15 +180,15 @@ bool OverlapStore::FromM4aLine(const std::string &line, Overlap& o, StringPool::
                 o.detail_.push_back({int(n), t});
             }
         }
-        return true;
+        return 1;
     }
     else {
-        return false;
+        return -1;
     }
 }
 
 
-bool OverlapStore::FromPafLine(const std::string &line, Overlap& o, StringPool::NameId& ni) {
+int OverlapStore::FromPafLine(const std::string &line, Overlap& o, StringPool::NameId& ni) {
     std::vector<std::string> items = SplitStringBySpace(line);
 
     if (items.size() >= 12) {
@@ -177,7 +214,7 @@ bool OverlapStore::FromPafLine(const std::string &line, Overlap& o, StringPool::
         o.b_.start = atoi(items[7].c_str());
         o.b_.end = atoi(items[8].c_str());
 
-        if (o.a_.id == -1 || o.b_.id == -1) return false;
+        if (o.a_.id == -1 || o.b_.id == -1) return -1;
 
         // number_residue_matches, alignment_block_length, mapping_quality
         auto match = std::stoi(items[9]);
@@ -204,13 +241,13 @@ bool OverlapStore::FromPafLine(const std::string &line, Overlap& o, StringPool::
             o.identity_ = ((rep*1.0 / o.a_.len) * (o.a_.end - o.a_.start - match) + match ) * 100.0 / len;
         }
 
-        return true;
+        return 1;
     } else {
-        return false;
+        return -1;
     }
 }
 
-bool OverlapStore::FromPafLineEx(const std::string &line, Overlap& o, StringPool::NameId& ni, int &replen) {
+int OverlapStore::FromPafLineEx(const std::string &line, Overlap& o, StringPool::NameId& ni, int &replen) {
     std::vector<std::string> items = SplitStringBySpace(line);
     replen = 0;
     if (items.size() >= 12) {
@@ -235,7 +272,7 @@ bool OverlapStore::FromPafLineEx(const std::string &line, Overlap& o, StringPool
         o.b_.len = atoi(items[6].c_str());
         o.b_.start = atoi(items[7].c_str());
         o.b_.end = atoi(items[8].c_str());
-        if (o.a_.id == -1 || o.b_.id == -1) return false;
+        if (o.a_.id == -1 || o.b_.id == -1) return -1;
 
         // number_residue_matches, alignment_block_length, mapping_quality
         
@@ -263,14 +300,103 @@ bool OverlapStore::FromPafLineEx(const std::string &line, Overlap& o, StringPool
             o.identity_ = ((rep*1.0 / o.a_.len) * (o.a_.end - o.a_.start - match) + match ) * 100.0 / len;
         }
         replen = rep;
-        return true;
+        return 1;
     } else {
-        return false;
+        return -1;
+    }
+}
+
+
+int OverlapStore::FromSamLine(const std::string &line, Overlap& o, StringPool::NameId& ni) {
+    if (line.size() == 0 || line[0] =='@' || line[0] == '#') return 0;
+
+    std::vector<std::string> items = SplitStringBySpace(line);
+
+    if (items.size() >= 11) {
+        // query_name, flag, target start, quality, cigar, rnext, pnext, tlen, seq, qual, *others
+
+        if (items[2] == "*") return 0;
+
+        o.a_.id = ni.GetIdByName(items[0]);
+        // o.a_.len=;
+        // o.a_.start;
+        // o.a_.end;
+        o.a_.strand = (std::stoul(items[1]) & 16) ? 1 : 0;
+        
+    
+        
+        // target_name, target_lenght, target_start, target_end, 
+        o.b_.id = ni.GetIdByName(items[2]);
+        // o.b_.len ;
+        o.b_.start = std::stoi(items[3])-1;
+        auto n2l = loading_infos_.find(o.b_.id);
+        assert(n2l != loading_infos_.end());
+        o.b_.len = n2l->second;
+
+        if (o.a_.id == -1 || o.b_.id == -1) return -1;
+
+        // identity
+        int match = 0;
+        int mismatch = 0;
+        int del = 0;
+        int ins = 0;
+        int clip0 = 0;
+        int clip1 = 0;
+        const auto &cigar = items[5];
+        auto iter = IterCigar(cigar);
+        size_t n = 0; char t = '\0';
+        while (iter.Next(n, t)) {
+            o.detail_.push_back({int(n), t});
+            switch (t)
+            {
+            case 'M':
+            case '=':
+                match += n;
+                break;
+            case 'X':
+                mismatch += n;
+                break;
+            case 'D':
+                del += n;
+                break;
+            case 'I':
+                ins += n;
+                break;
+            case 'S':
+            case 'H':
+                if (match + mismatch + del + ins == 0) {
+                    clip0 = n;
+                } else {
+                    clip1 = n;
+                }
+                break;
+            default:        // error
+                return -1;
+            }
+        }
+
+        if (o.a_.strand == o.b_.strand) {
+            o.a_.start = clip0;
+            o.a_.end = clip0 + match + mismatch + ins;
+            o.a_.len = clip0 + match + mismatch + ins + clip1;
+        } else {
+            o.a_.start = clip1;
+            o.a_.end = clip1 + match + mismatch + ins;
+            o.a_.len = clip0 + match + mismatch + ins + clip1;
+        }
+
+        o.b_.end = o.b_.start + match + mismatch + del;
+        assert(o.b_.end <= o.b_.len && "End of target in cigar is longer lenght of target");
+        
+        o.identity_ = match*100.0 / (mismatch + match + ins + del);
+        return 1;
+    } else {
+        return -1;
     }
 }
 
  std::array<Seq::Id, 2> OverlapStore::GetReadIdRange() const { 
-    std::array<Seq::Id, 2> range = {0, string_pool_.Size() }; 
+    std::array<Seq::Id, 2> range = {0, (int)string_pool_.Size() }; 
     if (range[1] == 0) {
         auto cmp_range = [&range](Seq::Id i) {
             if (i < range[0]) range[0] = i;
@@ -551,6 +677,39 @@ void OverlapStore::GroupTarget(std::unordered_map<Seq::Id, std::unordered_map<Se
     MultiThreadRun((int)threads, split_func, work_func);
 }
 
+
+
+void OverlapStore::GroupQuery(std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &groups, size_t threads) const {
+    
+    std::mutex mutex;
+
+    auto split_func = [this,threads]() {
+        return SplitRange<size_t>(threads, 0, Size());
+    };
+
+    auto comb_func = [&groups, &mutex](std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>>& gp) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& t : gp) {
+            for (auto &q : t.second) {
+                groups[t.first][q.first].insert(groups[t.first][q.first].end(), q.second.begin(), q.second.end());
+            }
+        }
+    };
+
+    auto work_func = [this, comb_func](std::array<size_t, 2> r) {
+
+        std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> gp;
+
+        for (size_t i=r[0]; i<r[1]; ++i) {
+            auto &o = Get(i);
+            gp[o.a_.id][o.b_.id].push_back(&o);
+        }
+
+        comb_func(gp);
+    };
+
+    MultiThreadRun((int)threads, split_func, work_func);
+}
 
 
 std::string OverlapStore::ToM4aLine(const Overlap& o, const StringPool::NameId& ni) {

@@ -11,17 +11,20 @@ public:
         desc_ = "Detect cross structures";
     }
 
-
     virtual bool PreCondition();
     virtual void Running();
     
-    bool IsCross(const SgNode* n) const;
     bool IsInconsistent(const SgNode* n0, const SgNode* n1) const;
-    bool TestLength(const SgNode* in0, const SgNode* in1) const;
-    bool TestExtends(const SgNode* in0, const SgNode* in1, const SgNode* out0, const SgNode* out1) const;
+    
+
     CrossNode* DetectCross(SgNode* n) const;
+
+    bool TrySoluteCrossNode(CrossNode* node, std::unordered_set<SgEdge*>& removed);
+    bool IsLinkedReversedNode(const SgNode* front, const SgNode* back, size_t max_depth);
+protected:
     PathGraph& graph_;   
-    size_t max_node_size { 5 };
+    size_t max_node_size_ { 10 };
+    size_t max_length_ { 1000000 };
 };
 
 }

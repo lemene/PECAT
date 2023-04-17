@@ -139,7 +139,7 @@ sub jobRead2ReadParallelly($$$$$$$) {
                     ifiles => [$f],
                     ofiles => [$ofile],
                     gfiles => [$ofile],
-                    mfiles => [],
+                    mfiles => [$f],
                     cmds => ["minimap2 $align_options -t $threads $readsIndex $f | $binPath/fsa_ol_refine - - --itype paf --otype paf  --read_fname $reads --thread_size $threads $refine_options > $ofile"],
                     msg => "aligning reads $i, $name"
                 );
@@ -189,7 +189,7 @@ sub jobRead2ReadParallelly($$$$$$$) {
         name => "${name}_rd2rd_job",
         ifiles => [$reads],
         ofiles => [$rd2rd],
-        mfiles => ["$workDir/cc*.fasta", ],
+        mfiles => ["$workDir/cc*.fasta", $readsIndex, $blockInfo],
         jobs => [$jobSplit, $jobIndex, $jobAlign, $jobCat],
         msg => "aligning reads to reads, $name",
 
@@ -332,16 +332,77 @@ sub job_map_reads_to_contigs($$$$$$) {
     return $job;
 }
 
+sub job_map_hic_reads_to_contigs($$$$$$) {
+    my ($self, $name, $wrkdir, $reads, $contigs, $options) = @_;
+
+    my $threads = $self->get_config("threads");
+
+    my $prictg = $contigs->[0];
+    my $hic1_reads = $reads->[0];
+    my $hic2_reads = $reads->[1];
+
+    my $hic1_2_ctg = "$wrkdir/hic1_2_ctg.paf";
+    my $hic2_2_ctg = "$wrkdir/hic2_2_ctg.paf";
+
+    my $job1 = $self->newjob(
+        name => "${name}_hic1_2_ctg",
+        ifiles => [$hic1_reads, $prictg],
+        ofiles => [$hic1_2_ctg],
+        gfiles => [$hic1_2_ctg],
+        mfiles => [],
+        cmds => ["minimap2  -t $threads -x sr -c $prictg $hic1_reads > $hic1_2_ctg"],
+        msg => "mapping hic1 reads to contigs, ${name}_hic1",
+    );
+
+    my $job2 = $self->newjob(
+        name => "${name}_hic2_2_ctg",
+        ifiles => [$hic2_reads, $prictg],
+        ofiles => [$hic2_2_ctg],
+        gfiles => [$hic2_2_ctg],
+        mfiles => [],
+        cmds => ["minimap2  -t $threads -x sr -c $prictg $hic2_reads > $hic2_2_ctg"],
+        msg => "mapping reads to contigs, ${name}_hic2",
+    );
+
+    return [$job1, $job2];
+}
+
+sub job_identify_snps_in_hic($$$$) {
+    
+    my ($self, $name, $wrkdir, $reads) = @_;
+
+    my $bin_path = $self->get_env("BinPath");
+    my $threads = $self->get_config("threads");
+
+    my $hic1_reads = $reads->[0];
+    my $hic2_reads = $reads->[1];
+
+    my $hic1_2_ctg = "$wrkdir/hic1_2_ctg.paf";
+    my $hic2_2_ctg = "$wrkdir/hic2_2_ctg.paf";
+    my $variants = "$wrkdir/variants";
+    my $snp_in_hic = "$wrkdir/hic_infos";
+
+    my $job = $self->newjob(
+        name => "${name}_snp_in_hic",
+        ifiles => [$hic1_reads, $hic2_reads, $hic1_2_ctg, $hic2_2_ctg, $variants ],
+        ofiles => [$snp_in_hic],
+        gfiles => [$snp_in_hic],
+        mfiles => [],
+        cmds => ["$bin_path/fsa_misc_tools snp_in_hic $hic1_reads $hic1_2_ctg $hic2_reads $hic2_2_ctg $variants $snp_in_hic"],
+        msg => "identify snps in hic reads, ${name}_snp_in_hic",
+    );
+
+
+    return $job;
+}
 
 sub job_phase($$$$$$$) {
-    my ($self, $name, $wrkdir, $reads, $contigs, $ol_r2c) = @_;
+    my ($self, $name, $wrkdir, $reads, $contigs, $ol_r2c, $options) = @_;
  
-
     my $inconsistent = "$wrkdir/inconsistent";
 
     my $binPath = $self->get_env("BinPath");
     my $threads = $self->get_config("threads");
-    my $options = $self->get_config("phase_phase_options");
 
     my $job = $self->newjob(
         name => "${name}_phase",
@@ -360,34 +421,54 @@ sub job_phase($$$$$$$) {
 sub runAssemble($$$$$$$) {
     my ($self, $name, $workDir, $reads, $overlaps, $options) = @_;
 
-
     mkdir $workDir;
 
-    my $filtered = "$workDir/filter.m4a";
-    my $contigs = "$workDir/primary.fasta";
-    my $phased = $name eq "asm2" ? "--phased $workDir/../4-phase/inconsistent" : "";
-    my $variants = $name eq "asm2" ? "--variants $workDir/../4-phase/readinfos" : "";
+    my $wrkdir = $workDir;
+
+    my $primary = "$workDir/primary.fasta";
+    my $alternate = "$workDir/alternate.fasta";
+    my $haplotype_1 = "$workDir/haplotype_1.fasta";
+    my $haplotype_2 = "$workDir/haplotype_2.fasta";
+
+    my $hic_info = $self->get_config("hic_reads") ne "" ? "--hic_info $wrkdir/../4-phase/hic_infos" : "";
+
+    my $phased = "";
+    my $variants = "";
+    if ($name eq "asm2") {
+        
+        my $phase_method = $self->get_config("phase_method") + 0;
+        if ($phase_method == 0) {
+            $phased = "--phased $workDir/../4-phase/fsa/inconsistent";
+            $variants = "--variants $workDir/../4-phase/fsa/readinfos";
+        } elsif ($phase_method == 1 || $phase_method == 2) {
+            $phased = "--phased $workDir/../4-phase/clair3/inconsistent";
+            $variants = "--variants $workDir/../4-phase/clair3/readinfos";
+        }
+    }
  
-    my $binPath = $self->get_env("BinPath");
+    my $dual = index($options, "dual") != -1;
+    my $prialt = index($options, "prialt") != -1 || (!$dual);
+    my @contigs = ();
+    if ($dual) {
+        push @contigs, $haplotype_1;
+    }
+    if ($prialt) {
+        push @contigs, $primary;
+    }
+    my $bin_path = $self->get_env("BinPath");
     my $threads = $self->get_config("THREADS");
 
-    my $filterOptions = $options->[0];
-    if ($self->get_config("GENOME_SIZE")) {
-        $filterOptions = $filterOptions . " --genome_size=" . $self->get_config("GENOME_SIZE");
-    }
-    my $assembleOptions = $options->[1];
-
-    my $jobAssemble = $self->newjob(
+    my $job = $self->newjob(
         name => "${name}_assemble",
         ifiles => [$overlaps],
-        ofiles => [$contigs],
-        gfiles => [$contigs],
-        mfiles => [],
-        cmds => ["$binPath/fsa_ol_assemble $overlaps --thread_size=$threads --output_directory=$workDir --read_file=$reads  $phased $variants $assembleOptions"],
+        ofiles => [@contigs],
+        gfiles => [$primary, $alternate, $haplotype_1, $haplotype_2],
+        mfiles => ["$wrkdir/debug_*", "$wrkdir/filter*", "$wrkdir/readinfos", "$wrkdir/*.gz"],
+        cmds => ["$bin_path/fsa_ol_assemble $overlaps --thread_size=$threads --output_directory=$workDir --read_file=$reads  $phased $variants $hic_info $options"],
         msg => "assembling overlaps, $name",
     );
 
-    $self->run_jobs($jobAssemble);
+    $self->run_jobs($job);
 }
 
 sub job_polish($$$$$$$) {

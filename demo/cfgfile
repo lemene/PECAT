@@ -1,10 +1,10 @@
-project=chr
+project=S1
 reads= ./reads.fasta.gz
 genome_size=1500000
 threads=10
-cleanup=0
+cleanup=1
 compress=0
-grid=local:1
+grid=local
 prep_min_length=3000
 prep_output_coverage=80
 corr_iterate_number=1

@@ -31,9 +31,8 @@ public:
     void Rearrange() { Rearrange(aligned_query, aligned_target); }
     static void Rearrange(std::string &alq, std::string &alt);
     static void Rearrange1(std::string &alq, std::string &alt);
-    bool TrimEnds(size_t checklen=1000, int stub=8);
+    bool TrimEnds(size_t checklen=2000, int stub=8);
 
-    int Score() const;
     Seq::Id tid { Seq::NID };
     Seq::Id qid { Seq::NID };
     size_t target_start {0};

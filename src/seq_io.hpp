@@ -1,5 +1,8 @@
-#ifndef FSA_SEQUENCE_IO_HPP
-#define FSA_SEQUENCE_IO_HPP
+/**
+ * @brief read/write sequence files (fasta/fastq).
+ */
+
+#pragma once
 
 #include "file_io.hpp"
 
@@ -16,11 +19,20 @@ public:
         ItemId id;            // location in file
     };
 public:
+    SeqReader(const std::string &fname) : fname_(fname) {}
     virtual ~SeqReader() {}
+
+    const std::string& GetFileName() const { return fname_; }
+
+    virtual bool IsValid() const = 0;
+    virtual bool IsFileEnd() const = 0;
+
     virtual bool Next(Item &item) = 0;
     virtual bool Get(ItemId id, Item &item) = 0;
 
     static std::string NextNonEmptyLine(std::ifstream &in);
+protected:
+    std::string fname_;
 };
 
 class SeqWriter {
@@ -32,11 +44,11 @@ public:
 
 class FastaReader : public SeqReader {
 public:
-    FastaReader(const std::string &fname) : in_(fname) {}
+    FastaReader(const std::string &fname) : SeqReader(fname), in_(fname) {}
     virtual ~FastaReader() {}
 
-    bool IsValid() const { return in_.Valid(); }
-    bool IsFileEnd() { return in_.IsEnd(); }
+    virtual bool IsValid() const { return in_.Valid(); }
+    virtual bool IsFileEnd() const { return in_.IsEnd(); }
 
     virtual bool Next(Item &item);
     virtual bool Get(ItemId id, Item &item) { Seek(id); return Next(item);}
@@ -52,20 +64,17 @@ protected:
     GzFileReader in_;
 };
 
-
-
 class FastqReader : public SeqReader {
 public:
-    FastqReader(const std::string &fname) : in_(fname) { }
+    FastqReader(const std::string &fname) : SeqReader(fname), in_(fname) { }
     virtual ~FastqReader() {}
 
-    bool IsValid() const { return in_.Valid(); }
-    bool IsFileEnd() { return in_.IsEnd(); }
+    virtual bool IsValid() const { return in_.Valid(); }
+    virtual bool IsFileEnd() const  { return in_.IsEnd(); }
 
     virtual bool Next(Item &item);
     virtual bool Get(ItemId id, Item &item) { Seek(id); return Next(item); }
 
-    
 protected:
     bool GetHead(std::string &head, std::string &sub_head);
     bool GetSeq(std::string &seq) { seq = in_.GetStrippedLine(); return true; }
@@ -128,4 +137,3 @@ protected:
 
 } // namespace fsa {
 
-#endif // FSA_SEQUENCE_IO_HPP

@@ -103,6 +103,7 @@ public:
     void Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, size_t thread_size) const;
     void Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, const std::unordered_set<int>& keys, size_t thread_size) const;
     void GroupTarget(std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &groups, size_t threads) const;
+    void GroupQuery(std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &groups, size_t threads) const;
 
 
     template<typename F, typename C>
@@ -119,20 +120,24 @@ public:
     template<typename C>
     void LoadFileTxtFast(const std::string &fname, C check, size_t thread_size);
 
-    static bool FromM4Line(const std::string &line, Overlap &o, StringPool::NameId& ni);
-    static bool FromM4aLine(const std::string &line, Overlap &o, StringPool::NameId& ni);
-    static bool FromPafLine(const std::string &line, Overlap &o, StringPool::NameId& ni);
+    void PreLoad(const std::string &fname);
+    void AfterLoad(const std::string &fname);
 
-    static bool FromM4LineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen) {
+    static int FromM4Line(const std::string &line, Overlap &o, StringPool::NameId& ni);
+    static int FromM4aLine(const std::string &line, Overlap &o, StringPool::NameId& ni);
+    static int FromPafLine(const std::string &line, Overlap &o, StringPool::NameId& ni);
+    static int FromSamLine(const std::string &line, Overlap &o, StringPool::NameId& ni);
+
+    static int FromM4LineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen) {
         replen = 0;
         return FromM4Line(line, o, ni);
     }
-    static bool FromM4aLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen) {
+    static int FromM4aLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen) {
         replen = 0;
         return FromM4aLine(line, o, ni);
     }
 
-    static bool FromPafLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen);
+    static int FromPafLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen);
 
     static std::string ToM4aLine(const Overlap& o, const  StringPool::NameId& ni);
     static std::string ToM4Line(const Overlap& o, const StringPool::NameId& ni);
@@ -160,7 +165,8 @@ protected:
     StringPool &string_pool_;
     StringPool default_string_pool_;
 
-    size_t load_threads = 80;
+    size_t load_threads = 10;
+    static std::unordered_map<int, int> loading_infos_; // TODO for loading sam file
 
 };
 
@@ -207,11 +213,15 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
             if (line_size > 0) {
                 size_t ol_size = 0;
                 for (size_t i=0; i<line_size; ++i) {
+                if (lines[i].size() < 1 || lines[i][0] == '#') continue;
                     Overlap o;
-                    if (lineToOl(lines[i], o, ni)) {
+                    auto r = lineToOl(lines[i], o, ni);
+                    if (r > 0) {
                         ols[ol_size++] = o;
-                    } else {
+                    } else if (r < 0) {
                         LOG(ERROR)("Failed to convert line to overlap \n   %s", lines[i].c_str());
+                    } else {
+                        // r == 0 pass
                     }
                 }
                 combine_func(ols, ol_size, ni);;
@@ -227,7 +237,9 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
     };
 
     if (in.Valid()) {
+        PreLoad(fname);
         MultiThreadRun(thread_size, work_func);
+        AfterLoad(fname);
     } else {
         LOG(ERROR)("Failed to load file: %s", fname.c_str());
     }
@@ -322,23 +334,23 @@ void OverlapStore::LoadFileFast(const std::string &fname, F lineToOl, C check, s
             auto curr = block.begin();
             while (curr < block.begin()+block_size) {
                 auto next = std::find(curr, block.begin()+block_size, '\n');
-                //LOG(INFO)("pos: %d %d, %zd, %c %c", curr-block.begin(), next-block.begin(), block_size, *curr, *next);
                 line = std::string(curr, next);
-                //printf("line: %s\n", line.c_str());
+                if (line.size() < 1 || line[0] == '#') continue;
                 Overlap o;
-                if (lineToOl(line, o, ni)) {
+                auto r = lineToOl(line, o, ni);
+                if (r > 0) {
                     if (check(o)) {
                         ols.push_back(o);
                     }
-                } else {
+                } else if (r < 0) {
                     LOG(INFO)("line: %d %d, %zd, %c %c", curr-block.begin(), next-block.begin(), block_size, *curr, *next);
                     LOG(ERROR)("Failed to convert line to overlap \n   \"%s\"", line.c_str());
+                } else {
+                    // r == 0 pass
                 }
                 curr = next;
                 if (curr < block.begin()+block_size && *curr == '\n')  curr++;
-                // if (id == 0) {
-                //     printf("curr %d/%zd\n", curr-block.begin(), block_size);
-                // }
+
             }
 
             combine_func(ols, ols.size());
@@ -353,7 +365,9 @@ void OverlapStore::LoadFileFast(const std::string &fname, F lineToOl, C check, s
     };
 
     if (in.Valid()) {
+        PreLoad(fname);
         MultiThreadRun(thread_size, work_func);
+        AfterLoad(fname);
     } else {
         LOG(ERROR)("Failed to load file: %s", fname.c_str());
     }
@@ -420,6 +434,8 @@ void OverlapStore::Load(const std::string &fname, const std::string &type, size_
         LoadFileMt(fname, &OverlapStore::FromM4aLine, check, thread_size);
     } else if (t == "paf" || t == "paf.gz") {
         LoadFileMt(fname, &OverlapStore::FromPafLine, check, thread_size);
+    } else if (t == "sam" || t == "sam.gz") {
+        LoadFileMt(fname, &OverlapStore::FromSamLine, check, thread_size);
     } else if (t == "txt") {
         LoadFileTxtMt(fname, check, thread_size);
     } else {
@@ -436,6 +452,8 @@ void OverlapStore::LoadFast(const std::string &fname, const std::string &type, s
         LoadFileFast(fname, &OverlapStore::FromM4aLine, check, thread_size);
     } else if (t == "paf" || t == "paf.gz") {
         LoadFileFast(fname, &OverlapStore::FromPafLine, check, thread_size);
+    } else if (t == "sam" || t == "sam.gz") {
+        LoadFileFast(fname, &OverlapStore::FromSamLine, check, thread_size);
     } else if (t == "txt") {
         LoadFileTxtFast(fname, check, thread_size);
     } else {

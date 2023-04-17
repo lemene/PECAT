@@ -4,10 +4,10 @@
 namespace fsa {
 
 
-class LowQualitySimplifier : public Simplifier {
+class QualitySimplifier : public Simplifier {
 public:
-    LowQualitySimplifier(StringGraph& graph) : Simplifier(graph), graph_(graph) {
-        name_ = "low-quailty";
+    QualitySimplifier(StringGraph& graph) : Simplifier(graph), graph_(graph) {
+        name_ = "quality";
         desc_ = "Remove low-quality edges";
     }
 
@@ -20,6 +20,9 @@ public:
     void RemoveLowQuality(double threshold);
     void RepairRmoved(double threshold, std::unordered_set<BaseEdge*> &removed);
     void ReactiveEdges(double threshold);
+    void ReactiveContainedEdges(double threshold);
+  
+    void Repair(const std::unordered_set<const Overlap*> &ols);
     StringGraph& graph_;   
     std::vector<BaseNode*> nodes_;
     std::vector<std::vector<double>> quals_;

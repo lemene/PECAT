@@ -55,11 +55,11 @@ public:
             return reads.find(n) != reads.end();
         }
 
-        bool Add(const std::string& line, const Key &b) {
+        void Add(const std::string& line, const Key &b) {
             writer->Write(line);
             reads2.insert(b);
         }
-        bool Add( const Key &b) {
+        void Add( const Key &b) {
             reads2.insert(b);
         }
 
@@ -134,7 +134,7 @@ public:
             return iter != assigned.end() ? iter->second : -1;
         }
 
-        bool Assign(const Key &n, int g) { assigned[n] = g; }
+        void Assign(const Key &n, int g) { assigned[n] = g; }
 
         void Merge(size_t size, WorkArea& wa, const std::vector<std::string> &lines) {
             
@@ -249,11 +249,11 @@ public:
             Flush();
         }
         
-        bool Add(const std::string& line, const int &b) {
+        void Add(const std::string& line, const int &b) {
             writer->Write(line);
             reads2.insert(b);
         }
-        bool Add( const int &b) {
+        void Add( const int &b) {
             reads2.insert(b);
         }
 
@@ -327,9 +327,9 @@ public:
             }
         }
 
+        std::string ofname;
         std::vector<int> assigned;
         std::vector<Group> groups;
-        std::string ofname;
     };
 
 
@@ -370,6 +370,33 @@ public:
     int thread_size_ { 1 };
 };
 
+class Program_Hic : public Program {
+public:
+    Program_Hic() {
+        name_ = "snp_in_hic";
+        desc_ = "identify snps in hic reads";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(fn_hic1_, "hic1", "hic1 reads");
+        ap.AddPositionOption(fn_paf1_, "hic1_2_ctg", "alignment(PAF format) between hic1 reads and contigs");
+        ap.AddPositionOption(fn_hic2_, "hic2", "hic2 reads");
+        ap.AddPositionOption(fn_paf2_, "hic2_2_ctg", "alignment(PAF format) between hic2 reads and contigs");
+        ap.AddPositionOption(fn_vars_, "variants", "SNP information in contigs");
+        ap.AddPositionOption(fn_snp_in_hic_, "snp_in_hic", "result, SNP information in hic reads");
+
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string fn_hic1_;
+    std::string fn_paf1_;
+    std::string fn_hic2_;
+    std::string fn_paf2_;
+    std::string fn_vars_;
+    std::string fn_snp_in_hic_;
+};
+
 class MiscTools : public MultiProgram {
 public:
     MiscTools() {
@@ -377,6 +404,7 @@ public:
         Add(new Program_SplitOverlaps2());
         Add(new Program_SplitName());
         Add(new Program_Test());
+        Add(new Program_Hic());
     }
 };
 

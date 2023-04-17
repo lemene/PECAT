@@ -21,53 +21,6 @@ bool BridgeSimplifier::ParseParameters(const std::vector<std::string> &params) {
 }
 
 
-// void BridgeSimplifier::Running() {
-//     std::unordered_set<BaseEdge*> removed;
-
-//     auto edges = graph_.CollectEdges([](BaseEdge* e){
-//         return !e->IsReduce();
-//     });
-
-//     for (auto &e : edges) {
-//         assert(!e->IsReduce());
-  
-//         if (e->InNode()->InDegree() == 1 && e->InNode()->OutDegree() == 2 &&
-//             e->OutNode()->InDegree() == 2 && e->OutNode()->OutDegree() == 1) {
-            
-//             int minlen = (e->Length() + graph_.ReverseEdge(e)->Length()) / 2 * 3;      // TODO how to determine the threshold
-//             int minnode = 3;
-
-//             std::array<bool, 2> out_node_has_long_edge = {false, false};
-//             for (auto ie : e->OutNode()->GetInEdges()) {
-//                 if (ie == e) continue;
-
-//                 out_node_has_long_edge[0] = ie->TestInExtend(minlen, minnode);
-//                 out_node_has_long_edge[1] = e->OutNode()->GetOutEdges()[0]->TestOutExtend(minlen, minnode);
-//                 break;
-//             }
-
-//             std::array<bool, 2> in_node_has_long_edge = {false, false};
-//             for (auto ie : e->InNode()->GetOutEdges()) {
-//                 if (ie == e) continue;
-
-//                 in_node_has_long_edge[0] = e->InNode()->GetInEdges()[0]->TestInExtend(minlen, minnode);
-//                 in_node_has_long_edge[1] = ie->TestOutExtend(minlen, minnode);
-//                 break;
-
-//             }
-
-//             if ((out_node_has_long_edge[0] && out_node_has_long_edge[1]) || (in_node_has_long_edge[0] && in_node_has_long_edge[1])) {
-//                 removed.insert(e);
-//             }
-            
-            
-//         }
-//     }
-
-//     LOG(INFO) ("Remove abnormal bridging edges: %d", removed.size()*2);
-//     graph_.ReduceEdges(removed, BaseEdge::RT_BRIDGED);
-// }
-
 std::vector<SgEdge*> BridgeSimplifier::GetBridgePath(SgNode* node, size_t pri, size_t alt) {
     assert(node->InDegree() == 1 && node->OutDegree() == 2);
     assert((pri == 0 || pri == 1) && (alt == 0 || alt == 1) && pri != alt);
@@ -102,38 +55,24 @@ std::vector<const Overlap*> BridgeSimplifier::RepairIncompleteCross(const std::v
 
     auto pif = graph_.GetAsmData().GetInconsistentOverlaps();
     if (pif != nullptr) {
-        auto on0 = path.front()->InNode()->OutEdge(0)->OutNode<BaseNode>()->ReadId();
-        auto on1 = path.front()->InNode()->OutEdge(1)->OutNode<BaseNode>()->ReadId();
+        bool cand_cross = IsOutEdgeInconsistent(path.front()->InNode()->OutEdge<BaseEdge>(0), 
+                                                path.front()->InNode()->OutEdge<BaseEdge>(1), 5, pif) &&
+                          IsInEdgeInconsistent(path.back()->OutNode()->InEdge<BaseEdge>(0), 
+                                               path.back()->OutNode()->InEdge<BaseEdge>(1), 5, pif);
 
-        auto in0 = path.back()->OutNode()->InEdge(0)->InNode<BaseNode>()->ReadId();
-        auto in1 = path.back()->OutNode()->InEdge(1)->InNode<BaseNode>()->ReadId();
-        
-        bool cand_cross = pif->Contain(on0, on1) && pif->Contain(in0, in1);
-
+        Debug("cand_cross: %d\n", cand_cross);
         if (cand_cross) {
             // 
-            BaseNode* out_node = nullptr;
-            for (size_t i = 0 ; i < path.front()->InNode()->OutDegree(); ++i) {
-                if (path.front()->InNode()->OutEdge(i) != path.front()) {
-                    out_node = path.front()->InNode()->OutEdge(i)->OutNode<BaseNode>();
-                    break;
-                }
-            }
-        
-            BaseNode* in_node = nullptr;
-            for (size_t i = 0 ; i < path.back()->OutNode()->InDegree(); ++i) {
-                if (path.back()->OutNode()->InEdge(i) != path.back()) {
-                    in_node = path.back()->OutNode()->InEdge(i)->InNode<BaseNode>();
-                    break;
-                }
-            }
+            BaseNode* out_node = GetFrontAltNode(path);
+            BaseNode* in_node = GetBackAltNode(path);
 
             if (out_node->InDegree() == 1 && out_node->OutDegree() == 1 && in_node->InDegree() == 1 && in_node->OutDegree() == 1) {
                 auto e = graph_.QueryEdge(BaseEdge::ID(0, in_node->Id(),  out_node->Id()));
                 if (e == nullptr) {
                     return GetAltCrossPath(in_node->Id().MainNode(), out_node->Id().MainNode(), path);
                 } else if (e->IsType("base") && static_cast<BaseEdge*>(e)->GetReduceType() == BaseEdge::RT_NO_BEST) {
-                    return std::vector<const Overlap*>({nullptr});  // TODO 需要更换更换参数
+                    return std::vector<const Overlap*>({static_cast<BaseEdge*>(e)->ol_});  // TODO 需要更换更换参数
+                    //return std::vector<const Overlap*>({nullptr});  // TODO 需要更换更换参数
                 //} else if (pif->Contain(in_node->ReadId(), out_node->ReadId())) {
                 //    return std::vector<const Overlap*>({nullptr});  // TODO 需要更换更换参数
                 } else if (e->IsType("base") && static_cast<BaseEdge*>(e)->GetReduceType() == BaseEdge::RT_TRANSITIVE) {
@@ -184,49 +123,15 @@ std::vector<const Overlap*> BridgeSimplifier::GetAltCrossPath(Seq::EndId start, 
         int send = Seq::End(start);
 
         std::unordered_set<const Overlap*> ols = asmdata.GetExtendOverlaps(sid, send);
-        std::unordered_map<Seq::EndId, const Overlap*> links;
+        std::vector<std::pair<Seq::EndId, const Overlap*>> links;
+        //std::unordered_map<Seq::EndId, const Overlap*> links;
         for (auto ol : ols) {
             auto& alt = ol->GetOtherRead(sid);
             auto rend = send == 0 ? (ol->SameDirect() ? 0 : 1) : (ol->SameDirect() ? 1 : 0);
-            links[Seq::IdToEndId(alt.id, rend)] = ol;
+            //links[Seq::IdToEndId(alt.id, rend)] = ol;
+            links.push_back(std::make_pair(Seq::IdToEndId(alt.id, rend), ol));
         }
         return links;
-    };
-
-    auto is_contained_by_path = [&asmdata, this](Seq::Id id, const std::vector<SgEdge*>& path) {
-        std::unordered_set<Seq::Id> reads ;
-        reads.insert(path[0]->InNode<BaseNode>()->ReadId());
-        for (size_t i = 0; i < path.size(); ++i) {
-            reads.insert(path[i]->OutNode<BaseNode>()->ReadId());
-        }
-        
-        bool contained = false;
-        std::vector<Seq::Id> check { id };
-        std::unordered_set<Seq::Id> done;   // avoid loop
-        while (check.size() > 0) {
-            auto cid = check.back();
-            check.pop_back();
-            done.insert(cid);
-
-            auto rinfo = asmdata.GetReadInfo(cid);
-            Debug("rinfo x: %s\n", asmdata.QueryNameById(rinfo.id).c_str());
-            if (rinfo.filtered.type == RdReason::RS_CONTAINED) {
-                auto oid = rinfo.filtered.sub[0];
-                Debug("ccc %zd, %s %s\n", reads.size(), asmdata.QueryNameById(oid).c_str(),asmdata.QueryNameById(cid).c_str());
-                if (reads.find(oid) != reads.end()) {
-                Debug("ccc0\n");
-                    contained = true;
-                    break;
-                } else {
-                    if (done.find(oid) == done.end()) {
-                        check.push_back(oid);
-                    }
-                }
-            }
-        }
-
-        return contained;
-
     };
 
     auto check_overlap_quality = [this](const Overlap& ol) {
@@ -236,49 +141,143 @@ std::vector<const Overlap*> BridgeSimplifier::GetAltCrossPath(Seq::EndId start, 
     };
 
 
-    // 一级
-    auto extend1 = get_extend(start);
-    Debug("extend1 %s %zd\n", asmdata.QueryNameById(Seq::EndIdToId(start)).c_str(), extend1.size());
-    for (auto ext: extend1) {
-        Debug("  ext1: %s \n", asmdata.QueryNameById(Seq::EndIdToId(ext.first)).c_str());
-    }
-    if (extend1.find(end) == extend1.end()) {
+    auto pif = graph_.GetAsmData().GetInconsistentOverlaps();
+    assert(pif != nullptr);
+    
+    std::unordered_set<Seq::Id> bad;
+   
+    auto bs = pif->Get(Seq::EndIdToId(start));
+    bad.insert(bs.begin(), bs.end());
+    bs = pif->Get(Seq::EndIdToId(end));
+    bad.insert(bs.begin(), bs.end());
+    
+    Debug("bad: %zd\n", bad.size());
+    // TODO greed algorithm
+    std::vector<const Overlap*> altpath;
 
-        for (const auto &s : extend1) {
-            auto rid = s.first;
-            auto rinfo = asmdata.GetReadInfo(Seq::EndIdToId(rid));
-            if (rinfo.filtered.type == RdReason::RS_CONTAINED) {
+    auto curr = start;
+    for (size_t i = 0; i < 15; ++i) {
+        auto extend = get_extend(curr);
+        std::sort(extend.begin(), extend.end(), [](const std::pair<Seq::EndId, const Overlap*> &a,
+                                                   const std::pair<Seq::EndId, const Overlap*> &b) {
+            return a.second->AlignedLength() > b.second->AlignedLength();
+        });
+        Debug("extend %s %zd\n", asmdata.QueryNameById(Seq::EndIdToId(curr)).c_str(), extend.size());
+        for (const auto &s : extend) {
+
+            Debug("  ttt ext1: %s %zd\n", asmdata.QueryNameById(Seq::EndIdToId(s.first)).c_str(), s.second->AlignedLength());
+        }
+        auto iter = std::find_if(extend.begin(), extend.end(), [end](const std::pair<Seq::EndId, const Overlap*> &a){
+            return a.first == end;
+        });
+        if (iter == extend.end()) {
+            for (const auto &s : extend) {
+
+                Debug("  ext1: %s %zd\n", asmdata.QueryNameById(Seq::EndIdToId(s.first)).c_str(), s.second->AlignedLength());
+                auto rid = s.first;
+                if (bad.find(Seq::EndIdToId(rid)) != bad.end()) continue;
+                auto rinfo = asmdata.GetReadInfo(Seq::EndIdToId(rid));
                 Debug("rinfo: %s\n", asmdata.QueryNameById(rinfo.id).c_str());
-                if (is_contained_by_path(rinfo.id, path)) {
-                    auto extend2 = get_extend(rid);
-                    auto e2 = extend2.find(end);
-                    if (e2 != extend2.end()) {
-                        Debug("mid0: %s\n", asmdata.QueryNameById(rinfo.id).c_str());
-                        if (check_overlap_quality(*(s.second)) && check_overlap_quality(*(e2->second))) {
-                            Debug("mid: %s\n", asmdata.QueryNameById(rinfo.id).c_str());
-
-                            return std::vector<const Overlap*>({s.second, e2->second});
-                        }
-
+                if (rinfo.filtered.type == RdReason::RS_CONTAINED) {
+                    if (check_overlap_quality(*(s.second))) {
+                        altpath.push_back(s.second);
+                        curr = rid;
+                        break;
                     }
+                }
+            }
+        } else {
+
+            auto srinfo = asmdata.GetReadInfo(Seq::EndIdToId(curr));
+            auto erinfo = asmdata.GetReadInfo(Seq::EndIdToId(end));
+            if (erinfo.filtered.type == RdReason::RS_CONTAINED || srinfo.filtered.type == RdReason::RS_CONTAINED) {
+                if (check_overlap_quality(*(iter->second)) ) {
+                    altpath.push_back(iter->second);
+                    curr = end;
                 }
 
             }
-
+            Debug("end: %s %d\n", asmdata.QueryNameById(Seq::EndIdToId(end)).c_str(), curr == end);
+            break;
         }
+
+
+    }
+    if (curr != end) {
+        altpath.clear();
     }
 
-
-    return std::vector<const Overlap*>();
+    return altpath;
     
 
 }
 
+//     b0->b1->b2
+//        /
+//  a0->a1->a2
+// return a2
+BaseNode* BridgeSimplifier::GetFrontAltNode(const std::vector<SgEdge*>& path) const {
+
+    BaseNode* a2 = nullptr; // 参考注释
+    assert(path.front()->InNode()->InDegree() == 1 && path.front()->InNode()->OutDegree() == 2);
+    for (size_t i = 0; i < path.front()->InNode()->OutDegree(); ++i) {
+        auto e = path.front()->InNode()->OutEdge(i);
+        if (e == path.front()) continue;
+        a2 = e->OutNode<BaseNode>();
+        break;
+    }
+    assert(a2 != nullptr);
+    return a2;
+}
+
+//     b0->b1->b2
+//        /
+//  a0->a1->a2
+// return b0
+BaseNode* BridgeSimplifier::GetBackAltNode(const std::vector<SgEdge*>& path) const {
+        
+    BaseNode* b0 = nullptr; // 参考注释
+    assert(path.back()->OutNode()->InDegree() == 2 && path.back()->OutNode()->OutDegree() == 1);
+    for (size_t i = 0; i < path.back()->OutNode()->InDegree(); ++i) {
+        auto e = path.back()->OutNode()->InEdge(i);
+        if (e == path.back()) continue;
+        b0 = e->InNode<BaseNode>();
+        break;
+    }
+    assert(b0 != nullptr);
+    return b0;
+}
+
+//     b0->b1->b2
+//        /
+//  a0->a1->a2
+// 如果a2和b0为inconsistent overlap，则删除a1->a1
+bool BridgeSimplifier::IsBridgeDiploid(const std::vector<SgEdge*>& path) {
+
+    const BaseNode* a2 = GetFrontAltNode(path); 
+    const BaseNode* b0 = GetBackAltNode(path);
+    
+    auto pif = graph_.GetAsmData().GetInconsistentOverlaps();
+    bool is_bridge_dipolid = pif != nullptr && pif->Contain(a2->ReadId(), b0->ReadId());
+    Debug("TestBridgeDiplid: %s - %s: !nullptr=%d is_bridge=%d\n", ToString(a2).c_str(), ToString(b0).c_str(), pif != nullptr, is_bridge_dipolid);
+    return is_bridge_dipolid;
+}
+
 bool BridgeSimplifier::IsAmbiguousPath(const std::vector<SgEdge*>& path) {
 
+    auto path_core_length = [this](const std::vector<SgEdge*>& path) {
+        int len = 0; 
+        for (size_t i = 0; i < path.size(); ++i) {
+            len += path[i]->Length();
+        }
+        len -= graph_.asmdata_.GetReadStore().GetSeqLength(static_cast<BaseEdge*>(path.back())->OutNode()->ReadId());
+        return len;
+    };
 
-    int minlen = graph_.PathLength(path) * 2;      // TODO how to determine the threshold
-    int minnode = path.size() * 2;
+    int minlen = std::max(0, path_core_length(path))*2; // TODO how to determine the threshold
+
+    //int minlen = graph_.PathLength(path) * 2;      // TODO how to determine the threshold
+    int minnode = (path.size()+1) * 2;
 
     assert(path.front()->InNode()->InDegree() == 1 && path.front()->InNode()->OutDegree() == 2);
     std::array<bool, 2> in_node_has_long_edge = {false, false};
@@ -286,8 +285,8 @@ bool BridgeSimplifier::IsAmbiguousPath(const std::vector<SgEdge*>& path) {
         auto e = path.front()->InNode()->OutEdge(i);
         if (e == path.front()) continue;
 
-        in_node_has_long_edge[0] = static_cast<BaseEdge*>(path.front()->InNode()->InEdge(0))->TestInExtend(minlen, minnode,false);
-        in_node_has_long_edge[1] = static_cast<BaseEdge*>(e)->TestOutExtend(minlen, minnode,false);
+        in_node_has_long_edge[0] = static_cast<BaseEdge*>(path.front()->InNode()->InEdge(0))->TestInExtend(minlen, minnode,true);
+        in_node_has_long_edge[1] = static_cast<BaseEdge*>(e)->TestOutExtend(minlen, minnode,true);
         break;
     }
 
@@ -297,21 +296,67 @@ bool BridgeSimplifier::IsAmbiguousPath(const std::vector<SgEdge*>& path) {
         auto e = path.back()->OutNode()->InEdge(i);
         if (e == path.back()) continue;
 
-        out_node_has_long_edge[0] = static_cast<BaseEdge*>(path.back()->OutNode()->OutEdge(0))->TestOutExtend(minlen, minnode,false);
-        out_node_has_long_edge[1] = static_cast<BaseEdge*>(e)->TestInExtend(minlen, minnode,false);
+        out_node_has_long_edge[0] = static_cast<BaseEdge*>(path.back()->OutNode()->OutEdge(0))->TestOutExtend(minlen, minnode,true);
+        out_node_has_long_edge[1] = static_cast<BaseEdge*>(e)->TestInExtend(minlen, minnode,true);
         break;
     }
-    Debug("check (%d,%d): %d %d %d %d\n", minlen, minnode, out_node_has_long_edge[0], out_node_has_long_edge[1], in_node_has_long_edge[0], in_node_has_long_edge[1]);
+    Debug("IsAmbiguousPath (%d,%d): %d %d %d %d\n", minlen, minnode, out_node_has_long_edge[0], out_node_has_long_edge[1], in_node_has_long_edge[0], in_node_has_long_edge[1]);
     return out_node_has_long_edge[0] && out_node_has_long_edge[1] && in_node_has_long_edge[0] && in_node_has_long_edge[1];            
 }
 
+
+bool BridgeSimplifier::IsLowQuality(const std::vector<SgEdge*> &path) {
+    
+    auto is_edge_low_quality = [this](SgEdge* e) {
+        auto be = static_cast<BaseEdge*>(e);
+        return graph_.GetOverlapQuality(*be->ol_) < graph_.desired_edge_quality;
+    };
+
+    bool low_qualtiy_path = false;
+    for (auto p : path) {
+        if (is_edge_low_quality(p)) {
+            low_qualtiy_path = true;
+            break;
+        }
+    }
+    Debug("path_quality: %d\n", low_qualtiy_path);
+
+    if (low_qualtiy_path) {
+        assert(path.front()->InNode()->InDegree() == 1 && path.front()->InNode()->OutDegree() == 2);
+        std::array<bool, 2> in_node_low_quality = {false, false};
+        for (size_t i = 0; i < path.front()->InNode()->OutDegree(); ++i) {
+            auto e = path.front()->InNode()->OutEdge(i);
+            if (e == path.front()) continue;
+
+            in_node_low_quality[0] = is_edge_low_quality(path.front()->InNode()->InEdge(0));
+            in_node_low_quality[1] = is_edge_low_quality(e);
+            break;
+        }
+
+        assert(path.back()->OutNode()->InDegree() == 2 && path.back()->OutNode()->OutDegree() == 1);
+        std::array<bool, 2> out_node_low_quality = {false, false};
+        for (size_t i = 0; i < path.back()->OutNode()->InDegree(); ++i) {
+            auto e = path.back()->OutNode()->InEdge(i);
+            if (e == path.back()) continue;
+
+            out_node_low_quality[0] = is_edge_low_quality(path.back()->OutNode()->OutEdge(0));
+            out_node_low_quality[1] = is_edge_low_quality(e);
+            break;
+        }
+        Debug("check quality: %d %d %d %d\n", in_node_low_quality[0], in_node_low_quality[1], out_node_low_quality[0], out_node_low_quality[1]);
+        return !in_node_low_quality[0] && !in_node_low_quality[1] && !out_node_low_quality[0] && !out_node_low_quality[1];
+    } else {
+        return false;
+    }
+   
+}
 
 int BridgeSimplifier::TestConsistent(const std::vector<SgEdge*>& path) {
     int s = 0;
     
     BaseEdge* ie = static_cast<BaseEdge*>(path.front());
     
-    Debug("TestConsistent IN %d", ie->subject_);
+    Debug("TestConsistent IN %d\n", ie->subject_);
     if (ie->subject_) {
         s ++;
     } 
@@ -319,39 +364,57 @@ int BridgeSimplifier::TestConsistent(const std::vector<SgEdge*>& path) {
     for (size_t i = 0; i < ie->InNode()->OutDegree(); ++i) {
         auto iie = ie->InNode()->OutEdge<BaseEdge>(i);
         if (iie == ie) continue;
-        Debug("TestConsistent IN other %d", iie->subject_);
+        Debug("TestConsistent IN other %d\n", iie->subject_);
         if (iie->subject_) {
             s --;
         }
     }
 
     BaseEdge* oe = static_cast<BaseEdge*>(path.back());
-    Debug("TestConsistent Out %d", ie->subject_);
+    Debug("TestConsistent Out %d\n", ie->subject_);
     if (oe->subject_) {
         s ++;
     } 
     for (size_t i = 0; i < oe->OutNode()->InDegree(); ++i) {
         auto ioe = oe->OutNode()->InEdge<BaseEdge>(i);
-        Debug("TestConsistent Out other %d", ioe->subject_);
         if (ioe == oe) continue;
+        Debug("TestConsistent Out other %d\n", ioe->subject_);
         if (ioe->subject_) {
             s --;
         }
     }
     
     return s;
-
-  
 }
 
-bool BridgeSimplifier::IsLinkedReversedNode(const std::vector<SgEdge*>& path, int max_depth) const {
-    auto rn = static_cast<SgGraph&>(graph_).ReverseNode(path.front()->InNode());
+bool BridgeSimplifier::IsLinkedReversedNode(const std::vector<SgEdge*>& path, size_t max_depth) const {
+
+    // collect reversed nodes
+    auto curr = graph_.SgGraph::ReverseNode(path.front()->InNode());
+    std::unordered_set<SgNode*> rnodes { curr };
+    for (size_t i = 0; i < max_depth; ++i) {
+        for (size_t i = 0; i < curr->OutDegree(); ++i) {
+            rnodes.insert(curr->OutNode(i));
+        }
+        
+        if (curr->OutDegree() == 1) {
+            curr = curr->OutNode(0);
+        } else {
+            break;
+        }
+    }
     
-    auto curr = path.back()->OutNode();
-    int depth = 0;
-    while (depth < max_depth ) {
-        if (curr == rn) return true;
-        depth += 1;
+    // check 
+    curr = path.back()->OutNode();
+    if (rnodes.find(curr) != rnodes.end()) {
+        return true;
+    }
+    for (size_t i = 0; i < max_depth; ++i) {
+        for (size_t i = 0; i < curr->OutDegree(); ++i) {
+            if (rnodes.find(curr->OutNode(i)) != rnodes.end()) {
+                return true;
+            }
+        }
         if (curr->OutDegree() == 1) {
             curr = curr->OutNode(0);
         } else {
@@ -375,79 +438,6 @@ void BridgeSimplifier::DebugPath(const std::vector<SgEdge*> &path, const std::st
     }
 }
 
-// void BridgeSimplifier::Running() {
-//     graph_.SaveEdges(graph_.GetAsmData().OutputPath("test_edges.gz"));
-//     std::unordered_set<BaseEdge*> removed;
-//     std::unordered_set<const Overlap*> repaird;
-
-//     auto cands = graph_.CollectNodes([](BaseNode* n) {
-//         return n->InDegree() == 1 && n->OutDegree() == 2;
-//     });
-
-//     std::unordered_set<const SgEdge*> done;
-//     for (auto &n : cands) {
-//         assert(n->OutDegree() == 2);
-
-//         Debug("cand node: %s\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
-
-//         std::vector<std::vector<SgEdge*>> paths {GetBridgePath(n, 0, 1), GetBridgePath(n, 1, 0)};
-
-//         for (auto&path : paths) {
-
-//             if (path.size() > 0) {
-//                 DebugPath(path, "cands");
-                
-//                 if (done.find(path.front()) != done.end()) {
-//                     continue;
-//                 } else {
-//                 }
-
-//                 if (IsLinkedReversedNode(path, 20)) {
-//                     Debug("found reversed: %zd\n", path.size());
-//                     for (auto e : path) {
-//                         removed.insert((BaseEdge*)e);
-//                     }
-//                     done.insert(path.front());
-//                     done.insert(path.back());
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.front()));
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.back()));
-//                     continue;
-//                 }
-
-//                 auto ols = RepairIncompleteCross(path);
-//                 if (ols.size() > 0 && ols[0] != nullptr) {
-//                     repaird.insert(ols.begin(), ols.end());
-//                     Debug("found incomplete cross: %zd\n", ols.size());
-//                     done.insert(path.front());
-//                     done.insert(path.back());
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.front()));
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.back()));
-                    
-//                     continue;
-//                 }
-
-//                 if ((ols.size() == 1 && ols[0] == nullptr) || IsAmbiguousPath(path)) {
-//                     Debug("found ambiguous path\n");
-//                     for (auto e : path) {
-//                         removed.insert((BaseEdge*)e);
-//                     }
-//                     done.insert(path.front());
-//                     done.insert(path.back());
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.front()));
-//                     done.insert(((SgGraph&)graph_).ReverseEdge(path.back()));
-//                     continue;
-//                 }
-//             }
-//         }
-
-//         Debug("cand node ok: %s\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
-
-//     }
-//     LOG(INFO) ("Remove abnormal bridging edges: %d", removed.size()*2);
-//     graph_.ReduceEdges(removed, BaseEdge::RT_BRIDGED);
-//     LOG(INFO) ("Repair cross structures: %d", repaird.size()*2);
-//     Repair(repaird);
-// }
 
 void BridgeSimplifier::Running() {
     std::unordered_set<BaseEdge*> removed;
@@ -483,7 +473,7 @@ void BridgeSimplifier::Running() {
         } else {
         }
 
-        if (IsLinkedReversedNode(path, 20)) {
+        if (IsLinkedReversedNode(path, 36)) {
             Debug("found reversed: %zd\n", path.size());
             for (auto e : path) {
                 removed.insert((BaseEdge*)e);
@@ -520,27 +510,32 @@ void BridgeSimplifier::Running() {
             continue;
         }
 
-        if (IsAmbiguousPath(path)) {
-            auto r = TestConsistent(path);
-            if (r >= 2) {
+//        if (IsBridgeDiploid(path) || IsAmbiguousPath(path)) {
+        if (IsAmbiguousPath(path)) { // || IsLowQuality(path)) {
+            // auto r = TestConsistent(path);
+            // if (r >= 2) {
                 
-                Debug("found Consistent path, %d\n", r);
-                BaseEdge* ie = static_cast<BaseEdge*>(path.front());
-                for (size_t i = 0; i < ie->InNode()->OutDegree(); ++i) {
-                    auto iie = ie->InNode()->OutEdge<BaseEdge>(i);
-                    if (iie != ie)  removed.insert(iie);
-                }
+            //     Debug("found Consistent path, %d\n", r);
+            //     BaseEdge* ie = static_cast<BaseEdge*>(path.front());
+            //     for (size_t i = 0; i < ie->InNode()->OutDegree(); ++i) {
+            //         auto iie = ie->InNode()->OutEdge<BaseEdge>(i);
+            //         if (iie != ie)  removed.insert(iie);
+            //     }
                 
-                BaseEdge* oe = static_cast<BaseEdge*>(path.back());
-                for (size_t i = 0; i < oe->OutNode()->InDegree(); ++i) {
-                    auto ioe = oe->OutNode()->InEdge<BaseEdge>(i);
-                    if (ioe != oe)  removed.insert(ioe);
-                }
-            } else if (r <= 0) {
-                Debug("found ambiguous path\n");
-                for (auto e : path) {
-                    removed.insert((BaseEdge*)e);
-                }
+            //     BaseEdge* oe = static_cast<BaseEdge*>(path.back());
+            //     for (size_t i = 0; i < oe->OutNode()->InDegree(); ++i) {
+            //         auto ioe = oe->OutNode()->InEdge<BaseEdge>(i);
+            //         if (ioe != oe)  removed.insert(ioe);
+            //     }
+            // } else if (r <= 0) {
+            //     Debug("Removed ambiguous path\n");
+            //     for (auto e : path) {
+            //         removed.insert((BaseEdge*)e);
+            //     }
+            // }
+            Debug("Removed ambiguous path\n");
+            for (auto e : path) {
+                removed.insert((BaseEdge*)e);
             }
             done.insert(path.front());
             done.insert(path.back());
@@ -552,6 +547,7 @@ void BridgeSimplifier::Running() {
     }
 
     LOG(INFO) ("Remove abnormal bridging edges: %d", removed.size()*2);
+    DebugEdges("rm", removed);
     graph_.ReduceEdges(removed, BaseEdge::RT_BRIDGED);
     LOG(INFO) ("Repair cross structures: %d", repaird.size()*2);
     Repair(repaird);

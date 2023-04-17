@@ -7,3 +7,6 @@
 [submodule "thirdparty/edlib"]
 	path = thirdparty/edlib
 	url = https://github.com/Martinsos/edlib.git
+[submodule "thirdparty/mbio"]
+	path = thirdparty/mbio
+	url = https://github.com/lemene/mbio.git

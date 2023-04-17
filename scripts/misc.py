@@ -6,6 +6,12 @@ import logging
 import gzip
 import multiprocessing as mp;
 
+mydir = os.path.split(__file__)
+sys.path.append(mydir)
+from misc import *
+import prjfile as prj
+
+
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s",
                     datefmt = '%Y-%m-%d %H:%M:%S'
@@ -241,9 +247,157 @@ class PurgeInconsistent(object):
                                     count[1] += 1
                             else:
                                 count[1] += 1
-            #print(count, its[0], its[2])
             return count[0] < count[1]
               
+        else:
+            return False
+
+class PurgeInconsistent2(object):
+    def __init__(self, tile, readsnps):
+        self.readsnps = prj.load_snps_in_reads(readsnps)
+
+        logger.info("Loading reads in contigs")
+        ctgs = PrjFile.get_contig_reads(tile)
+
+        logger.info("Collecting snps in contigs")
+        self.ctgsnps = defaultdict(lambda: defaultdict(lambda :defaultdict(lambda: defaultdict(int))))
+        self.ctgvsnps = defaultdict(lambda: defaultdict(lambda :defaultdict(lambda: defaultdict(int))))
+        self.left_rd_in_ctgs = []
+        for c, r in ctgs.items():
+            read_in_ctg = [[ir, self.max_read_snp_size(ir)] for ir in r]
+            read_in_ctg.sort(key = lambda x: -x[1])
+
+            for ir, size in read_in_ctg:
+                doubt = self.assign_haplotype(ir, c, size >= 10)
+                if doubt: 
+                    self.left_rd_in_ctgs.append((ir, c))
+
+    def max_read_snp_size(self, rd):
+        size = 0
+        for _, rsnps in self.readsnps[rd]:
+            size = max(size, len(rsnps))
+        return size
+
+    def add_read(self, rd, csnps):
+        for rctg, rsnps in self.readsnps[rd]:
+            for p, v in rsnps:
+                csnps[rctg][p][v] += 1
+
+    def test_read(self, rd, csnps):
+        count = [0, 0]
+        if rd in self.readsnps :
+            for rctg, rsnps in self.readsnps[rd]:
+                if rctg in csnps:
+                    for p, v in rsnps:
+                        if p in csnps[rctg]:
+                            if v in csnps[rctg][p]:
+                                if csnps[rctg][p][v] > sum(csnps[rctg][p].values()) / 2:
+                                    count[0] += 1
+                                elif csnps[rctg][p][v] < sum(csnps[rctg][p].values()) / 2:
+                                    count[1] += 1
+                            else:
+                                count[1] += 1
+
+        return count
+
+    def test_purge(self, rd, ctg):
+        if rd in self.readsnps and ctg in self.ctgsnps:
+            csnps = self.ctgsnps[ctg]
+            count = [0, 0]
+            for rctg, rsnps in self.readsnps[rd]:
+                if rctg in csnps:
+                    for p, v in rsnps:
+                        if p in csnps[rctg]:
+                            if v in csnps[rctg][p]:
+                                if csnps[rctg][p][v] > sum(csnps[rctg][p].values()) / 2:
+                                    count[0] += 1
+                                elif csnps[rctg][p][v] < sum(csnps[rctg][p].values()) / 2:
+                                    count[1] += 1
+                            else:
+                                count[1] += 1
+
+            if count[0] > count[1]:
+                self.cands.add(rd)
+
+    def test_assign_haplotype(self, rd, ctg):
+        if rd in self.readsnps:
+            csnps = self.ctgsnps[ctg]
+            cvsnps = self.ctgvsnps[ctg]
+            count = self.test_read(rd, csnps)
+            if count[0] > count[1]:
+                return 1
+            elif count[0] < count[1]:
+                return -1;
+            elif count[0] == 0 and count[1] == 0:
+                vcount = self.test_read(rd, cvsnps)
+                if vcount[0] < vcount[1]:
+                    return 1;
+                elif vcount[0] > vcount[1]:
+                    return -1
+                elif vcount[0] == 0 and vcount[1] == 0:
+                    return 0
+        return None
+
+    def assign_haplotype(self, rd, ctg, add_empty):
+        rs = self.test_assign_haplotype(rd, ctg) 
+        if rs == -1:
+            self.add_read(rd, self.ctgvsnps[ctg])
+        elif rs == 1:
+            self.add_read(rd, self.ctgsnps[ctg])
+        elif rs == 0:
+            if add_empty:
+                self.add_read(rd, self.ctgsnps[ctg])
+            else:
+                return True
+        return False
+
+
+    def extend(self, ols):
+        sss = [set(), set(), set()]
+        for rd, ctg in ols:
+            r = self.test_assign_haplotype(rd, ctg)
+            if r in [-1, 0, 1]:
+                sss[r+1].add((rd,ctg))
+        
+        
+        [self.add_read(rd, self.ctgvsnps[ctg]) for rd, ctg in sss[0]]
+        [self.add_read(rd, self.ctgsnps[ctg]) for rd, ctg in sss[2]]
+        doing = sss[1]
+
+        for _ in range(3):
+            sss = [set(), set(), set()]
+            for rd, ctg in doing:
+                r = self.test_assign_haplotype(rd, ctg)
+                if r in [-1, 0, 1]:
+                    sss[r+1].add((rd, ctg))
+            
+            [self.add_read(rd, self.ctgvsnps[ctg]) for rd, ctg in sss[0]]
+            [self.add_read(rd, self.ctgsnps[ctg]) for rd, ctg in sss[2]]
+            if len(sss[1]) == 0 or len(sss[1]) == len(doing): break
+            doing = sss[1]
+
+        # add the remaining reads in the contig
+        for rd, ctg in self.left_rd_in_ctgs:
+            self.assign_haplotype(rd, ctg, True)
+
+    def __call__(self, rd, ctg):
+        if rd in self.readsnps and ctg in self.ctgsnps:
+            csnps = self.ctgsnps[ctg]
+            count = [0, 0]
+            for rctg, rsnps in self.readsnps[rd]:
+                if rctg in csnps:
+                    for p, v in rsnps:
+                        if p in csnps[rctg]:
+                            if v in csnps[rctg][p]:
+
+                                if csnps[rctg][p][v] > sum(csnps[rctg][p].values()) / 2:
+                                    count[0] += 1
+                                elif csnps[rctg][p][v] < sum(csnps[rctg][p].values()) / 2:
+                                    count[1] += 1
+                            else:
+                                count[1] +=1
+            return count[0] < count[1]
+
         else:
             return False
 
@@ -251,23 +405,61 @@ class PurgeInconsistent(object):
 class PurgeInconsistentInSam(object):
     #def __init__(self, tile, readsnps, id2name):
     def __init__(self, tile, readsnps):
-        self.purge = PurgeInconsistent(tile, readsnps)
+        self.purge = PurgeInconsistent2(tile, readsnps)
         #self.n2id = PrjFile.load_id2name(id2name, True)
 
+
+    def extend(self, overlaps, name2id=None):
+        ols = []
+        for line in open(overlaps):
+            if line.startswith("@"):
+                continue
+
+            its = line.split()
+            n = name2id[its[0]] if name2id != None and its[0] in name2id else its[0]
+            ols.append((n, its[2])
+)
+        self.purge.extend(ols)
+
     def __call__(self, line, name2id=None):
-        its = line.split()
-        n = name2id[its[0]] if name2id != None else its[0]
-        return self.purge(n, its[2])
+        if line.startswith("@"):
+            return False
+        else:
+            its = line.split()
+            n = name2id[its[0]] if name2id != None else its[0]
+            return self.purge(n, its[2])
 
 class PurgeInconsistentInPaf(object):
     def __init__(self, tile, readsnps):
-        self.purge = PurgeInconsistent(tile, readsnps)
+        self.purge = PurgeInconsistent2(tile, readsnps)
+
+    def extend(self, overlaps, name2id=None):
+        ols = []
+        for line in open(overlaps):
+            its = line.split()
+            n = name2id[its[0]] if name2id != None and its[0] in name2id else its[0]
+            ols.append((n, its[5])
+)
+        self.purge.extend(ols)
 
     def __call__(self, line, name2id=None):
         its = line.split()
         n = name2id[its[0]] if name2id != None and its[0] in name2id else its[0]
         return self.purge(n, its[5])
 
+class PurgeInconsistentInTxt(object):
+    #def __init__(self, tile, readsnps, id2name):
+    def __init__(self, tile, readsnps):
+        self.purge = PurgeInconsistent(tile, readsnps)
+        #self.n2id = PrjFile.load_id2name(id2name, True)
+
+    def __call__(self, line, name2id=None):
+            its = line.split()
+            n = name2id[its[0]] if name2id != None else its[0]
+            for ctg in self.purge.ctgsnps:
+                if self.purge(n, ctg):
+                    return True
+            return False
 
 
 

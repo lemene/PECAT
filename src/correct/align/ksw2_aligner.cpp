@@ -39,25 +39,25 @@ void AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const char* qu
         if (type == 'M') {
             for (uint32_t c =0; c <count; ++c) {
                 if (target[index_target] == query[index_query]) {
-                    aligned_target.push_back("ACGT"[target[index_target++]]);
-                    aligned_query.push_back("ACGT"[query[index_query++]]);
+                    aligned_target.push_back("ACGT"[(int)target[index_target++]]);
+                    aligned_query.push_back("ACGT"[(int)query[index_query++]]);
                 } else {
-                    aligned_target.push_back("ACGT"[target[index_target++]]);
+                    aligned_target.push_back("ACGT"[(int)target[index_target++]]);
                     //aligned_query.push_back('-');
                     //aligned_target.push_back('-');
-                    aligned_query.push_back("ACGT"[query[index_query++]]);
+                    aligned_query.push_back("ACGT"[(int)query[index_query++]]);
                 }
             }
         } else if (type == 'I') {
             for (uint32_t c =0; c <count; ++c) {
                 aligned_target.push_back('-');
-                aligned_query.push_back("ACGT"[query[index_query++]]);
+                aligned_query.push_back("ACGT"[(int)query[index_query++]]);
             }
 
         } else {// if (type == 'D') {
             assert (type == 'D');
             for (uint32_t c =0; c <count; ++c) {
-                aligned_target.push_back("ACGT"[target[index_target++]]);
+                aligned_target.push_back("ACGT"[(int)target[index_target++]]);
                 aligned_query.push_back('-');
             }
 

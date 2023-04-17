@@ -1,11 +1,9 @@
-#ifndef FSA_READ_STORE_HPP
-#define FSA_READ_STORE_HPP
+#pragma once
 
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
-#include <mutex>
 #include <algorithm>
 #include "./utils/logger.hpp"
 #include "sequence.hpp"
@@ -16,57 +14,47 @@ namespace fsa {
 
 class ReadStore {
 public:
-    ReadStore(StringPool &sp) : string_pool_(sp) {}
+    ReadStore(StringPool &sp) : string_pool_(sp) { offset_ = string_pool_.Size(); }
+    ReadStore(StringPool &sp, size_t offset) : string_pool_(sp), offset_(offset) { }
     ReadStore() : ReadStore(default_string_pool_) {}
     struct Item {
         Item(){}
-        Item(const std::string &s, SeqReader::ItemId i, SeqReader* r) : seq(s), id(i), reader(r) {}
+        Item(const std::string &s) : seq(s) {}
         DnaSeq seq;
-        SeqReader::ItemId id {-1};
-        SeqReader* reader {nullptr};
     };
 
-    Seq::Id QueryIdByName(const std::string &name) const;
-    
-    Seq::Id GetIdByNameSafe(const std::string &name);
-    Seq::Id GetIdByNameUnsafe(const std::string &name);
-    const std::string& QueryNameById(Seq::Id id) const;
     StringPool& GetStringPool() { return string_pool_; }
     const StringPool& GetStringPool() const { return string_pool_; }
 
+    Seq::Id QueryIdByName(const std::string &name) const { return string_pool_.QueryIdByString(name);}
+    const std::string& QueryNameById(Seq::Id id) const { return string_pool_.QueryStringById(id); }
+    void SaveIdToName(const std::string& fname) const { string_pool_.Save(fname); }
 
-    const DnaSeq& GetSeq(Seq::Id id) const { LoadItem(items_[id]); return items_[id].seq;  }
+    const DnaSeq& GetSeq(Seq::Id id) const { assert(size_t(id) >= offset_); return items_[id-offset_].seq;  }
     const DnaSeq& GetSeq(const std::string &name) { return GetSeq(QueryIdByName(name)); }
 
     std::string GetSeq(const Seq::Tile& sa);
     size_t GetSeqLength(Seq::Id id) const { return GetSeq(id).Size(); }
-    const Item& GetItem(Seq::Id id) const { return items_[id]; }
-    void SaveIdToName(const std::string& fname) const;
-    std::array<Seq::Id, 2> GetIdRange() const { return std::array<Seq::Id, 2>{(Seq::Id)0, (Seq::Id)string_pool_.Size()}; }
-    size_t Size() const { return string_pool_.Size(); }
+
+    std::array<size_t, 2> GetIdRange() const { return {offset_, offset_ + Size()}; }
+    size_t Size() const { return items_.size(); }
 
     void Load(const std::string &fname, const std::string &type="", bool all=true, const std::unordered_set<Seq::Id>& seqids=std::unordered_set<Seq::Id>());
     void LoadFasta(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids);
     void LoadFastq(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids);
     void LoadFofn(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids);
     void LoadTxt(const std::string &fname, bool all, const std::unordered_set<Seq::Id>& seqids) { LoadFofn(fname, all, seqids); }
-    void LoadItem(Item &item) const;
     
-    const std::unordered_set<Seq::Id>& IdsInFile(const std::string &fname) const;
-
     static std::string DetectFileType(const std::string &fname);
 protected:
-    Seq::Id Insert(std::string &&name, std::string &&seq);
-    Seq::Id Insert(const SeqReader::Item &item, SeqReader *reader, int mode);
-    void Insert(Seq::Id id, const SeqReader::Item &item, SeqReader *reader, bool loadseq);
+    void LoadReader(SeqReader& reader, bool all, const std::unordered_set<Seq::Id>& seqids);
+    void AddItem(const SeqReader::Item &item, bool all, const std::unordered_set<Seq::Id>& seqids);
 
 protected:
-    std::mutex mutex_;
     StringPool default_string_pool_;
     StringPool &string_pool_;   
     mutable std::vector<Item> items_;
-    std::unordered_map<std::string, std::unordered_set<Seq::Id>> ids_in_file_;
-    std::vector<SeqReader*> readers_;
+    size_t offset_ { 0 };           ///< 序列数据要求连续读取，其序列名称ID号连续，offset为ID起点。 
 };
 
 
@@ -139,5 +127,4 @@ void LoadReadFile(const std::string &fname, const std::string &type, F action) {
 }
 
 } // namespace fsa {
-    
-#endif // FSA_READ_STORE_HPP
+

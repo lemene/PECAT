@@ -22,10 +22,12 @@ public:
     
     void Load(const std::string &fname);
     void Load(const std::string &fname, size_t thread_size);
-    bool Contain(const Overlap& ol, int threshold=1000) const;
+    bool Contain(const Overlap& ol, int threshold=1000, bool both=false) const;
+    size_t MinDistance(const Overlap& ol, bool both=false) const;
+    static const size_t MAX_DISTANCE = 100000000;
     bool IsRemoved(int id) const { return removed_.find(id) != removed_.end() && phased_.find(id) == phased_.end(); }
     bool Contain(const std::string &name0, const std::string &name1);
-    bool Contain(int id0, int id1, bool d, int off_0to1, int off_1to0, int threshold) const;
+    bool Contain(int id0, int id1, bool d, int off_0to1, int off_1to0, int threshold, bool both) const;
     bool Contain(int id0, int id1) const;
     const StringPool& GetStringPool() const { return string_pool_; }
     std::unordered_set<int> Get(int id) const;

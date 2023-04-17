@@ -1,9 +1,9 @@
 # demo
-We can run the demo using the following command.
+Here is a demo `reads.fasta.gz` and its config file `cfgfile`. We can run the demo using the following command.
 ```Shell
 $ PECAT/build/bin/pecat.pl unzip cfgfile
 ```
-After ten minutes, the pipeline will generate `./chr/6-polish/primary.fasta` and `./chr/6-polish/alternate.fasta`.
+After a few minutes, the pipeline will generate `./S1/6-polish/racon/primary.fasta` and `./S1/6-polish/racon/alternate.fasta`.
 
 # S.cerevisiae (SK×Y12) 
 The dataset of S.cerevisiae (SK×Y12) is a pseudo-diploid dataset combining two haploid yeast strains SK1 and Y12.
@@ -15,11 +15,14 @@ The dataset is available from [NCBI](https://www.ncbi.nlm.nih.gov/) at [PRJNA314
 # D.melanogaster (ISO1×A4)
 The dataset is available from [NCBI](https://www.ncbi.nlm.nih.gov/) at [PRJNA558397](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA558397). The SRA file is [`SRR9969843`](https://www.ncbi.nlm.nih.gov/sra/SRR9969843). The config file is `configs/cfg_dro_clr`.
 
-# B.taurus (Angus×Branman)
+# B.taurus (Angus×Brahman)
 The dataset is available from [NCBI](https://www.ncbi.nlm.nih.gov/) at [PRJNA432857](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA432857). The SRA files are [`SRR6691718`](https://www.ncbi.nlm.nih.gov/sra/SRR6691718),[`SRR6691728`](https://www.ncbi.nlm.nih.gov/sra/SRR6691728)-[`SRR6691879`](https://www.ncbi.nlm.nih.gov/sra/SRR6691879), [`SRR6691882`](https://www.ncbi.nlm.nih.gov/sra/SRR6691882)-[`SRR6691900`](https://www.ncbi.nlm.nih.gov/sra/SRR6691900), [`SRR6691904`](https://www.ncbi.nlm.nih.gov/sra/SRR6691904),[`SRR6691905`](https://www.ncbi.nlm.nih.gov/sra/SRR6691905),[`SRR6691908`](https://www.ncbi.nlm.nih.gov/sra/SRR6691908)-[`SRR6691950`](https://www.ncbi.nlm.nih.gov/sra/SRR6691950), [`SRR6691954`](https://www.ncbi.nlm.nih.gov/sra/SRR6691954)-[`SRR6691960`](https://www.ncbi.nlm.nih.gov/sra/SRR6691960) and [`SRR6691962`](https://www.ncbi.nlm.nih.gov/sra/SRR6691962)-[`SRR6691984`](https://www.ncbi.nlm.nih.gov/sra/SRR6691984). The config file is `configs/cfg_cattle_clr`.
 
 # A.thaliana (COL×C24) 
 The dataset is available from [NGDC](https://ngdc.cncb.ac.cn/) at [CRA008108](https://download.cncb.ac.cn/gsa2/CRA008108/CRR567293/CRR567293.fastq.gz). The config file is `configs/cfg_arab_ont`.
 
 # B.taurus (Bison×Simmental) 
-The dataset is available from [NCBI](https://www.ncbi.nlm.nih.gov/) at [PRJNA677946](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA677946). The SRA files are [`SRR1310561`](https://www.ncbi.nlm.nih.gov/sra/SRR1310561)-[`SRR13105478`](https://www.ncbi.nlm.nih.gov/sra/SRR13105478). The The config file is `configs/cfg_cattle_ont`.
+The dataset is available from [NCBI](https://www.ncbi.nlm.nih.gov/) at [PRJNA677946](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA677946). The SRA files are [`SRR1310561`](https://www.ncbi.nlm.nih.gov/sra/SRR1310561)-[`SRR13105478`](https://www.ncbi.nlm.nih.gov/sra/SRR13105478). The config file is `configs/cfg_cattle_ont`.
+
+# HG002
+The dataset is avaialbe at https://s3-us-west-2.amazonaws.com/human-pangenomics/index.html?prefix=T2T/scratch/HG002/sequencing/ont/. The config file is `configs/cfg_hg002_ont`.

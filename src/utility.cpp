@@ -1,6 +1,8 @@
 #include "utility.hpp"
 
 #include <algorithm>
+#include <unistd.h>
+#include <string.h>
 
 namespace fsa {
 
@@ -64,6 +66,30 @@ size_t FindLongestXSort(std::vector<int> &lengths, long long base_size) {
     }
 
     return lengths.size();
+}
+
+size_t GetMemoryUsage() {
+    
+    int vmrss_num = 0;
+    int pid = getpid();
+    char fname[48];
+    sprintf(fname, "/proc/%d/status", pid);
+    FILE *file = fopen(fname, "r");
+    if (file != NULL) {
+        const int BUF_SIZE = 1024;
+        char buf[BUF_SIZE];
+        char* line = fgets(buf, BUF_SIZE, file);
+        while (line != NULL) {
+            if(strstr(line, "VmRSS:") != NULL) {
+                char vmrss_name[48];
+                sscanf(line, "%s %d", vmrss_name, &vmrss_num);
+                break;
+            }
+            line = fgets(buf, BUF_SIZE, file);
+        }
+        fclose(file);
+    }
+    return vmrss_num;
 }
 
 } // namespace fsa {

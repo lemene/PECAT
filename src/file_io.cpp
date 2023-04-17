@@ -34,8 +34,8 @@ size_t Reader::GetBlock(std::vector<char> &block, const std::string& sentinel, i
 
     block_index += GetBlock0(&block[0]+block_index, block.size()-block_index);
 
-    if (sentinel.length() > 0) {
-        assert(off <= sentinel.size());
+    if (sentinel.length() > 0 && block_index == block.size()) {
+        assert((size_t)off <= sentinel.size());
 
         size_t end = 0;
         for (size_t i = 0; i < block_index - sentinel.length() + 1; ++i ) {
@@ -60,6 +60,48 @@ size_t Reader::GetBlock(std::vector<char> &block, const std::string& sentinel, i
     return block_index;
 }
 
+
+size_t Reader::GetBlockByMultipleLines(std::vector<char> &block, size_t n) {  
+    size_t block_index = 0;
+    if (bufsize > 0) {
+        assert(bufsize < block.size());
+        std::copy(buf.begin(), buf.begin()+bufsize, block.begin());
+        block_index = bufsize;
+        bufsize = 0;
+    }
+
+    block_index += GetBlock0(&block[0]+block_index, block.size()-block_index);
+
+    if (block_index > 0) {
+
+        size_t end = block_index + 1;
+        size_t line_no = 0;
+        for (size_t i = 0; i < block_index; ++i) {
+            if (block[i] == '\n') {
+                line_no ++;
+                
+                if (line_no % n == 0) {
+                    end = i+1;  // skip '\n'
+                } 
+                printf("%zd line\n", line_no);
+            }
+            
+        }
+        if (end > block_index) {
+            LOG(ERROR)("Buffer is too small and cannot contain %d line of data. %zd %zd", n, end, block_index);
+        }
+        
+        if (buf.size() > block_index - end) {
+            std::copy(block.begin()+end, block.begin()+block_index, buf.begin());
+        } else {
+            buf.assign(block.begin()+end, block.begin()+block_index);
+        }
+        bufsize = block_index - end;
+        block_index = end;
+    }
+    
+    return block_index;
+}
 
 size_t StdioReader::GetLines(std::vector<std::string> &lines) {
     size_t sz = 0;

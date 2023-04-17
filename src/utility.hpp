@@ -1,5 +1,4 @@
-#ifndef FSA_UTILITY_HPP
-#define FSA_UTILITY_HPP
+#pragma once
 
 #include <array>
 #include <vector>
@@ -375,6 +374,21 @@ void ComputeMedianAbsoluteDeviation(const std::vector<std::array<T,2>>& data_, T
 }
 
 
+template<typename T>
+std::array<T,2> ComputeMeanAbsoluteDeviation(const std::vector<T>& data_) {
+    assert(data_.size() > 0);
+    auto data = data_;
+    T mean = std::accumulate(data.begin(), data.end(), (T)0) / data.size();
+
+    for (size_t i=0; i<data.size(); ++i) {
+        data[i] = std::abs(data[i]-mean);
+    }
+    
+    T mad = std::accumulate(data.begin(), data.end(), (T)0) / data.size();
+
+    return {mean, mad};
+}
+
 
 template<typename T>
 void ComputeMeanAbsoluteDeviation(std::vector<T>& data, T &mean, T &mad) {
@@ -476,7 +490,6 @@ void Intersection(const std::unordered_set<T> &a, std::unordered_set<T> &b, std:
     }
 }
 
-
+size_t GetMemoryUsage();
 } // namespace fsa {
 
-#endif // FSA_UTILITY_HPP  

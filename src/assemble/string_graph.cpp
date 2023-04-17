@@ -19,6 +19,7 @@
 #include "simplify/pspur.hpp"
 #include "simplify/bridge.hpp"
 #include "simplify/pbridge.hpp"
+#include "simplify/ptransitive.hpp"
 #include "simplify/transitive.hpp"
 #include "simplify/cross.hpp"
 #include "simplify/low_quality.hpp"
@@ -29,6 +30,7 @@
 #include "simplify/best.hpp"
 #include "simplify/repeat.hpp"
 #include "simplify/phase.hpp"
+#include "simplify/extend.hpp"
 
 namespace fsa {
 SgGraph::~SgGraph() {
@@ -125,7 +127,7 @@ std::list<SgNode*> SgGraph::GetEgoNodes(SgNode* n, int max_depth, int max_len) {
             auto e = (*curr)->OutEdge(i);
 
             if (std::find(nodes.begin(), nodes.end(), e->OutNode()) == nodes.end() && 
-                *curr_len + e->Length() < max_len) {
+                *curr_len + (int)e->Length() < max_len) {
                 nodes.push_back(e->OutNode());
                 lens.push_back(*curr_len + e->Length());
             }
@@ -163,7 +165,7 @@ std::list<SgNode*> SgGraph::GetEgoNodes(SgNode* n, int max_depth, int max_len, i
             auto e = (*curr)->OutEdge(i);
 
             if (std::find(nodes.begin(), nodes.end(), e->OutNode()) == nodes.end() && 
-                *curr_len + e->Length() < max_len) {
+                *curr_len + (int)e->Length() < max_len) {
                 nodes.push_back(e->OutNode());
                 lens.push_back(*curr_len + e->Length());
                 nodesize += e->NodeSize();
@@ -183,6 +185,47 @@ std::list<SgNode*> SgGraph::GetEgoNodes(SgNode* n, int max_depth, int max_len, i
 
 
     return std::list<SgNode*>(nodes.begin(), curr);
+}
+
+std::list<SgNode*> SgGraph::GetNeighborNodes(SgNode* n, int max_depth) {
+    std::list<SgNode*> nodes{ n };
+    std::unordered_set<SgNode*> nodes_set {n};
+
+    int depth = 0;
+    auto curr = nodes.begin();
+    auto level_end = nodes.end();
+    level_end--;
+
+    while (depth < max_depth && curr != nodes.end()) {
+
+        for (size_t i = 0; i < (*curr)->OutDegree(); ++i) {
+            auto e = (*curr)->OutEdge(i);
+
+            if (nodes_set.find(e->OutNode()) == nodes_set.end()) {
+                nodes.push_back(e->OutNode());
+                nodes_set.insert(e->OutNode());
+            }
+        }
+
+        for (size_t i = 0; i < (*curr)->InDegree(); ++i) {
+            auto e = (*curr)->InEdge(i);
+
+            if (nodes_set.find(e->InNode()) == nodes_set.end()) {
+                nodes.push_back(e->InNode());
+                nodes_set.insert(e->InNode());
+            }
+        }
+
+        if (curr == level_end) {
+            depth++;
+            level_end = nodes.end();
+            level_end--;
+        }
+        curr++;
+    }
+
+
+    return std::list<SgNode*>(nodes.begin(), curr); 
 }
 
 std::vector<std::vector<SgEdge*>> SgGraph::MaximumFlow(const SgNode* src, const SgNode *dst, const std::unordered_set<const SgEdge*> &_edges) {
@@ -366,6 +409,8 @@ void SgGraph::Simplify(const std::string &strategy, const std::string &reducers_
     }
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"  
 StringGraph::StringGraph(AsmDataset &asmdata) 
      : SgGraph(asmdata)
      , nodes_(reinterpret_cast<std::unordered_map<BaseNode::ID, BaseNode*, BaseNode::ID::Hash> &>(org_nodes_))
@@ -376,11 +421,13 @@ StringGraph::StringGraph(AsmDataset &asmdata)
     simplifiers_["best"].reset(new BestOverlapsSimplifier(*this));
     simplifiers_["bridge"].reset(new BridgeSimplifier(*this));
     simplifiers_["phase"].reset(new PhaseCrossSimplifier(*this));
-    simplifiers_["quality"].reset(new LowQualitySimplifier(*this));
+    simplifiers_["quality"].reset(new QualitySimplifier(*this));
     simplifiers_["repeat"].reset(new RepeatSimplifier(*this));
     simplifiers_["unreliable"].reset(new UnreliableSimplifier(*this));
+    simplifiers_["extend"].reset(new ExtendSimplifier(*this));
 
 }
+#pragma GCC diagnostic pop
 
 StringGraph::~StringGraph() {
 }
@@ -755,7 +802,49 @@ std::vector<BaseEdge*> StringGraph::ShortestPath(const BaseNode* src, const Base
    
 }
 
+std::vector<BaseEdge*> StringGraph::GetPath(BaseNode* src, BaseNode *dst, size_t max_depth) {
+    assert(src != dst);
 
+    std::list<BaseNode*> nodes{ src };
+    std::unordered_map<const BaseNode*, BaseEdge*> nodes_set;
+
+    size_t depth = 0;
+    auto curr = nodes.begin();
+    auto level_end = nodes.end();
+    level_end--;
+
+    while (depth < max_depth && curr != nodes.end() && nodes_set.find(dst) == nodes_set.end()) {
+
+        for (size_t i = 0; i < (*curr)->OutDegree(); ++i) {
+            auto e = (*curr)->OutEdge<BaseEdge>(i);
+
+            if (nodes_set.find(e->OutNode()) == nodes_set.end()) {
+                nodes.push_back(e->OutNode());
+                nodes_set[e->OutNode()] = e;
+            }
+        }
+        
+        if (curr == level_end) {
+            depth++;
+            level_end = nodes.end();
+            level_end--;
+        }
+        curr++;
+    }
+
+    std::vector<BaseEdge*> path;
+    if (nodes_set.find(dst) != nodes_set.end()) {
+        auto n = dst;
+        while (n != src) {
+            auto e = nodes_set.find(n);
+            assert(e != nodes_set.end());
+            path.push_back(e->second);
+            n = e->second->InNode();
+        }
+        std::reverse(path.begin(), path.end());
+    }
+    return path;
+}
 
 std::list<BaseEdge*> StringGraph::Reverse(const std::list<BaseEdge*>& path) {
     std::list<BaseEdge*> vpath;
@@ -878,6 +967,8 @@ void StringGraph::ReduceOtherEdges(const std::unordered_set<BaseEdge*> reserved,
 
 
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"  
 PathGraph::PathGraph(AsmDataset &asmdata) : SgGraph(asmdata) 
      , nodes_(reinterpret_cast<std::unordered_map<SgNode::ID, PathNode*, SgNode::ID::Hash> &>(org_nodes_))
      , edges_(reinterpret_cast<std::unordered_map<PathEdge::ID, PathEdge*, PathEdge::ID::Hash> &>(org_edges_)) {
@@ -889,8 +980,10 @@ PathGraph::PathGraph(AsmDataset &asmdata) : SgGraph(asmdata)
     simplifiers_["semi"].reset(new SemiBubbleSimplifier(*this));
     simplifiers_["loop"].reset(new LoopSimplifier(*this));
     simplifiers_["cross"].reset(new CrossSimplifier(*this));
+    simplifiers_["transitive"].reset(new PTransitiveSimplifier(*this));
 
 }
+#pragma GCC diagnostic pop
 
 PathGraph::~PathGraph() {
 }
@@ -1027,7 +1120,7 @@ PathGraph::LinearPath PathGraph::FindBridgePath1(PathEdge* start, int max_length
             nodesize += edge.back()->NodeSize();
 
         } else {
-            return { edge, length, nodesize };
+            return { edge, length, nodesize, 0};
         }
     } 
     return LinearPath();
@@ -1411,7 +1504,7 @@ void PathGraph::InsertCrossNode(CrossNode* n) {
 
         AAAEdge* ne = nullptr;
         if (n->IsConsistOf(e->OutNode())) {
-            //ne = new AAAEdge(static_cast<PathEdge*>(e), n, n);
+            //ne = new AAAEdge(static_cast<PathEdge*>(e), n, n);  It a loop and  is done in OriginInEdge
         } else {
             ne = new AAAEdge(static_cast<PathEdge*>(e), n, nullptr);
             new_edges.push_back(ne);
@@ -1446,154 +1539,6 @@ bool IsClearBubble(const PathNode* start, const PathNode* end, const std::list<P
         }
     }
     return true;
-}
-
-BubbleEdge* PathGraph::FindBubble(PathNode* start_node, bool check, int depth_cutoff, int width_cutoff) {
-    int length_cutoff = Options().max_bubble_length;
-
-    PathNode* end_node = nullptr;
-
-    std::list<PathEdge*> bundle_edges;      // 瀛樻斁姘旀场鐨勮竟
-    std::unordered_map<SgNode*, std::pair<int, int>> visited; // length, score
-
-    std::list<SgNode*> local_node_list = GetEgoNodes(start_node, depth_cutoff);
-    std::unordered_set<SgNode*> local_nodes(local_node_list.begin(), local_node_list.end());
-    std::unordered_set<PathNode*> tips;
-
-    visited[start_node] = std::make_pair(0, 0);
-    for (auto e : start_node->out_edges_) {
-        tips.insert(e->OutNode());
-        bundle_edges.push_back(e);
-    }
-
-    int depth = 0;
-    double width = 1.0;
-    int length = 0;
-
-    bool loop_detect = false;
-    bool meet_error = false;
-    bool spur = false;
-
-    do {
-        std::unordered_map<PathNode*, PathEdge*> new_visited;     // 鏈€鏂拌￠?璁块棶鑺傜偣锛屽欢鍚庡姞鍏￥visited
-        std::unordered_set<PathNode*> newtips, oldtips;     // 鏂颁骇鐢熺殑鏈?姊㈣妭鐐瑰拰鏈a澶勭悊鐨勬湯姊㈣妭鐐
-        
-        for (auto n : tips) {
-            //if (n->out_edges_.size() == 0) continue;        // dead end
-
-            PathEdge *best_in_edge = nullptr;
-            for (auto e : n->in_edges_) {
-                // 妫€鏌ュ叆鑺傜偣锛屽垎鎴愪笁绫伙細涓嶅湪灞€閮ㄩ泦鍚堜腑銆佸凡缁忚?块棶銆佹病鏈夎?块棶
-                // 濡傛灉鎵€鏈夊叆鑺傜偣閮藉凡缁忚?块棶锛屽垯鎵惧嚭鍒嗘暟鏈€楂樼殑杈广€傚苟涓斿彲浠ユ墿灞曞畠鐨勫嚭鑺傜偣
-                // 鍚﹀垯鏀硅妭鐐瑰欢鍚庡¤勭悊
-
-                if (local_nodes.find(e->InNode()) != local_nodes.end()) {
-
-                    if (visited.find(e->InNode()) != visited.end()) {
-                        if (best_in_edge == nullptr || best_in_edge->score_ < e->score_) {
-                            best_in_edge = e;
-                        }
-                    }
-                    else {
-                        best_in_edge = nullptr;     // 
-                        break;
-                    }
-                }
-                else {
-                    // 蹇界暐杩欎釜鍏ヨ妭鐐
-                }
-            }
-
-            if (best_in_edge != nullptr) {
-
-                assert(n == best_in_edge->OutNode());
-                new_visited[n] = best_in_edge;
-
-                // 濡傛灉姘旀场娌℃湁鏀舵暃锛岀户缁-娣诲姞鏂扮殑鏈?姊㈣妭鐐
-                if (tips.size() > 1) {
-                    for (auto e : n->out_edges_) {
-                        if (visited.find(e->OutNode()) != visited.end() ||
-                            new_visited.find(e->OutNode()) != new_visited.end()) {
-                            loop_detect = true;
-                            break;
-                        }
-
-                        PathNode *revese_node = ReverseNode(e->OutNode());
-                        if (local_nodes.find(e->OutNode()) != local_nodes.end() && 
-                            visited.find(revese_node) == visited.end() &&
-                            new_visited.find(revese_node) == new_visited.end() ) {
-
-                            if (tips.find(e->OutNode()) == tips.end()) {
-                                newtips.insert(e->OutNode());
-                            }
-                            bundle_edges.push_back(e);
-                        }
-                        else {
-                            meet_error = true;
-                            break;
-                        }
-                    }
-
-                    if (n->out_edges_.size() == 0) {
-                        spur = true;
-                        break;
-                    }
-                }
-                else {
-                    //end_node = n; // tips[0]
-                    if (visited.find(n) != visited.end()) {
-                        loop_detect = true;
-                        end_node = nullptr;
-                    } else {
-                        end_node = n; // tips[0]
-                    }
-                }
-            } else {
-                if (tips.size() > 1) {
-                    oldtips.insert(n);
-                } else {
-                    if (visited.find(n) != visited.end()) {
-                        loop_detect = true;
-                        end_node = nullptr;
-                    } else {
-                        end_node = n; // tips[0]
-                    }
-                }
-            }
-
-        }
-
-        for (auto &i : new_visited) {
-            visited[i.first] = std::make_pair(
-                visited[i.second->InNode()].first + i.second->length_,
-                visited[i.second->InNode()].second + i.second->score_);
-
-            // 鏇存柊褰撳墠闀垮害
-            if (length < visited[i.first].first) {
-                length = visited[i.first].first;
-            }
-
-        }
-
-        depth += 1;
-        width = 1.0 * bundle_edges.size() / depth;
-
-
-        if (tips.size() >= 1) {
-            tips.clear();
-            tips.insert(newtips.begin(), newtips.end());
-            tips.insert(oldtips.begin(), oldtips.end());
-        }
-
-    } while (tips.size() >= 1 && tips.size() < 6 && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff));
-
-    if (end_node != nullptr && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff) && (!check || check && IsClearBubble(start_node, end_node,bundle_edges, local_nodes))) {
-        
-        return new BubbleEdge(start_node, end_node, bundle_edges, visited[end_node].first, width, visited[end_node].second);
-    }
-    else {
-        return nullptr;
-    }
 }
 
 std::vector<PathEdge*> PathGraph::Cluster::GetStarts() const {
@@ -1649,7 +1594,6 @@ void PathGraph::Cluster::FindLongest() {
     size_t maxlen = 0;
 
     std::vector<PathEdge*> starts = GetStarts();
-    DUMPER["asm"]("FFF: Starts: %zd, %zd", starts.size(), edges.size());
     for (auto s : starts) {
         std::unordered_set<PathEdge*> visited;
         std::unordered_map<PathEdge*, LPath> longests;
@@ -1658,7 +1602,6 @@ void PathGraph::Cluster::FindLongest() {
         auto lg = longests.find(s);
         assert(lg != longests.end());
 
-        DUMPER["asm"]("FFFe: %zd", lg->second.second.size());
         for (auto e : lg->second.second) {
             nontrivial.insert(e);
         }
@@ -1666,7 +1609,6 @@ void PathGraph::Cluster::FindLongest() {
     }
 
     std::vector<PathEdge*> ends = GetEnds();
-    DUMPER["asm"]("ends: %zd, %zd", ends.size(), edges.size());
     for (auto s : ends) {
         std::unordered_set<PathEdge*> visited;
         std::unordered_map<PathEdge*, LPath> longests;
@@ -1674,7 +1616,6 @@ void PathGraph::Cluster::FindLongest() {
         auto lg = longests.find(s);
         assert(lg != longests.end());
 
-        DUMPER["asm"]("FFFe: %zd", lg->second.second.size());
         for (auto e : lg->second.second) {
             nontrivial.insert(e);
         }
@@ -1688,7 +1629,6 @@ void PathGraph::Cluster::FindLongest0(PathEdge* e, std::unordered_set<PathEdge*>
 
     assert(visited.find(e) == visited.end());
     visited.insert(e);
-    DUMPER["asm"]("FFF0 visited %zd", visited.size());
     
     std::unordered_map<PathEdge*, LPath>::const_iterator best = longests.end();
     for (size_t i = 0; i < e->OutNode()->OutDegree(); ++i) {
@@ -1722,7 +1662,6 @@ void PathGraph::Cluster::FindLongest1(PathEdge* e, std::unordered_set<PathEdge*>
     assert(visited.find(e) == visited.end());
 
     visited.insert(e);
-    DUMPER["asm"]("FFF1 visited %zd", visited.size());
     std::unordered_map<PathEdge*, LPath>::const_iterator best = longests.end();
     for (size_t i = 0; i < e->InNode()->InDegree(); ++i) {
         auto ie = e->InNode()->InEdge<PathEdge>(i);

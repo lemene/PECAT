@@ -55,28 +55,57 @@ void SemiBubbleSimplifier::Running() {
             
         assert(e->Validate(graph_.GetAsmData().GetInconsistentOverlaps(), graph_.GetReadStore(), graph_.string_graph_, graph_.Options().max_bubble_length));
 
-        Debug("Find semi id: %s\n", e->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
-        auto oe = graph_.QueryEdge(e->Id());
-        if (oe == nullptr) {
-            auto re = e->Reverse(graph_);
-            assert(graph_.QueryEdge(re->Id()) == nullptr);
-            graph_.InsertEdge(e);
-            graph_.InsertEdge(re);
+        Debug("Find semi edge: %s\n", ToString(e).c_str());
 
+        bool is_spur = true;
+        auto main_path = e->GetSimplePath(0);
+        for (size_t i = 1; i < e->SimplePathSize(); ++i) {
+            auto alt_path = e->GetSimplePath(i);            
+            Debug("test spur %s:(%zd) %zd %zd\n", ToString(e).c_str(), i, main_path.size(), alt_path.size());
+            if (alt_path.size() > 3 && main_path.size() * 0.1 < alt_path.size()) {
+                is_spur = false;
+                break;
+            }
+        }
+
+        if ( !is_spur ) {
+            auto oe = graph_.QueryEdge(e->Id());
+            if (oe == nullptr) {
+                auto re = e->Reverse(graph_);
+                assert(graph_.QueryEdge(re->Id()) == nullptr);
+                graph_.InsertEdge(e);
+                graph_.InsertEdge(re);
+
+            } else {
+                auto re = e->Reverse(graph_);
+                Debug("Find semi type: %s\n", oe->Type().c_str());
+                assert(oe->IsType("semi"));
+                static_cast<SemiBubbleEdge*>(oe)->Merge(*e);
+
+                auto roe = graph_.QueryEdge(re->Id());
+                Debug("Find semi type r: %s\n", oe->Type().c_str());
+                assert(roe != nullptr && roe->IsType("semi"));
+                static_cast<SemiBubbleEdge*>(roe)->Merge(*re);
+
+                delete re;
+                delete e;
+            }
         } else {
-            auto re = e->Reverse(graph_);
-            Debug("Find semi type: %s\n", oe->Type().c_str());
-            assert(oe->IsType("semi"));
-            static_cast<SemiBubbleEdge*>(oe)->Merge(*e);
+            Debug("is spur %s\n", ToString(e).c_str());
+            for (size_t i = 1; i < e->paths_.size(); ++i) {
+                for (auto p : e->paths_[i]) {
+                    Debug("remove spur %s %d, %s\n", ToString(p).c_str(), p->IsReduced(), p->type_.c_str());
+                    if (!p->IsReduced()) {
+                        p->Reduce("spur:semi", true);
+                        graph_.ReverseEdge(p)->Reduce("spur:semi", true);
 
-            auto roe = graph_.QueryEdge(re->Id());
-            Debug("Find semi type r: %s\n", oe->Type().c_str());
-            assert(roe != nullptr && roe->IsType("semi"));
-            static_cast<SemiBubbleEdge*>(roe)->Merge(*re);
+                    }
+                }
+            }
 
-            delete re;
             delete e;
         }
+    
     }
 
     graph_.TestGraph();

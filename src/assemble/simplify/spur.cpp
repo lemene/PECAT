@@ -4,14 +4,14 @@ namespace fsa {
 
 
 bool SpurSimplifier::ParseParameters(const std::vector<std::string> &params) {
-    //assert(params[0] == "spur");
+    assert(params[0] == "spur");
 
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
         if (it[0] == "n") {
-            max_nodesize = std::stoi(it[1]);
+            min_nodesize = std::stoi(it[1]);
         } else if (it[0] == "l") {
-            max_length = std::stoi(it[1]);
+            min_length = std::stoi(it[1]);
         } else {
             return false;
         }
@@ -21,7 +21,7 @@ bool SpurSimplifier::ParseParameters(const std::vector<std::string> &params) {
 
 std::string SpurSimplifier::GetParameters() const {
     std::ostringstream oss;
-    oss << "n=" << max_nodesize << ":l=" << max_length;
+    oss << "n=" << min_nodesize << ":l=" << min_length;
     return oss.str();
 }
 
@@ -51,18 +51,25 @@ void SpurSimplifier::Running() {
 
         for (size_t i = index.fetch_add(1); i < nodes.size(); i = index.fetch_add(1)) {
             auto n = nodes[i];
-
             assert(n->OutDegree() > 1);
-            size_t count = 0;           
+
+            size_t del = 0;           
             for (auto e : n->GetOutEdges()) {
                 assert(!e->IsReduce());
-            
-                if (e->OutNode()->OutDegree()  == 0) {
+
+                if (IsTrivialEdge(e, min_nodesize, min_length)) {
                     rs.insert(e);
-                    count++;
+                    Debug("spur: %s", ToString(e).c_str());
+                    for (auto n = e->OutNode(); n->OutDegree() == 1; n = n->OutNode<BaseNode>(0)) {
+                        assert(n->OutDegree() == 1 && n->InDegree() == 1);
+                        rs.insert(n->OutEdge<BaseEdge>(0));
+                        Debug("-> %s", ToString(n->OutEdge<BaseEdge>(0)).c_str());
+                    }
+                    Debug("\n");
+                    del++;
                 }
-                 
-                if (count + 1 == n->OutDegree()) break;
+            
+                if (del + 1 == n->OutDegree()) break;
             }
         }
         combine_func(rs);
@@ -80,4 +87,17 @@ void SpurSimplifier::Running() {
 
 }
 
+bool SpurSimplifier::IsTrivialEdge(const SgEdge* e, int min_nodesize, int min_length) {
+    int nodesize = 1;
+    int length = e->Length();
+
+    auto n = e->OutNode();
+    while (n->OutDegree() == 1 && n->InDegree() == 1 && (nodesize < min_nodesize || length < min_length)) {
+        nodesize += 1;
+        length += n->OutEdge(0)->Length();
+        n = n->OutNode(0);
+    }
+    return n->OutDegree() == 0 && n->InDegree() == 1 && (nodesize < min_nodesize || length < min_length);
+
+}
 } // namespace fsa

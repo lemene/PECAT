@@ -18,11 +18,17 @@ public:
     void Repair(const std::unordered_set<const Overlap*> &ols);
     std::vector<const Overlap*> RepairIncompleteCross(const std::vector<SgEdge*>& path);
     std::vector<const Overlap*> GetAltCrossPath(Seq::EndId start, Seq::EndId end, const std::vector<SgEdge*>& path);
+    bool IsBridgeDiploid(const std::vector<SgEdge*>& path);
     bool IsAmbiguousPath(const std::vector<SgEdge*>& path);
+    bool IsLowQuality(const std::vector<SgEdge*> &path);
     int TestConsistent(const std::vector<SgEdge*>& path);
-    bool IsLinkedReversedNode(const std::vector<SgEdge*>& path, int max_depth) const;
+    bool IsLinkedReversedNode(const std::vector<SgEdge*>& path, size_t max_depth) const;
   
+    BaseNode* GetFrontAltNode(const std::vector<SgEdge*>& path) const;
+    BaseNode* GetBackAltNode(const std::vector<SgEdge*>& path) const;
+    
     void DebugPath(const std::vector<SgEdge*> &path, const std::string& msg);
+
 
     StringGraph& graph_;   
     

@@ -137,14 +137,14 @@ bool Overlap::Filter::ValidQuery(const Overlap &ol) const {
     if (ol.a_.len < min_length || ol.b_.len < min_length)   return false;
     if (Identity(ol) < min_identity)                        return false;
 
-    if (ol.AlignedLength() < min_aligned_length) {
+    if ((int)ol.AlignedLength() < min_aligned_length) {
         if (min_aligned_rate >= 0) {
             if (ol.AlignedLength() < ol.a_.len * min_aligned_rate && 
                 ol.AlignedLength() < ol.b_.len * min_aligned_rate ) return false;
         }
     }
 
-    if (min_accept_aligned_length >= 0 && ol.AlignedLength() >= min_accept_aligned_length)   return true;
+    if (min_accept_aligned_length >= 0 && ol.AlignedLength() >= (size_t)min_accept_aligned_length)   return true;
     if (min_accept_aligned_rate >= 0.0 && (
          ol.AlignedLength() >= ol.a_.len * min_accept_aligned_rate || 
          ol.AlignedLength() >= ol.b_.len * min_accept_aligned_rate)) return true;
@@ -168,6 +168,18 @@ bool Overlap::Filter::ValidQuery(const Overlap &ol) const {
 
     }
     return true;
+}
+
+int Overlap::Filter::MaxOverhang(int len) const {
+    int oh = -1;
+    if (max_overhang >= 0 && max_overhang_rate >= 0) {
+        oh = std::min<int>(max_overhang, len*max_overhang_rate);
+    } else if (max_overhang >= 0) {
+        oh = max_overhang;
+    } else if (max_overhang_rate >= 0) {
+        oh = len*max_overhang_rate;
+    }
+    return oh;
 }
 
 std::string Overlap::ToM4Line() const {

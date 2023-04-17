@@ -2,38 +2,39 @@
 
 #include<stdarg.h>  
 #include <time.h>
+#include <thread>
 
 namespace fsa {
 
 Dumper DUMPER;
+
+thread_local std::thread::id s_thread_id = std::this_thread::get_id();
 bool print_rubbish = false;
+void SetDebug() {
+    print_rubbish = true;
+}
 
 Dumper::Stream::Stream(const std::string &fname) {
-    if (fname != "") {
-        file_ = fopen(fname.c_str(), "w");
-    }
+    file_ = fname != "" ? fopen(fname.c_str(), "w") : stdout;
 }
 
 Dumper::Stream::~Stream() {
-    if (file_ != nullptr && (file_ != stdout || file_ != stderr)) {
+    if (file_ != nullptr && file_ != stdout && file_ != stderr) {
         fclose(file_);
     }
 }
 
 void Dumper::Stream::operator()(const char *const format, ...) {
-    if (file_ != nullptr) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        va_list arglist;
-        va_start(arglist, format);
-        vfprintf(file_, format, arglist);
-        va_end(arglist);
-        fflush(file_);
-    }
+    va_list arglist;
+    va_start(arglist, format);
+    Write(format, arglist);
+    va_end(arglist);
 }
 
 void Dumper::Stream::Write(const char* const format, va_list arglist) {
     if (file_ != nullptr) { 
         std::lock_guard<std::mutex> lock(mutex_);
+        fprintf(file_, "tid=%X ",  *(unsigned int*)&s_thread_id);
         vfprintf(file_, format, arglist);
         fflush(file_);
     }
@@ -113,5 +114,14 @@ void Logger::Log(Level level, const char* format, va_list arglist) {
         abort();
     }
 }
+void DebugPrintf(const char *const format, ...){
+    va_list arglist;
+    va_start(arglist, format);
+    vfprintf(stdout, format, arglist);
+    va_end(arglist);
+    fflush(stdout);
+}
+
+
 
 } // namespace fsa {

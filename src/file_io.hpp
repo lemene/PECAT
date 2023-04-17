@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <memory>
+#include <cassert>
 
 namespace fsa {
 
@@ -19,6 +20,36 @@ public:
     virtual size_t GetLines(std::vector<std::string> &lines) = 0;
     virtual size_t GetBlock0(char* block, size_t max_size) = 0;
     virtual size_t GetBlock(std::vector<char> &block, const std::string& sentinel="", int off=0);
+    template<typename J>
+    size_t GetBlock1(std::vector<char> &block, J adjust) {
+        size_t block_index = 0;
+        if (bufsize > 0) {
+            assert(bufsize < block.size());
+            std::copy(buf.begin(), buf.begin()+bufsize, block.begin());
+            block_index = bufsize;
+            bufsize = 0;
+        }
+
+        block_index += GetBlock0(&block[0]+block_index, block.size()-block_index);
+        if (block_index == block.size()) { 
+            size_t end = adjust(block, block_index);
+            if (end < block_index) {
+                
+                if (buf.size() > block_index - end) {
+                    std::copy(block.begin()+end, block.begin()+block_index, buf.begin());
+                } else {
+                    buf.assign(block.begin()+end, block.begin()+block_index);
+                }
+                bufsize = block_index - end;
+                block_index = end;
+            }
+        }
+
+
+        return block_index;
+    }
+    
+    virtual size_t GetBlockByMultipleLines(std::vector<char> &block, size_t n);
 
 protected:
     std::vector<char> buf;

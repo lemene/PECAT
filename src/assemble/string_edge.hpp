@@ -213,6 +213,11 @@ public:
     const Overlap::Read* InRead() const { return read_ == ol_->a_.id ? &(ol_->b_) : &(ol_->a_); }
     const Overlap::Read* OutRead() const { return read_ == ol_->a_.id ? &(ol_->a_) : &(ol_->b_); }
 
+    void Replace(const Overlap* ol) {
+        ol_ = ol;
+        
+    }
+
     int read_ { 0 };
     ReduceType reduce_type_{ RT_ACTIVE };
     const Overlap* ol_ { nullptr } ;
@@ -369,7 +374,7 @@ public:
     }
 
     bool Validate(PhaseInfoFile *ignored, const ReadStore &rs, StringGraph *sg, int max_length);
-
+    std::vector<std::vector<SgEdge*>> IdentifyAllPath(SgNode* src, SgNode *dst, const std::unordered_set<const SgEdge*> &edges) const;
 
     virtual std::unordered_set<Seq::Id> GetReads() {
         std::unordered_set<Seq::Id> reads;

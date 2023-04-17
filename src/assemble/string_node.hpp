@@ -1,5 +1,7 @@
 #pragma once
 
+#include <list>
+
 #include "../sequence.hpp"
 #include "utils/logger.hpp"
 
@@ -149,6 +151,10 @@ public:
     const SgNode* InNode(size_t i) const;
     SgNode* OutNode(size_t i);
     const SgNode* OutNode(size_t i) const ;
+    template<typename T>
+    T* InNode(size_t i) { return static_cast<T*>(InNode(i));}
+    template<typename T>
+    T* OutNode(size_t i) { return static_cast<T*>(OutNode(i));}
 
     virtual bool IsConsistOf(const SgNode* n) const { return false;}
 
@@ -209,7 +215,7 @@ public:
         return reduced_out_edges_;
     }
 
-
+    static const std::string TypeName() { return "base"; };
     int mark_;
 protected:
 
@@ -236,9 +242,11 @@ public:
         ,  reduced_out_edges_(reinterpret_cast<std::vector<PathEdge*>&>(org_reduced_out_edges_))
     { 
         if (n != nullptr) id_ = CreateId(n->Id(), type); 
-        AttachType("path"); 
+        AttachType(TypeName()); 
     }
     virtual ~PathNode() {}
+
+    static std::string TypeName() { return "path"; }
 
     static ID CreateId(BaseNode::ID id, int type = 0) {
         return BaseNode::ID(type, id);
@@ -299,47 +307,6 @@ protected:
     SgNode::ID CreateID() const;
     std::vector<SgEdge*> backward_;
     std::vector<SgEdge*> forward_;
-};
-
-class CrossNode : public PathNode {
-public:
-    CrossNode(const std::vector<SgNode*>& in_nodes, const std::vector<SgNode*>& out_nodes);
-    CrossNode* Reverse(PathGraph& sg) const;
-    bool IsRaw() const;
-
-    size_t OriginInDegree() const { return in_nodes_[0]->InDegree() + in_nodes_[1]->InDegree(); }
-    size_t OriginOutDegree() const { return  out_nodes_[0]->OutDegree() + out_nodes_[1]->OutDegree(); }
-
-    const SgEdge* OriginOutEdge(size_t i) const { 
-        if (i < out_nodes_[0]->OutDegree()) {
-            return out_nodes_[0]->OutEdge(i);
-        } else {
-            return out_nodes_[1]->OutEdge(i-out_nodes_[0]->OutDegree());
-        }
-    }
-    const SgEdge* OriginInEdge(size_t i) const {
-        if (i < in_nodes_[0]->InDegree()) {
-            return in_nodes_[0]->InEdge(i);
-        } else {
-            return in_nodes_[1]->InEdge(i-in_nodes_[0]->InDegree());
-        }
-    }
-    virtual bool IsConsistOf(const SgNode* n) const { 
-        assert(in_nodes_.size() == 2 && out_nodes_.size() == 2);
-
-        return in_nodes_[0] == n || in_nodes_[1] == n || out_nodes_[0] == n || out_nodes_[1] == n;
-    }
-
-    void ReduceSub();
-
-protected:
-    SgNode::ID CreateID() const;
-
-    std::vector<SgEdge*> origin_in_edges_;
-    std::vector<SgEdge*> origin_out_edges_;
-    std::vector<SgEdge*> origin_edges_;
-    std::vector<SgNode*> in_nodes_;
-    std::vector<SgNode*> out_nodes_;
 };
 
 }

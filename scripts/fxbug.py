@@ -6,8 +6,8 @@ import argparse
 from collections import defaultdict
 import subprocess
 import re
+import glob
 
-from scipy import misc
 
 mydir = os.path.split(__file__)
 sys.path.append(mydir)
@@ -303,9 +303,9 @@ def get_contig_reads2(tile, id2name):
 
 def fx_read_in_contig(argv):
     parser = argparse.ArgumentParser("找到contigs中的reads")
-    parser.add_argument("ctg", type=str)
     parser.add_argument("tile", type=str)
     parser.add_argument("--binfos", type=str)
+    parser.add_argument("--contig", type=str, default="")
 
 
     try:
@@ -319,8 +319,57 @@ def fx_read_in_contig(argv):
         if args.binfos:
             binfos = prj.BinInfos(args.binfos)
 
-        for c in ctgs[args.ctg]:
-            print("%s %s" % (c, binfos.infos[c]), binfos.kmers[c])
+        for c, rds in ctgs.items():
+            if args.contig == "" or c == args.contig:
+                for rd in rds:
+                    print(rd, " ", end="")
+                    if binfos != None:
+                        if rd in binfos.infos and rd in binfos.kmers:
+                            print(binfos.kmers[rd], binfos.infos[rd], end="")
+                    print("")
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+def fx_read_in_ref(argv):
+    parser = argparse.ArgumentParser("找到contigs中的reads")
+    parser.add_argument("tile", type=str)
+    parser.add_argument("overlaps", type=str)
+    parser.add_argument("--contig", type=str, default="")
+
+
+    try:
+        args = parser.parse_args(argv)
+        from collections import defaultdict
+
+        logger.info("Loading reads in contigs")
+        ctgs = PrjFile.get_contig_reads(args.tile)
+
+        ols = defaultdict(lambda: ["", 0])
+
+        for line in open(args.overlaps):
+            its = line.split()
+            rd, ctg, matlen = its[0], its[5], int(its[10])
+            if ols[rd][1] < matlen:
+                ols[rd] = [ctg, matlen]
+
+        if args.contig == "":
+            for c, rds in ctgs.items():
+                counts = defaultdict(int)
+                for rd in rds:
+                    counts[ols[rd][0]] += 1
+
+                print(c, counts)  
+                s = sum(counts.values())
+                its = sorted(counts.items(), key=lambda x: -x[1])
+                for i, (k, v) in enumerate(its):
+                    if i == 0: continue
+                    if v / s > 0.2: print(k, "Error")
+        else:
+            for rd in ctgs[args.contig]:
+                print(rd, ols[rd])
 
     except:
         traceback.print_exc()
@@ -747,6 +796,45 @@ def fx_snp_diff(argv):
         print("-----------------")
         parser.print_usage()
 
+
+def fx_snp_diff2(argv):
+    parser = argparse.ArgumentParser("两条reads的SNPs的异同。")
+    parser.add_argument("rinfos", type=str)
+    parser.add_argument("reads", type=str)
+
+    try:
+        args = parser.parse_args(argv)
+        rinfos = prj.load_snps_in_reads(args.rinfos)
+
+        reads = [i.strip() for i in open(args.reads)]
+
+        for i in range(len(reads)):
+            for j in range(i+1, len(reads)):
+                count = [0, 0]
+                r0, r1 = reads[i], reads[j]
+
+                if r0 in rinfos and r1 in rinfos:
+                    for rctg, rsnps in rinfos[r0]:
+                        for rctg1, rsnps1 in rinfos[r1]:
+                            if rctg != rctg1: continue
+
+                            for p, v in rsnps:
+                                for p1, v1 in rsnps1:
+                                    if p != p1: continue;
+
+                                    if v == v1:
+                                        count[0] += 1
+                                    else:
+                                        count[1] += 1
+
+    
+                print(r0, r1, count)
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+
 def fx_stat_binfo(argv):
     parser = argparse.ArgumentParser("统计binfo信息")
     parser.add_argument("binfo", type=str)
@@ -834,20 +922,26 @@ def fx_test(argv):
 
 def fx_crrsub(argv):
     parser = argparse.ArgumentParser("extract infos for debugging correction")
-    parser.add_argument("read", type=str, default='')
+    parser.add_argument("--read", type=str, default='')
     parser.add_argument("--iteration", type=int, default=0)
     parser.add_argument("--fsa", type=str, default="~/work/fsa/build/bin/")
    
     try:
         args = parser.parse_args(argv)
         # get ols
+
+        read = args.read
+        if read == "":
+            _, read = os.path.split(os.getcwd())
+
+        logger.info("read: %s", read)
+
         prjpath = prj.find_prjpath("1-correct", 5)
-        cmd = "grep -w -h %s %s/%d/*fasta.paf > ols.paf" % (args.read, prjpath, args.iteration)
+        cmd = "grep -w -h %s %s/%d/*fasta.paf > ols.paf" % (read, prjpath, args.iteration)
         
         logger.info("get sub ols by running %s" % cmd)
         run_cmd(cmd)
 
-        
         names = set()
         for line in open("ols.paf"):
             its = line.split()
@@ -868,6 +962,108 @@ def fx_crrsub(argv):
         traceback.print_exc()
         print("-----------------")
         parser.print_usage()
+
+
+def fx_crrsub1(argv):
+    parser = argparse.ArgumentParser("extract infos for debugging correction")
+    parser.add_argument("reads", type=str, default='')
+    parser.add_argument("--iteration", type=int, default=0)
+    parser.add_argument("--fsa", type=str, default="~/work/fsa/build/bin/")
+    parser.add_argument("--paf", type=str)
+   
+    try:
+        args = parser.parse_args(argv)
+
+        reads = set([i.strip() for i in open(args.reads)])
+
+        # get ols
+        prjpath = prj.find_prjpath("1-correct", 5)
+        with open("ols.paf", "w") as ofile:
+            #for f in glob.glob("%s/%d/*fasta.paf" % (prjpath, args.iteration)):
+            for f in glob.glob(args.paf):
+                logger.info("get ols from %s" % f)
+                for line in open(f):
+                    its = line.split()
+                    if its[0] in reads or its[1] in reads:
+                        ofile.write(line)
+
+        names = set()
+        for line in open("ols.paf"):
+            its = line.split()
+            names.add(its[0])
+            names.add(its[5])
+        
+        with open("ns", "w") as f:
+            for n in names:
+                f.write("%s\n" % n)
+        
+        cmd = "%s/fsa_rd_tools sub %s sub.fasta --names_fname ns" % (args.fsa, (prjpath+ "/0/corrected_reads.fasta") if args.iteration == 1 else (prjpath + "/../0-prepare/prepared_reads.fasta"))
+        
+        logger.info("get sub reads by running %s" % cmd)
+        run_cmd(cmd)
+        
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+
+
+
+def fx_adjacent_reads(argv):
+    parser = argparse.ArgumentParser("查看附件的序列")
+    parser.add_argument("read", type=str, default='')
+
+    try:
+        args = parser.parse_args(argv)
+        # get ols
+        import sys, os
+        import subprocess
+        import re
+
+        cmd = "grep -w %s *_tiles" % (args.read)
+        pattern = re.compile("edge=([0-9]+):[BE]~([0-9]+):[BE]")
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=os.getcwd(),encoding="utf-8")
+        neighbour = []
+        for line in proc.stdout:
+            m = pattern.search(line)
+            if m != None:
+                print(m.group(1), m.group(2))
+                if len(neighbour) == 0 or neighbour[-1] != m.group(1):
+                    neighbour.append(m.group(1))
+                neighbour.append(m.group(2))
+
+
+        for i in neighbour:
+            cmd = "grep -w ^%s ../../1-correct/rdinfos" % i
+            os.system(cmd)
+
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
+def fx_grep_binfos(argv):
+    parser = argparse.ArgumentParser("批量grep binfo信息")
+    parser.add_argument("binfos", type=str, default='')
+    parser.add_argument("reads", type=str, default='', nargs="+")
+
+    try:
+        args = parser.parse_args(argv)
+
+        ids="\|".join([i.replace(",", "") for i in args.reads])
+        cmd = "grep \"^\\(%s\\) \" %s" % (ids, args.binfos)
+        print(cmd)
+        os.system(cmd)
+
+
+    except:
+        traceback.print_exc()
+        print("-----------------")
+        parser.print_usage()
+
 
 if __name__ == '__main__':
     script_entry(sys.argv, locals())

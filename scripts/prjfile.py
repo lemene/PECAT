@@ -1,6 +1,6 @@
-
 import logging
 import sys,os
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("utils")
@@ -127,3 +127,21 @@ def detect_overlap_name_postion(fname):
         return (0, 1)
     else:
         assert 0, "Failed to recognize overlap format"
+
+def load_snps_in_reads(fname):
+    logger.info("Load snps of reads in file: %s" % fname)
+    readsnps = defaultdict(list)
+    item_start = 4
+    for line in open(fname):
+        its = line.strip().split()
+        assert len(its) >= item_start
+        ctg = its[0]
+        snps = []
+        for i in its[item_start:]:
+            p, _, _, v, *_ = i.split("|")
+            if v != '-1':              # skip -1
+                snps.append((p, v))
+        if len(snps) > 0:
+            readsnps[its[1]].append((ctg, snps))
+
+    return readsnps

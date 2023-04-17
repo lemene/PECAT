@@ -22,6 +22,7 @@ public:
     size_t max_length { 1000000 };
     size_t max_nodesize { 20 };
     size_t round { 3 };
+    size_t level {2};
 };
 
 

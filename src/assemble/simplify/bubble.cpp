@@ -16,11 +16,6 @@ bool BubbleSimplifier::ParseParameters(const std::vector<std::string> &params) {
     return true;
 }
 
-// void BubbleSimplifier::Running() {
-//     LOG(INFO)("BubbleSimplifier %d", simple);
-//     graph_.FindBubbles(simple);
-// }
-
 void BubbleSimplifier::Running() {
 
     LOG(INFO)("BubbleSimplifier %d", simple);
@@ -29,8 +24,9 @@ void BubbleSimplifier::Running() {
     auto cands = graph_.CollectNodes([this](const SgNode* n) { return n->OutDegree() > 1; });
     std::vector<BubbleEdge*> bubbles(cands.size());
     MultiThreadMap(thread_size, cands, bubbles, [this](SgNode* n) {
+        Debug("cand: %s\n", ToString(n).c_str());
         auto rr = Detect(static_cast<PathNode*>(n), simple);
-        //auto rr = graph_.FindBubble(static_cast<PathNode*>(n), simple);
+        Debug("found: %s\n", (rr == nullptr ? "nullptr" : ToString(rr).c_str()));
         if (rr != nullptr) {
             if (!rr->Validate(graph_.GetAsmData().GetInconsistentOverlaps(), 
                               graph_.GetReadStore(), 
@@ -38,8 +34,9 @@ void BubbleSimplifier::Running() {
                               graph_.Options().max_bubble_length)) {
                 delete rr;
                 rr =  nullptr;
+            } else {
+                Debug("pass: %s\n", ToString(rr).c_str());
             }
-
         }
         return rr;
     });
@@ -94,6 +91,7 @@ void BubbleSimplifier::Running() {
     }
     
     for (auto path : compound_path1) {
+        Debug("add_bubble: %s\n", ToString(path).c_str());
         graph_.InsertEdge(path);
     }
 
@@ -250,13 +248,13 @@ BubbleEdge* BubbleSimplifier::Detect(PathNode* start_node, bool check, int depth
 
         for (auto &i : new_visited) {
             visited[i.first] = std::make_pair(
-                visited[i.second->InNode()].first + i.second->Length(),
-                visited[i.second->InNode()].second + i.second->Score());
+                visited[i.second->InNode()].first + (int)i.second->Length(),
+                visited[i.second->InNode()].second + (int)i.second->Score());
 
             // 更新当前长度
         //LOG(INFO)("detect-bubble up: %s, %zd, %zd", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), length, visited[i.first].first);
-            if (length < visited[i.first].first) {
-                length = visited[i.first].first;
+            if (length < (size_t)visited[i.first].first) {
+                length = (size_t)visited[i.first].first;
             }
 
         }
@@ -273,9 +271,9 @@ BubbleEdge* BubbleSimplifier::Detect(PathNode* start_node, bool check, int depth
             tips.insert(oldtips.begin(), oldtips.end());
         }
 
-    } while (tips.size() >= 1 && tips.size() < 6 && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff));
+    } while (tips.size() >= 1 && tips.size() < 6 && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && (int)length <= length_cutoff && (depth <= 10 || width <= width_cutoff));
 
-    if (end_node != nullptr && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && length <= length_cutoff && (depth <= 10 || width <= width_cutoff) && (!check || check && IsClearBubble(start_node, end_node,bundle_edges, local_nodes))) {
+    if (end_node != nullptr && !loop_detect && !meet_error && !spur && depth <= depth_cutoff && (int)length <= length_cutoff && (depth <= 10 || width <= width_cutoff) && (!check || (check && IsClearBubble(start_node, end_node,bundle_edges, local_nodes)))) {
         
         //LOG(INFO)("detect-bubble new: %s, %zd, %zd", start_node->Id().ToString(graph_.asmdata_.GetStringPool()).c_str(), visited[end_node].first, length);
         return new BubbleEdge(start_node, end_node, bundle_edges, visited[end_node].first, width, visited[end_node].second);
