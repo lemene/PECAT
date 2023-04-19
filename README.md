@@ -31,6 +31,18 @@ $ make
 
 After building, all the executable files can be found in `PECAT/build/bin`. We can run `PECAT/build/bin/pecal.pl` or add the path to the system PATH and run `pecal.pl`.
 
+### zlib not found
+```Shell
+wget -c http://www.zlib.net/zlib-1.2.13.tar.gz
+tar -xzf zlib-1.2.13.tar.gz
+cd zlib-1.2.13
+./configure && make
+cd ..
+export C_INCLUDE_PATH=`pwd`/zlib-1.2.13:$C_INCLUDE_PATH
+export CPLUS_INCLUDE_PATH=`pwd`/zlib-1.2.13:$CPLUS_INCLUDE_PATH
+export LIBRARY_PATH=`pwd`/zlib-1.2.13:$LIBRARY_PATH
+make
+```
 
 ## Installing PECAT using conda
 

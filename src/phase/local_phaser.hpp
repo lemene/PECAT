@@ -226,7 +226,6 @@ public:
 
     std::vector<Group> Divide(const Group& g);
     std::vector<Group> Combine(const std::vector<Group>& groups);
-    std::vector<Group> Combine2(const std::vector<Group>& groups);
     std::vector<Group> Combine3(const std::vector<Group>& groups);
     void FindConsistent(const Group& g0);
     void FindInconsistent(const Group& g0, const Group& gx);

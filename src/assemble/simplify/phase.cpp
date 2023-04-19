@@ -1,6 +1,7 @@
 #include "phase.hpp"
 
 #include "phase_path.hpp"
+#include <stdarg.h>  
 
 namespace fsa {
 

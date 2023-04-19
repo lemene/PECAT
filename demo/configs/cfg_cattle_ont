@@ -1,7 +1,7 @@
 project= cattle
 reads= $READS
 genome_size= 2700000000
-threads=40
+threads=48
 cleanup=1
 grid=local
 prep_min_length=3000
@@ -9,7 +9,7 @@ prep_output_coverage=80
 corr_iterate_number=1
 corr_block_size=8000000000
 corr_filter_options=--filter0=l=5000:al=2500:alr=0.5:aal=8000:oh=3000:ohr=0.3
-corr_correct_options=--score=weight:lc=16 --aligner edlib:bs=1000:mc=6  --min_coverage 4 --filter1 oh=1000:ohr=0.01 --candidate n=400:f=20
+corr_correct_options=--score=weight:lc=16 --aligner edlib --filter1 oh=1000:ohr=0.01 --candidate n=400:f=20
 corr_rd2rd_options=-x ava-ont -f 0.005 -I 10G
 corr_output_coverage=80
 align_block_size=12000000000

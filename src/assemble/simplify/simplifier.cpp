@@ -1,5 +1,6 @@
 #include "simplifier.hpp"
 
+#include <stdarg.h>  
 
 namespace fsa {
 
