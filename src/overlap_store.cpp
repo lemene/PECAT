@@ -371,7 +371,7 @@ int OverlapStore::FromSamLine(const std::string &line, Overlap& o, StringPool::N
                 }
                 break;
             default:        // error
-                return -1;
+                return 0;
             }
         }
 

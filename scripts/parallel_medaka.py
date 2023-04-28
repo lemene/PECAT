@@ -25,7 +25,6 @@ def get_ref_name_len(bam):
 
     cmd = "samtools view -H %s" % bam
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-    proc.wait()
     for line in  proc.stdout.readlines():
         its = line.decode("utf8").split()
         if its[0] == "@SQ":
@@ -35,7 +34,8 @@ def get_ref_name_len(bam):
             assert len(n) == 2 and n[0] == "SN" and len(l) == 2 and l[0] == "LN"
 
             name_len.append((n[1], int(l[1])))
-
+    
+    proc.wait()
     name_len.sort(key = lambda x: -x[1])
     logger.info(name_len)
     return name_len

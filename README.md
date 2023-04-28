@@ -7,7 +7,7 @@ PECAT is a phased error correction and assembly tool for long reads. It includes
 + [minimap2](https://github.com/lh3/minimap2) (2.17+)
 + [racon](https://github.com/lbcb-sci/racon) (v1.4.21+)
 + [perl](https://github.com/Perl) (v5.22.1+)
-+ [samtools](https://github.com/samtools/samtools)  (1.9+)
++ [samtools](https://github.com/samtools/samtools)  (1.7+)
 + [clair3](https://github.com/HKU-BAL/Clair3)  (v0.1-r12+) (optional)
 + [medaka](https://github.com/nanoporetech/medaka)  (1.7.2+) (optional)
 
@@ -44,6 +44,7 @@ export LIBRARY_PATH=`pwd`/zlib-1.2.13:$LIBRARY_PATH
 make
 ```
 
+<!--
 ## Installing PECAT using conda
 
 ```
@@ -51,11 +52,14 @@ conda create -n pecat-env
 conda activate pecat-env
 conda install pecat
 ```
+-->
 
 ## Installing third-party tools using conda
 PECAT depends on other tools, and their paths need to be added to the system PATH. We recommend using conda to install the third-party tools.
 ```
-conda install minimap2 racon perl samtools # clair3 medaka
+conda create -n pecat-env
+conda activate pecat-env
+conda install minimap2 racon perl samtools=1.17 # clair3 medaka
 ```
 
 #### Installing and configuring clair3 and medaka
@@ -63,7 +67,6 @@ When we installed clair3 and medaka using conda, we encountered a conflict betwe
 
 Install singularity and download the images
 ```Shell
-conda install singularity
 singularity pull docker://hkubal/clair3:v0.1-r12
 singularity pull docker://nanozoo/medaka:1.7.2--aa54076
 ```

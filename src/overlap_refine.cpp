@@ -214,7 +214,7 @@ void OverlapRefine::TaskIdentity(Overlap &o, const StringPool::NameId &ni) {
         auto r = aligner->Align((const char*)&qseq[0]+o.a_.start, qlen, 
                                 (const char*)&tseq[0]+o.b_.start, tlen, {qpos, qpos}, {tpos, tpos}, al);
         if (r) {
-            printf("%0.02f\n", al.Identity());
+            printf("%0.02f %s\n", al.Identity(), toLine(o, ni).c_str());
         }
     } else {
         std::vector<uint8_t> qseq(query.Size(), 0);
@@ -235,7 +235,7 @@ void OverlapRefine::TaskIdentity(Overlap &o, const StringPool::NameId &ni) {
         auto r = aligner->Align((const char*)&qseq[0]+(o.a_.len-o.a_.end), qlen, 
                                 (const char*)&tseq[0]+o.b_.start, tlen, {qpos, qpos}, {tpos, tpos}, al);
         if (r) {
-            printf("%0.02f\n", al.Identity());
+            printf("%0.02f %s\n", al.Identity(), toLine(o, ni).c_str());
         }
     }
 }
