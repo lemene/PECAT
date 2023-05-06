@@ -40,6 +40,6 @@ polish_use_reads=0
 polish_cns_options =
 
 polish_medaka = 1
-polish_medaka_command =singularity exec --containall -B `pwd -P`:`pwd -P` medaka_1.7.2--aa54076.sif medaka
+polish_medaka_command =singularity exec --containall -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
 polish_medaka_map_options = -x map-ont  -k19 -w10 -I 10g
 polish_medaka_cns_options = --model r941_prom_high_g4011

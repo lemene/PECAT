@@ -63,18 +63,26 @@ conda install minimap2 racon perl samtools=1.17 # clair3 medaka
 ```
 
 #### Installing and configuring clair3 and medaka
-When we installed clair3 and medaka using conda, we encountered a conflict between clair3(v0.1-r12) and medaka (1.7.2). Only one of them can be installed. If you also fail to install the tools, we recommend using singularity to invoke them. 
+When we installed clair3 and medaka using conda, we encountered a conflict between clair3(v0.1-r12) and medaka (1.7.2). Only one of them can be installed. If you also fail to install the tools, we recommend using singularity or docker to invoke them. 
 
+##### Using singularity
 Install singularity and download the images
 ```Shell
 singularity pull docker://hkubal/clair3:v0.1-r12
-singularity pull docker://nanozoo/medaka:1.7.2--aa54076
+singularity pull docker://ontresearch/medaka:v1.7.2
 ```
 
 Add the following parameters to the config file.
 ```
 phase_clair3_command = singularity exec --containall -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
-polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_1.7.2--aa54076.sif medaka
+polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
+```
+
+##### Using docker
+Add the following parameters to the config file.
+```
+phase_clair3_command =  docker run -it --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P`  hkubal/clair3:latest /opt/bin/run_clair3.sh
+polish_medaka_command = docker run -it --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
 ```
 
 ## Testing

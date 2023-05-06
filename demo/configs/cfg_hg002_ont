@@ -39,6 +39,6 @@ polish_filter_options=--filter0 oh=2000:ohr=0.2:aalr=0.5
 polish_cns_options =
 
 polish_medaka = 1
-polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_1.7.2--aa54076.sif medaka
+polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
 polish_medaka_map_options = -x map-ont -w10 -k19 
 polish_medaka_cns_options = --model r941_prom_sup_g507

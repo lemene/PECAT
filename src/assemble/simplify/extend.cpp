@@ -7,7 +7,8 @@ bool ExtendSimplifier::ParseParameters(const std::vector<std::string> &params) {
 
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
-        if (it[0] == "s") {
+        if (it[0] == "n") {      
+            max_number_of_nodes = std::stoi(it[1]);
         } else {
             return false;
         }

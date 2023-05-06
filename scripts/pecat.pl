@@ -621,7 +621,7 @@ sub job_calling_with_clair3($$$$$) {
         mfiles => ["$wrkdir/clair3"],
         cmds => ["samtools faidx $contigs",
                  "$clair3_cmd --bam_fn=$rd_2_ctg.bam --ref_fn=$contigs --threads=$threads --output=$wrkdir/clair3 $clair3_options", 
-                 "mv $wrkdir/clair3/merge_output.vcf.gz $wrkdir/merge_output.vcf.gz"],
+                 "cp $wrkdir/clair3/merge_output.vcf.gz $wrkdir/merge_output.vcf.gz"],
         msg => "calling variant with clair3",
     );
     
@@ -968,7 +968,7 @@ sub newjob_medaka_oneset($) {
     my $job_map = $self->newjob(
         name => "${name}_map",
         ifiles => [$ctg, $ctg_tile, $reads, $rd_2_ctg_names],
-        ofiles => [$sub_reads, $rd_2_ctg_sam],
+        ofiles => [$rd_2_ctg_sam],
         gfiles => [$rd_2_ctg_sam, $sub_reads],
         mfiles => [$sub_reads],
         cmds => ["$bin_path/fsa_rd_tools sub $reads $sub_reads --names_fname $rd_2_ctg_names",

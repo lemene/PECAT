@@ -46,7 +46,7 @@ struct AsmOptions {
     double max_unreliable_rate { 0.66 };
 
     int min_contig_length { 500 };
-    int max_bubble_length { 50000000 };
+    int max_bubble_length { 1000000000 };   // disable the parameter
     std::string select_branch { "no" }; 
     std::string phased;
     std::string variants;
