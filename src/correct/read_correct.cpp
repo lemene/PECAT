@@ -440,13 +440,15 @@ std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& a
         for (const auto &al : als) {
             if (al.local_distances[i] >= 0) {
                 dis.push_back(al.local_distances[i]);
+            LOG(INFO)("add %zd", al.local_distances[i]);
             }
         }
 
         std::sort(dis.begin(), dis.end(), [](int a, int b) { return a < b; });
-        std::vector<int> oks(dis.begin(), dis.begin() + std::min(dis.size(), cov/2));
-        auto m = ComputeMedianAbsoluteDeviation(oks);
+        std::vector<int> oks(dis.begin(), dis.begin() + std::min(dis.size(), cov));
+        auto m = ComputeMedianAbsoluteDeviation(dis);
         thresholds[i] = m[0] + 3*1.4826*m[1];
+            LOG(INFO)("th(%zd) = %d, %d, %d, %zd", i , thresholds[i], m[0], m[1], dis.size());
     }
     return thresholds;
 }
@@ -456,6 +458,7 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 
     for (size_t i = 0; i < thresholds.size(); ++i) {
         if (thresholds[i] >= 0 && al.local_distances[i] >= 0) {
+            LOG(INFO)("CMP %d %d", al.local_distances[i] , thresholds[i]);
             if (al.local_distances[i] > thresholds[i]) {
                 return false;
             }
@@ -521,10 +524,14 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     
     std::vector<Alignment> first_als1;
     for (size_t i = 0; i < first_als.size(); ++i) {
-        CheckLocalDistance(first_als[i], local_thresholds);
-        first_als1.push_back(first_als[i]);
+        if (CheckLocalDistance(first_als[i], local_thresholds)) {
+            first_als1.push_back(first_als[i]);
+            LOG(INFO)("ADD");
+        } else {
+            
+            LOG(INFO)("00");
+        }
     }
-    LOG(INFO)("SSS");
 
     size_t stub = 500;
     auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.opts_.min_coverage); 

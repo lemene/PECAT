@@ -347,8 +347,6 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
             }
             loc = curr_node->best_link->prev;
             curr_node = Get(loc);
-            DEBUG_printf("col-x: (%zd,%zd,%zd) %zd, %zd, %zd, %zd\n", loc.col, loc.row, loc.base, 
-                cols[loc.col].coverage, sopts_.min_coverage, curr_node);
         } else {
             break;
         }
