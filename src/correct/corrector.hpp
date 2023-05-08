@@ -82,7 +82,6 @@ typedef BitSet MyBitSet;
 
 class Corrector {
 public:
-    static const int MAX_COV = 500;
     
     struct Loc {
         static Loc Invalid() { return { -1, 0, -1}; }

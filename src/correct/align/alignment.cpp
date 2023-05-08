@@ -244,4 +244,25 @@ bool Alignment::TrimEnds(size_t checklen, int stub) {
     }
 }
 
+void Alignment::ComputeLocalDistance(size_t local_window_size) {
+    const size_t STD_WIN_SIZE = local_window_size;
+    size_t n = (TargetSize() + STD_WIN_SIZE - 1) / STD_WIN_SIZE;
+    size_t winsize = (TargetSize() + n - 1) / n;
+
+    local_distances.assign(n, -1);
+    size_t it = target_start;
+    size_t iq = query_start;
+    for (size_t i = 0; i < aligned_target.size(); ++i) {
+        auto pair = GetAlign(i);
+        if (pair[0] != pair[1]) {
+            local_distances[it / winsize] ++;
+        }
+        if (pair[0] != '-') it ++;
+        if (pair[1] != '-') iq ++;
+    }
+
+    if (target_start / winsize != 0) local_distances[target_start / winsize] = -1;
+    if (it / winsize != 0) local_distances[it / winsize] = -1;
+}
+
 } // namespace fsa {

@@ -27,15 +27,14 @@ public:
         std::string ToString() const;
 
         bool IsEndCondition(const std::vector<int> &cov, size_t number, size_t fail) const {
-            return (int)fail >= failures || (int)number >= max_number || IsEnough(cov);
+            return (int)fail >= failures || IsEnough(cov);
         }
         bool IsEnough(const std::vector<int> &cov) const ;
-        bool IsEnough(size_t number) const { return (int)number >= max_number; }
+        bool IsEnough(size_t number) const { return false; }
 
         double percent { 0.95 };             // p Percentage of filled matrix
         double overhang_weight   { 0.0 };                // w overhang的比重
         int failures { 10 };               // f 连续失败次数
-        int max_number { 200 };             //  // MAX_COV - 1
         int coverage { 80 };                    // 需要多少层数据
     };
 
@@ -144,7 +143,7 @@ protected:
     std::string filter1_opts_ {"l=2000:al=3000:alr=0.50:aal=6000:oh=2000:ohr=0.2"};
     Overlap::Filter filter0_;
     Overlap::Filter filter1_; 
-    std::string cands_opts_str_ { "n=200:c=80:f=10:p=0.95:ohwt=0.1"};
+    std::string cands_opts_str_ { "c=80:f=10:p=0.95:ohwt=0.1"};
     CandidateOptions cands_opts_ { cands_opts_str_ };
 
     double min_identity_ { 60 };

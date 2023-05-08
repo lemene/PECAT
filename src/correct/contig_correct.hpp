@@ -126,9 +126,7 @@ protected:
     std::string filter1_opts_ {"l=2000:al=3000:alr=0.50:aal=5000:oh=2000:ohr=0.2"};
     Overlap::Filter filter0_;
     Overlap::Filter filter1_; 
- 
 
-    int max_number_ { 400 };    // MAX_COV - 1
     int coverage_ { 50 };
     double branch_score_ { 0.3 };
     int window_size_ { 50000 };
