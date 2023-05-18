@@ -267,7 +267,7 @@ bool ContigCorrect::Worker::Correct(WindowJob &job) {
             aligned_.push_back(al);
 
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
-            if (IsCoverageEnough(coverage) ) {
+            if (IsCoverageEnough(coverage) || (int)aligned_.size() >= owner_.max_number_) {
                 break;
             }
         }

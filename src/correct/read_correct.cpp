@@ -53,7 +53,7 @@ void ReadCorrect::CandidateOptions::From(const std::string& str) {
         if (kv[0] == "c") {
             coverage = std::stoi(kv[1]);
         } else if (kv[0] == "n") {
-            // pass 
+            max_number = std::stoi(kv[1]);
         } else if (kv[0] == "f") {
             failures = std::stoi(kv[1]);
         } else if (kv[0] == "p") {
@@ -71,6 +71,7 @@ std::string ReadCorrect::CandidateOptions::ToString() const  {
     oss.precision(2);
     // oss.setf(std::ios::fixed);
     oss << "c=" << coverage
+        << ":n=" << max_number
         << ":f=" << failures
         << ":p=" << percent
         << ":ohwt=" << overhang_weight;
@@ -430,43 +431,6 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
 
 }
 
-std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& als, size_t cov) {
-    assert(als.size() > 0);
-    size_t n = als[0].local_distances.size();
-    std::vector<int> thresholds(n, -1);
-
-    for (size_t i = 0; i < n; ++i) {
-        std::vector<int> dis;
-        for (const auto &al : als) {
-            if (al.local_distances[i] >= 0) {
-                dis.push_back(al.local_distances[i]);
-            LOG(INFO)("add %zd", al.local_distances[i]);
-            }
-        }
-
-        std::sort(dis.begin(), dis.end(), [](int a, int b) { return a < b; });
-        std::vector<int> oks(dis.begin(), dis.begin() + std::min(dis.size(), cov));
-        auto m = ComputeMedianAbsoluteDeviation(dis);
-        thresholds[i] = m[0] + 3*1.4826*m[1];
-            LOG(INFO)("th(%zd) = %d, %d, %d, %zd", i , thresholds[i], m[0], m[1], dis.size());
-    }
-    return thresholds;
-}
-
-bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) {
-    assert(al.local_distances.size() == thresholds.size());
-
-    for (size_t i = 0; i < thresholds.size(); ++i) {
-        if (thresholds[i] >= 0 && al.local_distances[i] >= 0) {
-            LOG(INFO)("CMP %d %d", al.local_distances[i] , thresholds[i]);
-            if (al.local_distances[i] > thresholds[i]) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Overlap*>& g, bool uc) {
     const DnaSeq& target = owner_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)owner_.filter0_.min_length); 
@@ -486,7 +450,6 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     std::vector<Alignment> first_als;
     std::vector<Alignment> flt_als;    // 
     int num_consecu_fail =  0;
-    int accu_base = 0;
     while (heap_size > 0) {
         auto ol = cands[0].first;
         const auto& tread = ol->GetRead(id);
@@ -498,7 +461,7 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
         DEBUG_printf("alignment: r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f\n", r,
             al.query_start, al.query_end, al.QuerySize(), ol->SameDirect(),
             al.target_start, al.target_end, al.TargetSize(), al.distance, al.Identity());
-        if (r) accu_base += al.AlignSize();
+        
         if (r && !ExactFilter(al)) { 
             stat_info.aligns[0]++;
             first_als.push_back(al);
@@ -517,20 +480,6 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
             return a.second < b.second;    // CAUTION, calulated by CalculateWeight
         });
         heap_size--;
-    }
-
-    ////////
-    auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 10);
-    
-    std::vector<Alignment> first_als1;
-    for (size_t i = 0; i < first_als.size(); ++i) {
-        if (CheckLocalDistance(first_als[i], local_thresholds)) {
-            first_als1.push_back(first_als[i]);
-            LOG(INFO)("ADD");
-        } else {
-            
-            LOG(INFO)("00");
-        }
     }
 
     size_t stub = 500;

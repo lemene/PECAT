@@ -131,6 +131,8 @@ protected:
     Overlap::Filter filter0_;
     Overlap::Filter filter1_; 
  
+
+    int max_number_ { 400 };    // MAX_COV - 1
     int coverage_ { 50 };
     double branch_score_ { 0.3 };
     int window_size_ { 50000 };

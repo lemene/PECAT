@@ -35,6 +35,7 @@ public:
 
     static void AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const char* query, const char* target, std::string& aligned_query, std::string& aligned_target);
 
+    static std::array<double,2> ComputeIdentity(const unsigned char* alignment, size_t alignmentLength, size_t window_size);
     static std::array<double,2> ComputeIdentity(const std::string& alq, const std::string& alt, size_t window_size);
     static bool CheckAlignedString(const std::string &q, const std::string &t);
 
