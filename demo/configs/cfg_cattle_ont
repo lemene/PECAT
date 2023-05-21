@@ -23,7 +23,7 @@ phase_use_reads=1
 phase_phase_options= --coverage lc=30 --phase_options icr=0.1:icc=8:sc=10
 phase_filter_options = --threshold 1000
 
-phase_clair3_command = singularity exec --containall -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
+phase_clair3_command = singularity exec -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
 phase_clair3_options=--platform=ont --model_path=/opt/models/ont_guppy5/  --include_all_ctgs
 phase_clair3_rd2ctg_options=-x map-ont -c -p 0.5 -r 1000
 phase_clair3_use_reads=0
@@ -37,6 +37,6 @@ polish_filter_options=--filter0 oh=2000:ohr=0.2:aalr=0.5
 polish_cns_options =
 
 polish_medaka = 1
-polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
+polish_medaka_command = singularity exec -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
 polish_medaka_map_options = -x map-ont -w10 -k19
 polish_medaka_cns_options = --model r941_prom_sup_g507

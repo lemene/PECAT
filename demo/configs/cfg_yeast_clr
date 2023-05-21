@@ -10,7 +10,7 @@ prep_output_coverage=80
 
 corr_iterate_number=1
 corr_block_size=4000000000
-corr_filter_options=--filter0=al=5000:alr=0.5:aalr=0.5:oh=1000:ohr=0.1
+corr_filter_options=--filter0=al=2000:alr=0.5:aalr=0.5:oh=1000:ohr=0.1
 corr_correct_options=--score=weight:lc=10 --aligner diff --filter1 oh=1000
 corr_rd2rd_options=-x ava-pb
 corr_output_coverage=80

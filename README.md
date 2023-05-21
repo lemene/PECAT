@@ -4,6 +4,7 @@ PECAT is a phased error correction and assembly tool for long reads. It includes
 
 # Dependency
 
++ [python3](https://www.python.org) (3.6+)
 + [minimap2](https://github.com/lh3/minimap2) (2.17+)
 + [racon](https://github.com/lbcb-sci/racon) (v1.4.21+)
 + [perl](https://github.com/Perl) (v5.22.1+)
@@ -74,15 +75,15 @@ singularity pull docker://ontresearch/medaka:v1.7.2
 
 Add the following parameters to the config file.
 ```
-phase_clair3_command = singularity exec --containall -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
-polish_medaka_command = singularity exec --containall -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
+phase_clair3_command = singularity exec -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
+polish_medaka_command = singularity exec -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
 ```
 
 ##### Using docker
 Add the following parameters to the config file.
 ```
-phase_clair3_command =  docker run -it --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P`  hkubal/clair3:latest /opt/bin/run_clair3.sh
-polish_medaka_command = docker run -it --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
+phase_clair3_command =  docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P`  hkubal/clair3:latest /opt/bin/run_clair3.sh
+polish_medaka_command = docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
 ```
 
 ## Testing
