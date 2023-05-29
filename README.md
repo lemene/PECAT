@@ -45,7 +45,7 @@ export LIBRARY_PATH=`pwd`/zlib-1.2.13:$LIBRARY_PATH
 make
 ```
 
-<!--
+
 ## Installing PECAT using conda
 
 ```
@@ -53,7 +53,7 @@ conda create -n pecat-env
 conda activate pecat-env
 conda install pecat
 ```
--->
+
 
 ## Installing third-party tools using conda
 PECAT depends on other tools, and their paths need to be added to the system PATH. We recommend using conda to install the third-party tools.
@@ -121,7 +121,9 @@ $ pecat.pl unzip cfgfile
 
 In the `demo` directory, there is a small example (`demo/{cfgfile,reads.fasta.gz}`) and several config files (`demo/configs`). When assembling a dataset, you can choose a config file of a similar species as a template and modify its parameters. See [config.md](doc/config.md). 
 
-**Note:** For large genomes such as cattle and human, we strongly suggest adding the parameter `-f 0.005` or `-f 0.002` to `corr_rd2rd_options`, `corr0_rd2rd_options`, `corr1_rd2rd_options` and `align_rd2rd_options`. The parameter is passed to `minimap2`, which means to filter out top 0.005 or 0.002 fraction of repetitive minimizers. It outputs less candidate overlaps, which reduces disk usage and speeds up error correction step and assembling step.
+## Notes
+***Note:*** We strongly recommend setting the parameter `cleanup=1`. PECAT deletes temporary files, otherwise it take up a lot of disk space.
+***Note:*** For large genomes such as cattle and human, we strongly suggest adding the parameter `-f 0.005` or `-f 0.002` to `corr_rd2rd_options` and `align_rd2rd_options`. See [cfg_cattle_clr.md](demo/configs/cfg_cattle_clr), [cfg_cattle_ont.md](demo/configs/cfg_cattle_ont) and [cfg_hg002_ont.md](demo/configs/cfg_hg002_ont). The parameter is passed to `minimap2`, which means to filter out top 0.005 or 0.002 fraction of repetitive minimizers. It outputs less candidate overlaps, which reduces disk usage and speeds up error correction step and assembling step. 
 
 # More details
 PECAT follows the correct-then-assemble strategy, including an error correction module and a two-round string-graph-based assembly module. Here, we describe some important steps and parameters. See [config.md](doc/config.md)
