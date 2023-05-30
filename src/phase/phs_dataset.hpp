@@ -39,6 +39,7 @@ protected:
     void LoadAva(const std::string &fname);
     
     void LoadSnpFromVcf(const std::string &fname, StringPool& string_pool);
+    void LoadSnpFromVariants(const std::string &fname, StringPool& string_pool);
 public:
     PhsOptions &opts_;
 

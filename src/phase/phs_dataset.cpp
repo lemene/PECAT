@@ -124,6 +124,51 @@ void PhsDataset::LoadSnpFromVcf(const std::string &fname, StringPool& string_poo
     LOG(INFO)("Load SNPs: count = %zd", count);
 }
 
+void PhsDataset::LoadSnpFromVariants(const std::string &fname, StringPool& string_pool) {
+    GzFileReader vcf(fname);
+
+    size_t count = 0;
+    auto line = vcf.GetNoEmptyLine();
+    for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
+        auto its = SplitStringBySpace(line);
+        
+        if (its.size() == 13) {
+            //if (std::stoi(its[12]) == 1) {
+            if (its[12] == "1") {
+
+                int counts[4] = {0, 0, 0, 0};
+                counts[0] = std::stoi(its[2]);
+                counts[1] = std::stoi(its[3]);
+                counts[2] = std::stoi(its[4]);
+                counts[3] = std::stoi(its[5]);
+
+                std::array<int8_t, 4> argmax = {0, 1, 2, 3};
+                std::sort(argmax.begin(), argmax.end(), [&counts](int8_t a, int8_t b) {
+                    return counts[a] > counts[b];
+                });
+
+                auto id = string_pool.QueryIdByString(its[0]);
+                auto pos = std::stoi(its[1]);
+                if (argmax[0] < argmax[1]) {
+                    snps_[id][pos][0] = argmax[0];
+                    snps_[id][pos][1] = argmax[1];
+                } else {
+                    snps_[id][pos][0] = argmax[1];
+                    snps_[id][pos][1] = argmax[0];
+                }
+                assert(snps_[id][pos][0] <4 && snps_[id][pos][1] <4 && snps_[id][pos][0] < snps_[id][pos][1]);
+                assert(snps_[id][pos][0] != snps_[id][pos][1]);
+                count++;
+                
+            } 
+        } else {
+            LOG(WARNING)("Load variants: wrong number of columns");
+        }
+        
+    }
+    LOG(INFO)("Load SNPs: count = %zd", count);
+}
+
 std::unordered_set<int> PhsDataset::QueryGroup(int id) {
     auto iter = ava_groups_.find(id);
     if (iter != ava_groups_.end()) {

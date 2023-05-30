@@ -46,6 +46,12 @@ fsa_ctg_bridge_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_bridge_src
 fsa_rd_haplotype_src = ./prog/fsa_rd_haplotype.cpp ./phase/read_haplotype.cpp ./phase/local_phaser.cpp ./phase/utility.cpp  ./phase/phs_options.cpp ./phase/phs_dataset.cpp
 fsa_rd_haplotype_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_haplotype_src))
 
+fsa_ctg_call_src = ./prog/fsa_ctg_call.cpp ./phase/contig_call.cpp ./phase/local_phaser.cpp ./phase/utility.cpp  ./phase/phs_options.cpp ./phase/phs_dataset.cpp
+fsa_ctg_call_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_call_src))
+
+fsa_rd_consistent_src = ./prog/fsa_rd_consistent.cpp ./phase/read_consistent.cpp ./phase/local_phaser.cpp ./phase/utility.cpp  ./phase/phs_options.cpp ./phase/phs_dataset.cpp
+fsa_rd_consistent_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_consistent_src))
+
 fsa_rd_tools_src = ./prog/fsa_rd_tools.cpp read_tools.cpp
 fsa_rd_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_tools_src))
 
@@ -86,9 +92,10 @@ LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt
 
 obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
 	$(fsa_ctg_bridge_obj) $(fsa_rd_correct_obj) \
-	$(fsa_rd_haplotype_obj) \
+	$(fsa_rd_haplotype_obj) $(fsa_rd_consistent_obj) $(fsa_ctg_call_obj) \
 	$(fsa_ol_tools_obj) $(fsa_rd_tools_obj) $(fsa_misc_tools_obj) \
 	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_ctg_polish_obj) $(fsa_kmer_bin_obj)
+
 
 dep:=$(patsubst %.o,%.d, $(obj))
 
@@ -96,7 +103,7 @@ dep:=$(patsubst %.o,%.d, $(obj))
 bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
       fsa_rd_haplotype fsa_ol_tools fsa_rd_tools \
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
-	  fsa_kmer_bin
+	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
 
@@ -121,6 +128,12 @@ $(BUILD_BIN_DIR)/fsa_ctg_bridge:$(fsa_ctg_bridge_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
 $(BUILD_BIN_DIR)/fsa_rd_haplotype:$(fsa_rd_haplotype_obj) $(BUILD_BIN_DIR)/libfsa.a
+	g++ $^ -o $@ $(LDFLAGS)
+
+$(BUILD_BIN_DIR)/fsa_ctg_call:$(fsa_ctg_call_obj) $(BUILD_BIN_DIR)/libfsa.a
+	g++ $^ -o $@ $(LDFLAGS)
+
+$(BUILD_BIN_DIR)/fsa_rd_consistent:$(fsa_rd_consistent_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
 $(BUILD_BIN_DIR)/fsa_ol_tools:$(fsa_ol_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
