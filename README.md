@@ -53,7 +53,7 @@ conda create -n pecat-env
 conda activate pecat-env
 conda install pecat
 ```
-
+Then we can run `pecal.pl`.
 
 ## Installing third-party tools using conda
 PECAT depends on other tools, and their paths need to be added to the system PATH. We recommend using conda to install the third-party tools.
@@ -73,11 +73,12 @@ singularity pull docker://hkubal/clair3:v0.1-r12
 singularity pull docker://ontresearch/medaka:v1.7.2
 ```
 
-Add the following parameters to the config file.
+Add the following parameters to the config file. See [cfg_cattle_ont](demo/configs/cfg_cattle_ont)
 ```
 phase_clair3_command = singularity exec -B `pwd -P`:`pwd -P` clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
 polish_medaka_command = singularity exec -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif medaka
 ```
+`clair3_v0.1-r12.sif` and `medaka_v1.7.2.sif` should be replaced with the paths of corresponding images. Or the images are placed to the current path.
 
 ##### Using docker
 Add the following parameters to the config file.
@@ -123,7 +124,8 @@ In the `demo` directory, there is a small example (`demo/{cfgfile,reads.fasta.gz
 
 ## Notes
 ***Note:*** We strongly recommend setting the parameter `cleanup=1`. PECAT deletes temporary files, otherwise it take up a lot of disk space.
-***Note:*** For large genomes such as cattle and human, we strongly suggest adding the parameter `-f 0.005` or `-f 0.002` to `corr_rd2rd_options` and `align_rd2rd_options`. See [cfg_cattle_clr.md](demo/configs/cfg_cattle_clr), [cfg_cattle_ont.md](demo/configs/cfg_cattle_ont) and [cfg_hg002_ont.md](demo/configs/cfg_hg002_ont). The parameter is passed to `minimap2`, which means to filter out top 0.005 or 0.002 fraction of repetitive minimizers. It outputs less candidate overlaps, which reduces disk usage and speeds up error correction step and assembling step. 
+
+***Note:*** For large genomes such as cattle and human, we strongly suggest adding the parameter `-f 0.005` or `-f 0.002` to `corr_rd2rd_options` and `align_rd2rd_options`. See [cfg_cattle_clr](demo/configs/cfg_cattle_clr), [cfg_cattle_ont](demo/configs/cfg_cattle_ont) and [cfg_hg002_ont](demo/configs/cfg_hg002_ont). The parameter is passed to `minimap2`, which means to filter out top 0.005 or 0.002 fraction of repetitive minimizers. It outputs less candidate overlaps, which reduces disk usage and speeds up error correction step and assembling step. 
 
 # More details
 PECAT follows the correct-then-assemble strategy, including an error correction module and a two-round string-graph-based assembly module. Here, we describe some important steps and parameters. See [config.md](doc/config.md)
