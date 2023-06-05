@@ -27,10 +27,11 @@ protected:
     class StringPool &string_pool_;
 };
 
-class PrjVariants {
+class SnpStore {
 public:
-    PrjVariants(class StringPool &sp) : string_pool_(sp) {}
+    SnpStore(class StringPool &sp) : string_pool_(sp) {}
     void Load(const std::string &fname);
+    void LoadFromVcf(const std::string &fname);
     const std::unordered_map<size_t, std::array<uint8_t,2>>& Get(int id) const {
         auto iter = variants_.find(id);
         return iter != variants_.end() ? iter->second : empty_;

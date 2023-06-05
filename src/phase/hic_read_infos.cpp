@@ -39,15 +39,15 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
 }
 
 void HicReadInfos::Build(const std::string& fn_hic1, const std::string& fn_paf1, const std::string& fn_hic2, const std::string& fn_paf2, const std::string &fn_vars) {
-    PrjVariants vars(string_pool_);
-    vars.Load(fn_vars);
+    SnpStore vars(string_pool_);
+    vars.LoadFromVcf(fn_vars);
 
     size_t sp_offset = string_pool_.Size();
     BuildOne(fn_hic1, fn_paf1, 0, sp_offset, vars);
     BuildOne(fn_hic2, fn_paf2, 1, sp_offset, vars);
 }
 
-void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t ihic, size_t sp_offset, const PrjVariants &vars) {
+void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t ihic, size_t sp_offset, const SnpStore &vars) {
     assert(ihic == 0 || ihic == 1);
 
     ReadStore hic_store(string_pool_, sp_offset);

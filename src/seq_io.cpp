@@ -83,5 +83,45 @@ bool FastqReader::GetHead(std::string &head, std::string &sub_head) {
     }
 }
 
+//////////////////
+bool FastaInBlock::Next(Item& item) {
+    item.quality[0] = item.quality[1] = nullptr;
+    return GetHead(item) && GetSeq(item);
+
+}
+bool FastaInBlock::GetHead(Item& item) {
+    index_ = std::find(index_, end_, '>');
+    if (index_ < end_) {
+        auto s = index_ + 1;
+        while (s < end_ && ::isspace(*s)) s++;
+        auto e = s;
+        while (e < end_ && ::isspace(*e)) e++;
+        if (e > s) {
+            item.head[0] = s;
+            item.head[1] = e;
+
+            auto ss = e;
+            while (ss < end_ && ::isspace(*ss)) ss++;
+            auto se = ss;
+            while (se < end_ && *se != '\n') se++;
+            item.sub_head[0] = ss;
+            item.sub_head[1] = se;
+            return true;
+        } else {
+            return false;
+
+        }
+
+    } else {
+        return false;
+    }
+}
+
+bool FastaInBlock::GetSeq(Item& item) {
+    
+    return true;
+}
+
+
 } // namespace fsa {
     

@@ -16,7 +16,8 @@ void PhsDataset::Load() {
 
     if (!opts_.vcf_fname_.empty()) {
         LOG(INFO)("Load VCF");
-        LoadSnpFromVcf(opts_.vcf_fname_, rd_store_.GetStringPool());
+        snp_store_.LoadFromVcf(opts_.vcf_fname_);
+        //LoadSnpFromVcf(opts_.vcf_fname_, rd_store_.GetStringPool());
         opts_.phase_opts_.using_vcf = true;
         LOG(INFO)("Set using vcf");
     }
@@ -75,99 +76,99 @@ void PhsDataset::LoadAva(const std::string &fname) {
     ol_ava_.Group(ava_groups_, opts_.thread_size_);
 }
 
-void PhsDataset::LoadSnpFromVcf(const std::string &fname, StringPool& string_pool) {
-    GzFileReader vcf(fname);
+// void PhsDataset::LoadSnpFromVcf(const std::string &fname, StringPool& string_pool) {
+//     GzFileReader vcf(fname);
 
-    size_t count = 0;
-    auto line = vcf.GetNoEmptyLine();
-    for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
-        if (line[0] == '#') continue;
-        const int CHROM = 0;
-        const int POS = 1;
-        const int REF = 3;
-        const int ALT = 4;
-        const int FILTER = 6;
-        const int SAMPLE = 9;
-        auto its = SplitStringBySpace(line);
-        assert(its.size() >= 10);
-        std::array<uint8_t,2> bases = {(uint8_t)-1, (uint8_t)-1};
-        if (its[FILTER] == "PASS" && its[SAMPLE].size() >= 3) {
+//     size_t count = 0;
+//     auto line = vcf.GetNoEmptyLine();
+//     for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
+//         if (line[0] == '#') continue;
+//         const int CHROM = 0;
+//         const int POS = 1;
+//         const int REF = 3;
+//         const int ALT = 4;
+//         const int FILTER = 6;
+//         const int SAMPLE = 9;
+//         auto its = SplitStringBySpace(line);
+//         assert(its.size() >= 10);
+//         std::array<uint8_t,2> bases = {(uint8_t)-1, (uint8_t)-1};
+//         if (its[FILTER] == "PASS" && its[SAMPLE].size() >= 3) {
 
-            if (its[SAMPLE].find("0/1") == 0 ) {
-                if (its[REF].size() == 1 && its[ALT].size() == 1) {
-                    bases[0] = DnaSeq::Serial(its[REF][0]);
-                    bases[1] = DnaSeq::Serial(its[ALT][0]);
-                    count ++;
-                }
+//             if (its[SAMPLE].find("0/1") == 0 ) {
+//                 if (its[REF].size() == 1 && its[ALT].size() == 1) {
+//                     bases[0] = DnaSeq::Serial(its[REF][0]);
+//                     bases[1] = DnaSeq::Serial(its[ALT][0]);
+//                     count ++;
+//                 }
 
-            } else if (its[SAMPLE].find("1/2") == 0) {
-                if (its[ALT].size() == 3) { //A,C
-                    bases[0] = DnaSeq::Serial(its[ALT][0]);
-                    bases[1] = DnaSeq::Serial(its[ALT][2]);
-                    count ++;
-                }
-            } else {
-                // pass
-            }
-        }
+//             } else if (its[SAMPLE].find("1/2") == 0) {
+//                 if (its[ALT].size() == 3) { //A,C
+//                     bases[0] = DnaSeq::Serial(its[ALT][0]);
+//                     bases[1] = DnaSeq::Serial(its[ALT][2]);
+//                     count ++;
+//                 }
+//             } else {
+//                 // pass
+//             }
+//         }
 
-        if (bases[0] != (uint8_t)-1) {
-            auto id = string_pool.QueryIdByString(its[CHROM]);
-            auto pos = std::stoi(its[POS]) - 1;
-            if (bases[0] > bases[1]) std::swap(bases[0], bases[1]);
+//         if (bases[0] != (uint8_t)-1) {
+//             auto id = string_pool.QueryIdByString(its[CHROM]);
+//             auto pos = std::stoi(its[POS]) - 1;
+//             if (bases[0] > bases[1]) std::swap(bases[0], bases[1]);
 
-            snps_[id][pos] = bases;
-        }
+//             snps_[id][pos] = bases;
+//         }
 
         
-    }
-    LOG(INFO)("Load SNPs: count = %zd", count);
-}
+//     }
+//     LOG(INFO)("Load SNPs: count = %zd", count);
+// }
 
-void PhsDataset::LoadSnpFromVariants(const std::string &fname, StringPool& string_pool) {
-    GzFileReader vcf(fname);
+// void PhsDataset::LoadSnpFromVariants(const std::string &fname, StringPool& string_pool) {
+//     GzFileReader vcf(fname);
 
-    size_t count = 0;
-    auto line = vcf.GetNoEmptyLine();
-    for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
-        auto its = SplitStringBySpace(line);
+//     size_t count = 0;
+//     auto line = vcf.GetNoEmptyLine();
+//     for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
+//         auto its = SplitStringBySpace(line);
         
-        if (its.size() == 13) {
-            //if (std::stoi(its[12]) == 1) {
-            if (its[12] == "1") {
+//         if (its.size() == 13) {
+//             //if (std::stoi(its[12]) == 1) {
+//             if (its[12] == "1") {
 
-                int counts[4] = {0, 0, 0, 0};
-                counts[0] = std::stoi(its[2]);
-                counts[1] = std::stoi(its[3]);
-                counts[2] = std::stoi(its[4]);
-                counts[3] = std::stoi(its[5]);
+//                 int counts[4] = {0, 0, 0, 0};
+//                 counts[0] = std::stoi(its[2]);
+//                 counts[1] = std::stoi(its[3]);
+//                 counts[2] = std::stoi(its[4]);
+//                 counts[3] = std::stoi(its[5]);
 
-                std::array<int8_t, 4> argmax = {0, 1, 2, 3};
-                std::sort(argmax.begin(), argmax.end(), [&counts](int8_t a, int8_t b) {
-                    return counts[a] > counts[b];
-                });
+//                 std::array<int8_t, 4> argmax = {0, 1, 2, 3};
+//                 std::sort(argmax.begin(), argmax.end(), [&counts](int8_t a, int8_t b) {
+//                     return counts[a] > counts[b];
+//                 });
 
-                auto id = string_pool.QueryIdByString(its[0]);
-                auto pos = std::stoi(its[1]);
-                if (argmax[0] < argmax[1]) {
-                    snps_[id][pos][0] = argmax[0];
-                    snps_[id][pos][1] = argmax[1];
-                } else {
-                    snps_[id][pos][0] = argmax[1];
-                    snps_[id][pos][1] = argmax[0];
-                }
-                assert(snps_[id][pos][0] <4 && snps_[id][pos][1] <4 && snps_[id][pos][0] < snps_[id][pos][1]);
-                assert(snps_[id][pos][0] != snps_[id][pos][1]);
-                count++;
+//                 auto id = string_pool.QueryIdByString(its[0]);
+//                 auto pos = std::stoi(its[1]);
+//                 if (argmax[0] < argmax[1]) {
+//                     snps_[id][pos][0] = argmax[0];
+//                     snps_[id][pos][1] = argmax[1];
+//                 } else {
+//                     snps_[id][pos][0] = argmax[1];
+//                     snps_[id][pos][1] = argmax[0];
+//                 }
+//                 assert(snps_[id][pos][0] <4 && snps_[id][pos][1] <4 && snps_[id][pos][0] < snps_[id][pos][1]);
+//                 assert(snps_[id][pos][0] != snps_[id][pos][1]);
+//                 count++;
                 
-            } 
-        } else {
-            LOG(WARNING)("Load variants: wrong number of columns");
-        }
+//             } 
+//         } else {
+//             LOG(WARNING)("Load variants: wrong number of columns");
+//         }
         
-    }
-    LOG(INFO)("Load SNPs: count = %zd", count);
-}
+//     }
+//     LOG(INFO)("Load SNPs: count = %zd", count);
+// }
 
 std::unordered_set<int> PhsDataset::QueryGroup(int id) {
     auto iter = ava_groups_.find(id);

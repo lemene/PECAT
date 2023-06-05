@@ -279,7 +279,7 @@ void ContigPhaser::ConfirmVariants(std::vector<Variant> &vars) {
 }
 
 void ContigPhaser::GetVariantsFromSnps(const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars) {
-    auto snp = dataset_.snps_.find(ctg_);
+    const auto& snp = dataset_.snp_store_.Get(ctg_);
 
     for (auto &iter : read_infos) {
         const Overlap& o = *(iter.second.o);
@@ -291,14 +291,13 @@ void ContigPhaser::GetVariantsFromSnps(const std::unordered_map<ReadOffset, Read
         }
     }
 
-    if (snp != dataset_.snps_.end()) {
-        for (const auto& s : snp->second) {
-            if (opts_.cov_opts_.Effective(vars[s.first].counts[9])) {
-                vars[s.first].var[0] = s.second[0];
-                vars[s.first].var[1] = s.second[1];
-            }
+    for (const auto& s : snp) {
+        if (opts_.cov_opts_.Effective(vars[s.first].counts[9])) {
+            vars[s.first].var[0] = s.second[0];
+            vars[s.first].var[1] = s.second[1];
         }
     }
+    
 }
 
 

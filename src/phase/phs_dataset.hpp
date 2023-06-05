@@ -2,6 +2,7 @@
 
 #include "../overlap_store.hpp"
 #include "../read_store.hpp"
+#include "../utils/project_file.hpp"
 
 namespace fsa {
 
@@ -37,9 +38,6 @@ protected:
     void LoadReads();
     void LoadOverlaps(const std::string &fname);
     void LoadAva(const std::string &fname);
-    
-    void LoadSnpFromVcf(const std::string &fname, StringPool& string_pool);
-    void LoadSnpFromVariants(const std::string &fname, StringPool& string_pool);
 public:
     PhsOptions &opts_;
 
@@ -53,7 +51,8 @@ public:
     std::unordered_set<Seq::Id> contig_ids_;
     std::unordered_map<Seq::Id, size_t> read_ids2_;
 
-    std::unordered_map<Seq::Id, std::unordered_map<size_t, std::array<uint8_t, 2>>> snps_;
+    //std::unordered_map<Seq::Id, std::unordered_map<size_t, std::array<uint8_t, 2>>> snps_;
+    SnpStore snp_store_ { rd_store_.GetStringPool() };
 };
 
 } // namespace fsa

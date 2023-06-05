@@ -30,7 +30,7 @@ public:
     const std::unordered_map<size_t, HicReadInfo>& GetInfos() const { return infos_; }
 protected:
     void BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t i, size_t sp_offset);
-    void BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t i, size_t sp_offset, const class PrjVariants &vars);
+    void BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t i, size_t sp_offset, const class SnpStore &vars);
     
     void LoadLine(const std::string &line);
 protected:
