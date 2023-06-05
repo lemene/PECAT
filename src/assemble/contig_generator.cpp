@@ -798,7 +798,9 @@ void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const Read
         DUMPER["asm"]("\n");
     }
 
-    for (size_t _ = 0; _ < 1000; ++_) {
+    double best_score = -1.0 * phasing_.size();
+    std::vector<uint8_t> best_phasing = phasing_;
+    for (size_t _ = 0; _ < 10; ++_) {
         DUMPER["asm"]("phasing(%zd), size=%zd\n", _, phasing_.size());
         std::vector<double> link_scores(phasing_.size(), 0.0);
         for (size_t  i = 0; i < link_scores.size(); ++i) {
@@ -818,26 +820,60 @@ void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const Read
                     count[1] += scores[i*2*acontigs.size()*2 + j*2];
                     count[1] += scores[(i*2+1)*acontigs.size()*2 + j*2+1];
                 }
-                DUMPER["asm"]("phasing(%zd), count index(%zd, %zd, %zd, %zd)\n", _, 
-                    i*2*acontigs.size()*2 + j*2, (i*2+1)*acontigs.size()*2 + j*2+1, i*2*acontigs.size()*2 + j*2+1, (i*2+1)*acontigs.size()*2 + j*2);
-                DUMPER["asm"]("phasing(%zd), count sub(%zd, %zd) = (%zd, %zd)\n", _, i, j, count[0], count[1]);
+                //DUMPER["asm"]("phasing(%zd), count index(%zd, %zd, %zd, %zd)\n", _, 
+                //    i*2*acontigs.size()*2 + j*2, (i*2+1)*acontigs.size()*2 + j*2+1, i*2*acontigs.size()*2 + j*2+1, (i*2+1)*acontigs.size()*2 + j*2);
+                //DUMPER["asm"]("phasing(%zd), count sub(%zd, %zd) = (%zd, %zd)\n", _, i, j, count[0], count[1]);
             }
             
             DUMPER["asm"]("phasing cout =(%zd, %zd)\n", count[0], count[1]);
             auto s = count[0] + count[1];
-            link_scores[i] = s > 0 ? (count[0]*1.0 - count[1]) / s : 0.0;
+            link_scores[i] = s > 0 ? (count[0]*1.0 - count[1]) / s : 1;
             DUMPER["asm"]("phasing link_scores(%zd) = %f\n", i, link_scores[i]);
+        }
+        auto phase_score = std::accumulate(link_scores.begin(), link_scores.end(), 0.0);
+        if (phase_score > best_score) {
+            best_phasing = phasing_;
+            best_score = phase_score;
         }
         auto mm = std::min_element(link_scores.begin(), link_scores.end());
         DUMPER["asm"]("phasing mm = %zd\n", (size_t)(mm - link_scores.begin()));
-        if (*mm < 0) {
-            phasing_[mm - link_scores.begin()] = (phasing_[mm - link_scores.begin()] + 1) % 2;
+        if (*mm < 0.33) {
+            size_t ch = mm - link_scores.begin();
+            phasing_[ch] = (phasing_[ch] + 1) % 2;
+            for (size_t i = 0; i < link_scores.size(); ++i) {
+                if (*mm == i) continue;
+                std::array<size_t, 2> count = {0, 0};
+                if (phasing_[i] == phasing_[ch]) {
+                    count[0] += scores[i*2*acontigs.size()*2 + ch*2];
+                    count[0] += scores[(i*2+1)*acontigs.size()*2 + ch*2+1];
+
+                    count[1] += scores[i*2*acontigs.size()*2 + ch*2+1];
+                    count[1] += scores[(i*2+1)*acontigs.size()*2 + ch*2];
+                } else {
+                    count[0] += scores[i*2*acontigs.size()*2 + ch*2+1];
+                    count[0] += scores[(i*2+1)*acontigs.size()*2 + ch*2];
+                    
+                    count[1] += scores[i*2*acontigs.size()*2 + ch*2];
+                    count[1] += scores[(i*2+1)*acontigs.size()*2 + ch*2+1];
+                }
+
+                auto s = count[0] + count[1];
+                auto ss = s > 0 ? (count[0]*1.0 - count[1]) / s : 0.0;
+                if ( ss < -0.33) {
+                    phasing_[i] = (phasing_[i] + 1) % 2;
+                    DUMPER["asm"]("phasing change (%zd) -> %d \n", (size_t)(i), phasing_[i]);
+                }
+            }
         } else {
             break;
         }
         for (size_t i = 0; i < phasing_.size(); ++i) {
             DUMPER["asm"]("phasing result[%zd] = %d\n", i, phasing_[i]);
         }
+    }
+    phasing_ = best_phasing;
+    for (size_t i = 0; i < phasing_.size(); ++i) {
+        DUMPER["asm"]("best phasing result[%zd] = %d\n", i, phasing_[i]);
     }
 
 }
