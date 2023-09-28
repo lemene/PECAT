@@ -3,6 +3,10 @@
 #include "./simplifier.hpp"
 namespace fsa {
 
+
+// TODO 未整理的而类型和函数
+using EdgeScore = std::array<int, 4>;   // alignment length, number of identical SNPs, number of different SNPs
+
 class BestOverlapsSimplifier : public Simplifier {
 public:
 
@@ -33,7 +37,7 @@ public:
 
 
     EdgeScore GetEdgeScore(const BaseEdge *e) {
-        std::array<int,3> score = { (int)e->Score(), 0, 0 };     
+        EdgeScore score = { (int)e->Score(), 0, 0, (int)(e->Identity()*1000000) };     
         if (rvs_ != nullptr) {
             auto mm = rvs_->GetClosestSnps(*(e->ol_));
             score[1] = mm[0];
@@ -46,6 +50,22 @@ public:
         if (a[1]*snp_weight_ - a[2] > b[1]*snp_weight_ - b[2]) {
             return true;
         } else if (a[1]*snp_weight_ - a[2] == b[1] * snp_weight_ - b[2]) {
+            if (a[0] > b[0]*2) {
+                return true;
+            } else if (a[0]*2 < b[0]) {
+                return false;
+            } else {
+                // TODO
+                double err_a = 100 - a[3]*1.0 / 1000000;
+                double err_b = 100 - b[3]*1.0 / 1000000;
+                if (err_a * 2 < err_b) {
+                    return true;
+                } else if (err_a > err_b*2) {
+                    return false;
+                } else {
+                    return a[0] * (1-err_a) > b[0] * (1-err_b);
+                }
+            }
             return a[0] > b[0];
         } else {
             return false;
@@ -87,46 +107,8 @@ public:
         // auto brscore = rate_score(b);
         // return a[2] + count < b[2] && arscore * rate < brscore;
     }
-    bool EdgeScoreSignificantlyGreater2(const BestItem &a, const BestItem &b) {
- 
-        size_t count = th_count;
-        double rate = th_rate[0];
-        
-        auto rate_score = [](const EdgeScore &a) {
-            auto s = a[1] + a[2];
-            return s > 0 ? 1.0*a[2] / s : 0.0;
-        };
-
-        if (a.e->OutNode()->InDegree() == 1 && b.e->OutNode()->InDegree() >= 2 && rvs_ != nullptr) {
-            if (a.s[1] - a.s[2] >= (int)count && (a.s[1] - a.s[2]) - (b.s[1] - b.s[2]) >= (int)count) {
-                auto a_in_node = a.e->InNode();
-                auto arscore = rate_score(a.s);
-
-                for (size_t i = 0; i < b.e->OutNode()->InDegree(); ++i) {
-                    if (b.e->OutNode()->InEdge(i) != b.e) {
-                        auto n = b.e->OutNode()->InNode<BaseNode>(i);
-                        assert(rvs_ != nullptr);
-                        auto mm = rvs_->Test(n->ReadId(), a_in_node->ReadId());
-                        auto bs = b.s;
-                        bs[1] += mm[0];
-                        bs[2] += mm[1];
-                        auto brscore = rate_score(bs);
-                        
-                        if (a.s[2] + (int)count < bs[2] && arscore * rate < brscore) {
-                            return true;
-                        }
-                        
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
+    
     auto FindBestOutEdge(BaseNode* n) -> std::vector<BestItem>;
-    auto FindBestInEdge(BaseNode* n) -> std::vector<BestItem>;
-    template<typename GN, typename GE>
-    auto FindBestEdge(BaseNode* n, GN gn, GE ge) -> std::vector<BestItem>;
 
     void FindCandidateBestEdges();
     void ComfirmCandidateBestEdges();

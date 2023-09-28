@@ -1,8 +1,5 @@
 #pragma once
 
-#ifndef FSA_CORRECT_ALIGNMENT_CACHE_HPP
-#define FSA_CORRECT_ALIGNMENT_CACHE_HPP
-
 #include <unordered_map>
 #include <unordered_set>
 
@@ -23,7 +20,11 @@ public:
         ids_.insert(ids.begin(), ids.begin()+size); 
     }
 protected:
-    long long int ToKey(Seq::Id qit, Seq::Id tid) const { return ((long long int)qit << 32) + tid; }
+    long long int ToKey(Seq::Id qit, Seq::Id tid, bool same_direct) const {
+        long long int k = ((long long int)qit << 32) + tid;
+        assert(k > 0);  // TODO Save one bit
+        return same_direct ? k : -k;
+    }
 
 protected:
     //std::unordered_map<std::array<Seq::Id, 2>, Alignment, ArrayHash<Seq::Id, 2>, ArrayEqual<Seq::Id, 2>> cache_;
@@ -32,5 +33,3 @@ protected:
 };
 
 } // namespace fsa {
-
-#endif // FSA_CORRECT_ALIGNMENT_CACHE_HPP

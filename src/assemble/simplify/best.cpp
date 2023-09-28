@@ -40,13 +40,12 @@ auto BestOverlapsSimplifier::FindBestOutEdge(BaseNode* n) -> std::vector<BestIte
     std::vector<BestItem> bests;
     for (size_t i = 0; i < n->OutDegree(); ++i) {
         auto e = (BaseEdge*)n->OutEdge(i);
-        
         bool done = false;
         auto s = GetEdgeScore(e);
         for (size_t i = 0; i < bests.size(); ++i) {
 
             if (!IsOutEdgeInconsistent(e, bests[i].e, 3, bad_ols_)) {
-                if (s[0] > bests[i].s[0]) {
+                if (EdgeScoreGreater(s, bests[i].s)) {
                     bests[i] = {e, s};
                 }         
                 done = true;
@@ -57,12 +56,30 @@ auto BestOverlapsSimplifier::FindBestOutEdge(BaseNode* n) -> std::vector<BestIte
         }
     }
 
-    std::sort(bests.begin(), bests.end(), [this](const BestItem &a, const BestItem &b) {
+    // remove duplications
+    std::vector<BestItem> bests_nodup;
+    std::unordered_set<BaseEdge*> added;
+    for (auto &b : bests) {
+        if (added.find(b.e) == added.end()) {
+            added.insert(b.e);
+            bests_nodup.push_back(b);
+        }
+    }
+    Debug("begin sort %zd\n", bests.size());
+    for (auto b : bests) {
+        Debug("sorting: e=%s s=(%d %d %d %d)\n", ToString(b.e).c_str(), b.s[0], b.s[1], b.s[2], b.s[3]);
+    }
+    std::sort(bests_nodup.begin(), bests_nodup.end(), [this](const BestItem &a, const BestItem &b) {
         return EdgeScoreGreater(a.s, b.s);
     });
+    //assert(bests.size() == bests_nodup.size());
+    Debug("end sort %zd\n", bests_nodup.size());
+    for (auto b : bests_nodup) {
+        Debug("sorted: e=%s s=(%d %d %d %d)\n", ToString(b.e).c_str(), b.s[0], b.s[1], b.s[2], b.s[3]);
+    }
 
 
-    return bests;
+    return bests_nodup;
 }
 
 
@@ -84,7 +101,6 @@ void BestOverlapsSimplifier::FindCandidateBestEdges() {
     };
 
     MultiThreadRun((size_t)graph_.Options().thread_size, work_func);
-
 }
 
 
@@ -103,17 +119,16 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
                 auto e = out_bests[i].e;
                 auto s = out_bests[i].s;
 
-                Debug("cand best type: %s -> %s, %d %d %d, (%zd/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-                    graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], i, out_bests.size());
+                Debug("cand best type: %s -> %s, %d %d %d %d, (%zd/%zd)\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+                    graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], s[3], i, out_bests.size());
  
-                //if (!EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[i].s) && !EdgeScoreSignificantlyGreater2(out_bests[0], out_bests[i])) {
                 if (!EdgeScoreSignificantlyGreater(out_bests[0].s, out_bests[i].s)) {
-                    Debug("cand best type ok: %s -> %s, %d %d %d, | %zd %d\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-                        graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests[i].e, counts[out_bests[i].e]);
+                    Debug("cand best type ok: %s -> %s, %d %d %d %d, | %zd %d\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+                        graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], s[3], out_bests[i].e, counts[out_bests[i].e]);
                     counts[out_bests[i].e] += 1;
                     counts[graph_.ReverseEdge(out_bests[i].e)] += 1;
-                    Debug("cand best type ok: %s -> %s, %d %d %d, | %zd %d\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
-                        graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], out_bests[i].e, counts[out_bests[i].e]);
+                    Debug("cand best type ok: %s -> %s, %d %d %d %d, | %zd %d\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
+                        graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str(), s[0], s[1], s[2], s[3], out_bests[i].e, counts[out_bests[i].e]);
                 } else {
                     Debug("cand discard: %s -> %s\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
                         graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str());

@@ -192,7 +192,7 @@ void Program_SplitName::Running() {
     if (method_ == "plain") {
         GroupReadsPlainly();
     } else {
-        //GroupReadsByOverlaps();
+        GroupReadsByOverlaps();
     }
 
     LOG(INFO)("Save read names");
@@ -247,86 +247,79 @@ void Program_SplitName::GroupReadsPlainly() {
     }
 }
 
-// void Program_SplitName::GroupReadsByOverlaps() {
-//     std::string itype = OverlapStore::DetectFileType(fn_ols_);
-//     assert(itype == "txt" || itype == "txt.gz" || itype == "paf" || itype == "paf.gz" );
+void Program_SplitName::GroupReadsByOverlaps() {
+    std::string itype = OverlapStore::DetectFileType(fn_ols_);
+    assert(itype == "txt" || itype == "txt.gz" || itype == "paf" || itype == "paf.gz" );
 
-//     std::vector<std::string> ifnames = itype == "txt" ? GetLineFromFile(fn_ols_) : std::vector<std::string>({fn_ols_});
-//     MultiFileReader reader(ifnames);
+    std::vector<std::string> ifnames = itype == "txt" ? GetLineFromFile(fn_ols_) : std::vector<std::string>({fn_ols_});
+    MultiFileReader reader(ifnames);
 
-//     std::vector<std::vector<Seq::Id>> groups(read_ids_.size());
+    std::vector<std::vector<Seq::Id>> groups(read_ids_.size());
     
-//     std::mutex mutex_combine;
-//     std::mutex mutex_generate;
+    std::mutex mutex_combine;
+    std::mutex mutex_generate;
 
+    auto combine = [&mutex_combine, &groups](const std::vector<std::vector<int>> &gs) {
+        std::lock_guard<std::mutex> lock(mutex_combine);
 
-//     auto generate = [&reader, &mutex_generate](std::vector<char> &block) {
-//         std::lock_guard<std::mutex> lock(mutex_generate);
-//         return reader.GetBlock(block, "\n", 1);
-//     };
-
-    
-//     auto combine = [&mutex_combine, &groups](const std::vector<std::vector<int>> &gs) {
-//         std::lock_guard<std::mutex> lock(mutex_combine);
-
-//         for (size_t i = 0; i < gs.size(); ++i) {
-//             groups[i].insert(groups[i].end(), gs[i].begin(), gs[i].end());
-//         }
-//     };
+        for (size_t i = 0; i < gs.size(); ++i) {
+            groups[i].insert(groups[i].end(), gs[i].begin(), gs[i].end());
+        }
+    };
  
 
-//     auto work = [&](size_t threadid) {
+    auto work = [&](size_t threadid) {
 
-//         LineInBlock line_in_block(reader, 100000000, &mutex_generate);
+        LineInBlock line_in_block(reader, 10000000, &mutex_generate);
 
-//         std::vector<std::vector<int>> gs(read_ids_.size());
-//         std::string line;
-//         while (line_in_block.GetLine(line)) {
-//             auto its = SplitStringBySpace(line);
-//             // TODO 目前只支持paf
-//             auto aid = string_pool_.QueryIdByString(its[0]);
-//             auto bid = string_pool_.QueryIdByString(its[5]);
+        std::vector<std::vector<int>> gs(read_ids_.size());
+        std::string line;
+        while (line_in_block.GetLine(line)) {
+            auto its = SplitStringBySpace(line);
+            // TODO 目前只支持paf
+            auto aid = string_pool_.QueryIdByString(its[0]);
+            auto bid = string_pool_.QueryIdByString(its[5]);
 
-//             auto ait = read_ids_index_.find(aid);
-//             auto bit = read_ids_index_.find(bid);
-//             if (ait != read_ids_index_.end() && bit != read_ids_index_.end()) {
-//                 gs[ait->second].push_back(bit->second);
-//                 gs[bit->second].push_back(ait->second);
-//             }
-//         }
+            auto ait = read_ids_index_.find(aid);
+            auto bit = read_ids_index_.find(bid);
+            if (ait != read_ids_index_.end() && bit != read_ids_index_.end()) {
+                gs[ait->second].push_back(bit->second);
+                gs[bit->second].push_back(ait->second);
+            }
+        }
   
-//         combine(gs);
-//         for (auto &ig : gs) {
-//             ig.clear();
-//         }
-//     };   
+        combine(gs);
+        for (auto &ig : gs) {
+            ig.clear();
+        }
+    };   
  
-//     MultiThreadRun((size_t)thread_size_, work);
+    MultiThreadRun((size_t)thread_size_, work);
 
-//     groups_.assign(read_ids_.size(), -1);
+    groups_.assign(read_ids_.size(), -1);
 
-//     int curr_group = 0;
-//     long long int curr_group_size = 0;
+    int curr_group = 0;
+    long long int curr_group_size = 0;
 
-//     for (size_t i = 0; i < groups_.size(); ++i) {
-//         if (groups_[i] == -1) {
-//             groups_[i] = curr_group;
-//             curr_group_size += lengths_[read_ids_[i]];
+    for (size_t i = 0; i < groups_.size(); ++i) {
+        if (groups_[i] == -1) {
+            groups_[i] = curr_group;
+            curr_group_size += lengths_[read_ids_[i]];
 
-//             for (auto j : groups[i]) {
-//                 if (groups_[j] == -1) {
-//                     groups_[j] = curr_group;
-//                     curr_group_size += lengths_[read_ids_[j]];
-//                 }
-//             }
-//             if (curr_group_size > block_size_) {
-//             printf("%zd\n", curr_group_size);
-//                 curr_group += 1;
-//                 curr_group_size = 0;
-//             }
-//         }
-//     }
-// }
+            for (auto j : groups[i]) {
+                if (groups_[j] == -1) {
+                    groups_[j] = curr_group;
+                    curr_group_size += lengths_[read_ids_[j]];
+                }
+            }
+            if (curr_group_size > block_size_) {
+                printf("%lld\n", curr_group_size);
+                curr_group += 1;
+                curr_group_size = 0;
+            }
+        }
+    }
+}
 
 void Program_SplitName::SaveReadnames(const std::string &opattern) {
     auto maxitem = std::max_element(groups_.begin(), groups_.end());
@@ -380,13 +373,17 @@ void Program_SplitName::SaveOverlaps(const std::string &fn_ols, const std::strin
 
     auto work = [&](size_t tid) {
 
-        const size_t BSIZE = 100000000;
+        const size_t BSIZE = 1000000;
         LineInBlock line_in_block(reader, BSIZE, &mutex_generate);
 
         std::vector<std::ostringstream> osss(ofs.size());
 
+        size_t lineno = 0;
+        
         std::string line;
-        while (line_in_block.GetLine(line)) {
+        for (bool is_valid = line_in_block.GetLine(line); is_valid; is_valid = line_in_block.GetLine(line)) {
+            lineno ++;
+
             auto its = SplitStringBySpace(line);
             // TODO 目前只支持paf
             auto aid = string_pool_.QueryIdByString(its[0]);
@@ -407,14 +404,17 @@ void Program_SplitName::SaveOverlaps(const std::string &fn_ols, const std::strin
                 }
             }
 
-            combine(osss, BSIZE);
+            if (lineno % 100000 == 0) {
+                combine(osss, BSIZE);
+            } 
+
 
         }
         combine(osss, 0);
 
     };   
  
-    MultiThreadRun((size_t)thread_size_, work);
+    MultiThreadRun(std::min<size_t>(8, thread_size_), work);
 }
 
 void Program_Longest::Running() {

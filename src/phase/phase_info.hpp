@@ -31,6 +31,7 @@ public:
     bool Contain(int id0, int id1) const;
     const StringPool& GetStringPool() const { return string_pool_; }
     std::unordered_set<int> Get(int id) const;
+    std::vector<std::array<int, 3>> GetInconsistent(int id) const;    
 protected:
     StringPool default_string_pool_;
     StringPool& string_pool_;

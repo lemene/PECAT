@@ -59,6 +59,20 @@ void AlignmentGraph::ParseScoreParamter(const std::string &opts) {
             auto kv = SplitStringByChar(ss[i], '=');
             if (kv[0] == "lc") {
                 opts_.range[0] = std::stoi(kv[1]);
+            } else if (kv[0] == "cov") {
+                auto sss = SplitStringByChar(kv[1], ',');
+                if (sss.size() >= 1 && sss[0].size() > 0) {
+                    opts_.range[0] = std::stoi(sss[0]);
+                }
+                if (sss.size() >= 2 && sss[1].size() > 0) {
+                    opts_.range[1] = std::stoi(sss[1]);
+                }
+                if (sss.size() >= 3 && sss[2].size() > 0) {
+                    opts_.rate[0] = std::stod(sss[2]);
+                }
+                if (sss.size() >= 4 && sss[3].size() > 0) {
+                    opts_.rate[1] = std::stod(sss[3]);
+                }
             } else if (kv[0] == "rd") {
                 reduction_ = std::stod(kv[1]);
             } else if (kv[0] == "bs") {
@@ -236,7 +250,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
     for (size_t col = 0; col < cols.size(); col++) {
         cols[col].weight = 0;
         cols[col].selected = 0;
-        if (cols[col].queries[0]) cols[col].weight += 0.5;
+        if (cols[col].queries[0]) cols[col].weight += 0.5;  // TODO Target score
 
        // if (cols[col].queries[0]) cols[col].weight += 1;
         for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
@@ -347,8 +361,6 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
             }
             loc = curr_node->best_link->prev;
             curr_node = Get(loc);
-            DEBUG_printf("col-x: (%zd,%zd,%zd) %zd, %zd, %zd, %zd\n", loc.col, loc.row, loc.base, 
-                cols[loc.col].coverage, sopts_.min_coverage, curr_node);
         } else {
             break;
         }
@@ -393,66 +405,6 @@ std::string AlignmentGraph::ReconstructComplex(const Segment& seg) {
 }
 
 
-// std::vector<std::string> AlignmentGraph::RestoreSegment(const Segment &seg) {
-//     std::vector<std::string> seqs;
-
-//     assert(seg.begin.col != -1);
-
-//     std::vector<Loc> stack_loc;
-//     std::vector<size_t> stack_link;
-//     std::vector<MyBitSet> stack_seqs;
-//     const std::vector<std::string> toBase = {"A", "C", "G", "T", ""};
-
-//     for (size_t i=0; i<5; ++i) {
-//         Loc loc = seg.end;
-//         loc.base = i;
-//         stack_loc.push_back(loc);  
-//         stack_link.push_back(0);
-//         stack_seqs.push_back(Get(loc)->seqs);
-
-//         while (stack_loc.size() > 0) {
-//             // 检查是否到达边界
-//             if (stack_loc.back().col == seg.begin.col && stack_loc.back().row == 0) {
-//                 std::string s;
-//                 for (auto loc : stack_loc) {
-//                     s += toBase[loc.base];
-//                 }
-//                 std::reverse(s.begin(), s.end());
-                
-//                 for (size_t i=0; i<stack_seqs.back().count(); ++i) seqs.push_back(s);
-//                 //printf("find one:  %zd %s\n", stack_seqs.back().count(), s.c_str());
-//                 stack_link.pop_back();
-//                 stack_loc.pop_back();
-//                 stack_seqs.pop_back();
-
-//             }
-
-//             auto n = Get(stack_loc.back());
-//             // 检查能否继续延长
-//             if (stack_link.back() < n->links.size()) {
-//                 Link& next_link = n->links[stack_link.back()];
-//                 auto next_seqs = (next_link.seqs & stack_seqs.back());
-//                 if (next_seqs.count() > 0 && n->links[stack_link.back()].prev.col >= 0) {
-//                     stack_loc.push_back(n->links[stack_link.back()].prev);
-//                     stack_link.back()++;
-//                     stack_link.push_back(0);
-//                     stack_seqs.push_back(next_seqs);
-//                 } else {
-//                     stack_link.back()++;
-//                 }
-                
-//             } else {
-//                 stack_link.pop_back();
-//                 stack_loc.pop_back();
-//                 stack_seqs.pop_back();
-//             }
-            
-//         }
-//     }
-
-//     return seqs;
-// }
-
 std::vector<AlignmentGraph::Segment> AlignmentGraph::SplitSegment(const Loc &end) {
 
     std::vector<Segment> segments;
@@ -479,7 +431,7 @@ std::vector<AlignmentGraph::Segment> AlignmentGraph::SplitSegment(const Loc &end
     Loc loc = end;
     while (loc.col >= 0) {
         traceback.push_back(loc);
-        //printf("is_complex: (%d %d %d), %d, %d\n", loc.col, loc.row, loc.base, cols[loc.col].coverage, is_clear_node(curr_node, cols[loc.col].coverage));
+        DEBUG_printf("seg is_complex: (%d %d %d), %d, %d\n", loc.col, loc.row, loc.base, cols[loc.col].coverage, is_clear_node(curr_node, cols[loc.col].coverage));
         state.push_back(is_clear_node(curr_node, cols[loc.col].coverage)? 0 : 1);
  
         if (curr_node->best_link != nullptr) {
@@ -990,7 +942,7 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
         }
 
         DEBUG_printf("Verify range(0) %zd-%zd(%zd)\n", cands[start].c, cands[end-1].c, end-start);
-        bool check_ok = VerifiyImportantBranch(cands, start, end);
+        bool check_ok = !sopts_.skip_branch_check ? VerifiyImportantBranch(cands, start, end) : true;
         DEBUG_printf("Verify range(1) %zd-%zd(%zd) %d\n", cands[start].c, cands[end-1].c, end-start, check_ok);
         if (check_ok) {
             assert(end > start);
@@ -1296,7 +1248,7 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
         return false;
     };
 
-    if (has_insert(bubble0, bubble1))  return false;
+    if (has_insert(bubble0, bubble1) && bubble0.size() <= bubble1.size() + 1 && bubble0.size() +1 >= bubble1.size())  return false;
     
     DEBUG_printf("pass has_insert\n");
     return true;
@@ -2002,6 +1954,9 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
         if (link.seqs[i+1] && query_infos_.selected_.find(i) != query_infos_.selected_.end()) {
             s += query_infos_.scores_[i].WeightInGraph(score_range_, weight_range_);
         }
+    }
+    if (link.seqs[0]) {
+        s += 0.5; // TODO Target score 
     }
 
     //double compensate = std::pow<double>(reduction_, row) * branch_score_;

@@ -113,7 +113,12 @@ size_t StdioReader::GetLines(std::vector<std::string> &lines) {
 }
 
 size_t StdioReader::GetBlock0(char* block, size_t max_size) {
-    return fread(block, 1, max_size, stdin);
+    std::cin.read(block, max_size);
+    if (std::cin) {
+        return max_size;
+    } else {
+        return std::cin.gcount();
+    }
 }
 
 

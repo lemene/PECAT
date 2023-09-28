@@ -42,10 +42,12 @@ protected:
     Overlap::Filter filter0_;
     Overlap::Filter filter1_;
     std::string aligner_opts_ {"diff:s=500:e=0.1"};
-
-    ReadStore rd_store_;
+    double min_identity_ { 0.0 };
+    StringPool string_pool_;
+    ReadStore rd_store_ {string_pool_};
     int (*fromLine)(const std::string& line, Overlap& ol, StringPool::NameId &ni, int &replen);
     std::string (*toLine)(const Overlap &ol, const StringPool::NameId& ni);
+    OverlapStore ol_store_ {string_pool_};
 };
 
 } // namespace fsa {

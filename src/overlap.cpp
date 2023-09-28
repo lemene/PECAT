@@ -16,7 +16,7 @@ void Overlap::Filter::From(const std::string &str) {
         if (kv[0] == "l") {
             min_length = std::stoi(kv[1]);
         } else if (kv[0] == "i") {
-            min_identity = std::stoi(kv[1]);
+            min_identity = std::stod(kv[1]);
         } else if (kv[0] == "al") {
             min_aligned_length = std::stoi(kv[1]);
 

@@ -57,15 +57,18 @@ void AsmDataset::Purge() {
 
 void AsmDataset::LoadOverlaps(const std::string &fname) {
     
-    bool scan_overlaps_ = true;
+    bool scan_overlaps_ = false;
     if (scan_overlaps_) {
         LOG(INFO)("Scan overlaps to select params");
         ScanOverlapsToSelectParams(opts_.ifname);
-
+        LOG(INFO)("Load overlap file");
+        LoadOverlapsWithoutLowQuality(opts_.ifname);
+    } else {
+        
+        LOG(INFO)("Load overlap file");
+        LoadOverlaps2(opts_.ifname);
     }
 
-    LOG(INFO)("Load overlap file");
-    LoadOverlapsWithoutLowQuality(opts_.ifname);
     
     if (opts_.dump >= 2) {
         DumpOverlaps(OutputPath("load.m4a"));
@@ -93,6 +96,7 @@ void AsmDataset::LoadOverlaps2(const std::string &fname) {
     for (size_t i=0; i<rd_store_.Size(); ++i) {
         read_infos_[i] = ReadStatInfo();
         read_infos_[i].len = rd_store_.GetSeqLength(i);
+        read_infos_[i].id = i; // TODO
     }
 }
 
@@ -102,12 +106,13 @@ void AsmDataset::LoadOverlapsWithoutLowQuality(const std::string &fname) {
     auto filter_simple = [&](Overlap& o) {
         if (opts_.filter0.Valid(o)) {
             total ++;
-            const auto& rinfo_a = read_infos_[o.a_.id];
-            const auto& rinfo_b = read_infos_[o.b_.id];
+            // TODO not filtering
+            // const auto& rinfo_a = read_infos_[o.a_.id];
+            // const auto& rinfo_b = read_infos_[o.b_.id];
 
-            if (!rinfo_a.CheckIdentity(o) && !rinfo_b.CheckIdentity(o)) {
-                return false;
-            }
+            // if (!rinfo_a.CheckIdentity(o) && !rinfo_b.CheckIdentity(o)) {
+            //     return false;
+            // }
             
             return true;
         } else {

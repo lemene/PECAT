@@ -27,6 +27,7 @@ ArgumentParser OverlapRefine::GetArgumentParser() {
     ap.AddNamedOption(filter0_opts_, "filter0", "overlap filtering options", "");
     ap.AddNamedOption(filter1_opts_, "filter1", "overlap filtering options", "");
     ap.AddNamedOption(aligner_opts_, "aligner", "set an aligner", "");
+    ap.AddNamedOption(min_identity_, "min_identity", "minimum identity of overhang", "");
 
     return ap;
 }
@@ -50,6 +51,17 @@ void OverlapRefine::Running() {
     std::unique_ptr<Reader> reader(GetReader(ifname_));
     std::unique_ptr<Writer> writer(GetWriter(ofname_));
 
+    if (itype_ == "sam") {  // TODO
+        std::vector<std::string> done;
+        ol_store_.PreLoad(*reader.get(), done);
+
+        for (const auto& line : done) {
+            writer->Write(line.c_str());
+            writer->Write("\n");
+        }
+        writer->Flush();
+    }
+
     if (reader != nullptr && writer != nullptr) {
         std::mutex mutex_read;
         std::mutex mutex_write;
@@ -64,7 +76,7 @@ void OverlapRefine::Running() {
 
         auto work_func = [this, &reader, &mutex_read, write_func, is_same_type](size_t id) {
             std::ostringstream filtered;
-            StringPool::TempNameId ni;
+            StringPool::TempNameId2 ni(string_pool_);
             LineInBlock line_in_block(*reader.get(), 10000000, &mutex_read);
 
             size_t total = 0;
@@ -86,6 +98,8 @@ void OverlapRefine::Running() {
                             }
                         }
                     }
+                } else if (r == 0) {
+                    filtered << line << "\n";
                 }
                 if (filtered.tellp() > 10000000) {
                     total += filtered.tellp();
@@ -97,6 +111,10 @@ void OverlapRefine::Running() {
         };
 
         MultiThreadRun(thread_size_, work_func);
+
+        if (itype_ == "sam") {
+            ol_store_.AfterLoad(ifname_);
+        }
         
     } else {
         if (reader == nullptr) LOG(ERROR)("Failed to open file: %s", ifname_.c_str());
@@ -109,7 +127,7 @@ void OverlapRefine::Running() {
 void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
     thread_local auto aligner = ToolAligner::Create(aligner_opts_);
 
-
+    const double MIN_IDENT = min_identity_ * 100;
     const auto & query = rd_store_.GetSeq(ni.QueryNameById(o.a_.id));
     const auto & target = rd_store_.GetSeq(ni.QueryNameById(o.b_.id));
 
@@ -130,7 +148,7 @@ void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
             size_t tpos = tlen - 1;
             Alignment al;
             auto r = aligner->Align((const char*)&qseq[0], qlen, (const char*)&tseq[0], tlen, {qpos, qpos}, {tpos, tpos}, al);
-            if (r) {
+            if (r && (al.Identity() >= MIN_IDENT)) {
                 o.a_.start = al.query_start;
                 o.b_.start = al.target_start;
             }
@@ -144,7 +162,7 @@ void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
             Alignment al;
             auto r = aligner->Align((const char*)&qseq[0]+o.a_.end, qlen, 
                                     (const char*)&tseq[0]+o.b_.end, tlen, {qpos, qpos}, {tpos, tpos}, al);
-            if (r) {
+            if (r &&  (al.Identity() >= MIN_IDENT)) {
                 o.a_.end += al.query_end;
                 o.b_.end += al.target_end;
             }
@@ -167,7 +185,7 @@ void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
             size_t tpos = tlen - 1;
             Alignment al;
             auto r = aligner->Align((const char*)&qseq[0], qlen, (const char*)&tseq[0], tlen, {qpos, qpos}, {tpos, tpos}, al);
-            if (r) {
+            if (r &&  (al.Identity() >= MIN_IDENT)) {
                 o.a_.end += qlen - al.query_start;
                 o.b_.start = al.target_start;
             }
@@ -181,7 +199,7 @@ void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
             Alignment al;
             auto r = aligner->Align((const char*)&qseq[0]+(o.a_.len-qlen), qlen, 
                                     (const char*)&tseq[0]+o.b_.end, tlen, {qpos, qpos}, {tpos, tpos}, al);
-            if (r) {
+            if (r &&  (al.Identity() >= MIN_IDENT)) {
                 o.a_.start = qlen - al.query_end;
                 o.b_.end += al.target_end;
             }
@@ -271,7 +289,9 @@ bool OverlapRefine::DetectFileType() {
     if (itype_ == "") itype_ = OverlapStore::DetectFileType(ifname_);
     if (otype_ == "") otype_ = OverlapStore::DetectFileType(ifname_);
 
-    std::unordered_map<std::string, int> type_mapper = {{"m4", 0}, {"m4.gz", 0},{"m4a", 1}, {"m4a.gz", 1},{"paf", 2}, {"paf.gz", 2}};
+    std::unordered_map<std::string, int> type_mapper = {
+        {"m4", 0}, {"m4.gz", 0},{"m4a", 1}, {"m4a.gz", 1},{"paf", 2}, {"paf.gz", 2}, {"sam", 3}
+    };
 
     LOG(INFO)("itype = %s, otype = %s", itype_.c_str(), otype_.c_str());
 
@@ -281,6 +301,8 @@ bool OverlapRefine::DetectFileType() {
         fromLine = &OverlapStore::FromM4aLineEx;
     } else if (itype_ == "paf" || itype_ == "paf.gz") {
         fromLine = &OverlapStore::FromPafLineEx;
+    } else if (itype_ == "sam") {
+        fromLine = &OverlapStore::FromSamLineEx;
     } else {
         LOG(ERROR)("Failed to recognize input overlap files type: %s", itype_.c_str());
     }
@@ -291,6 +313,12 @@ bool OverlapRefine::DetectFileType() {
         toLine = &OverlapStore::ToM4aLine;
     } else if (otype_ == "paf" || otype_ == "paf.gz") {
         toLine = &OverlapStore::ToPafLine;
+    } else if (itype_ == "sam") {
+        auto to_line = [](const Overlap &o, const StringPool::NameId& ni) -> std::string {
+            assert(!"never come here");
+            return "";
+        };
+        toLine = to_line;
     } else {
         LOG(ERROR)("Failed to recognize output overlap files type: %s", itype_.c_str());
     }
@@ -308,8 +336,6 @@ void (OverlapRefine::* OverlapRefine::GetTask(const std::string& task))(Overlap&
         return &OverlapRefine::TaskIdle;
     }
 }
-
-
 
 } // namespace fsa {
     

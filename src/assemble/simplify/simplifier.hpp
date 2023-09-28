@@ -69,12 +69,6 @@ protected:
 };
 
 
-// TODO 未整理的而类型和函数
-using EdgeScore = std::array<int, 3>;   // alignment length, number of identical SNPs, number of different SNPs
-
-
-
-
 class DuplicateSimplifier : public Simplifier {
 public:
     DuplicateSimplifier(PathGraph& graph) : Simplifier(graph), graph_(graph) {
@@ -86,8 +80,6 @@ public:
     PathGraph& graph_;   
 };
 
-EdgeScore GetEdgeScore(const BaseEdge* e, ReadVariants* rvs) ;
-bool EdgeScoreSignificantlyGreater(const EdgeScore &a, const EdgeScore &b, int count=4, int rate=0.3) ;
 bool IsOutEdgeInconsistent(const BaseEdge* e0, const BaseEdge* e1, size_t N, const PhaseInfoFile* pif);
 bool IsInEdgeInconsistent(const BaseEdge* e0, const BaseEdge* e1, size_t N, const PhaseInfoFile* pif);
 

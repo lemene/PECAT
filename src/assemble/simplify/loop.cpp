@@ -64,13 +64,13 @@ void LoopSimplifier::FindLoops() {
 
 auto LoopSimplifier::DetectLoop(SgNode* start) -> NodeOrEdge {
     assert(start->InDegree() == 2);
-    Debug("cond: %s %zd %zd\n", ToString(start).c_str(), start->InDegree(), start->OutDegree());
+    Debug("cand: %s %zd %zd\n", ToString(start).c_str(), start->InDegree(), start->OutDegree());
 
     if (start->OutDegree() == 1) {
 
         SgEdge* forward = start->OutEdge(0);
         auto end = forward->OutNode();
-        Debug("cond end: %s %zd %zd\n", ToString(end).c_str(), end->InDegree(), end->OutDegree());
+        Debug("cand end: %s %zd %zd\n", ToString(end).c_str(), end->InDegree(), end->OutDegree());
         if (end->OutDegree() == 2) {
             //       <- - <- 
             //       \      /

@@ -116,12 +116,15 @@ void QualitySimplifier::RepairRmoved(double threshold, std::unordered_set<BaseEd
     std::unordered_set<BaseEdge*> recovery;
     for (auto e0 : removed) {
         auto n = e0->InNode();
+        Debug("repair cand: %s\n", ToString(e0).c_str());
         if (n->OutDegree() == 0) {
             std::vector<BaseEdge*> works;
             for (auto e1 : n->GetReducedOutEdge()) {
+                Debug("test: %s\n", ToString(e1).c_str());
                 if (e1->reduce_type_ == BaseEdge::RT_TRANSITIVE) {
-                    if (is_transitive(e0, e1)) {
+                    {//if (is_transitive(e0, e1)) {
                         works.push_back(e1);
+                        Debug("test add: %s\n", ToString(e1).c_str());
                     }
                 }
             }
@@ -130,6 +133,7 @@ void QualitySimplifier::RepairRmoved(double threshold, std::unordered_set<BaseEd
                 return a->ol_->AlignedLength() > b->ol_->AlignedLength();
             });
 
+            assert(e0->InNode()->GetOutEdges().size() == 0);
             std::vector<BaseEdge*> rcv(e0->InNode()->GetOutEdges()); 
             for (size_t i = 0; i < works.size(); ++i) {
                 auto qual = graph_.GetOverlapQuality(*works[i]->ol_);
@@ -148,16 +152,15 @@ void QualitySimplifier::RepairRmoved(double threshold, std::unordered_set<BaseEd
                         graph_.GetAsmData().ReplaceOverlapInGroup(nol.first, works[i]->ol_);
                         works[i]->Replace(nol.first);
                         graph_.ReverseEdge(works[i])->Replace(nol.first);
-                    }
                     
-                    // auto done = std::find_if(rcv.begin(), rcv.end(), [&works, i, is_transitive](BaseEdge* a0) { 
-                    //     return is_transitive(a0, works[i]);
-                    // });
-                    // if (done == rcv.end()) {
-                    //     rcv.push_back(works[i]);
-                    // }
+                        auto done = std::find_if(rcv.begin(), rcv.end(), [&works, i, is_transitive](BaseEdge* a0) { 
+                            return is_transitive(a0, works[i]);
+                        });
+                        if (done == rcv.end()) {
+                            rcv.push_back(works[i]);
+                        }
+                    }
                 }
-    
             }
 
             for (size_t i = e0->InNode()->OutDegree(); i < rcv.size(); ++i)  {

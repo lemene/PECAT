@@ -16,7 +16,7 @@ simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./a
 
 graph_src = assemble/graph/cross_node.cpp
 
-correct_src = ./correct/test_future.cpp ./correct/crr_options.cpp ./correct/crr_dataset.cpp ./correct/crr_options.cpp
+correct_src = ./correct/test_future.cpp ./correct/crr_options.cpp ./correct/crr_dataset.cpp ./correct/crr_options.cpp ./correct/corrector.cpp
 
 phase_src = ./phase/hic_read_infos.cpp
 

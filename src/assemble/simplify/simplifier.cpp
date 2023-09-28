@@ -4,38 +4,6 @@
 
 namespace fsa {
 
-EdgeScore GetEdgeScore(const BaseEdge* e, ReadVariants* rvs) {
-    std::array<int, 3> score = { (int)e->Score(), 0, 0 };     //  length, XIANGTONG BUTONG SNP
-    if (rvs != nullptr) {
-        auto mm = rvs->Test(*e->ol_);
-        score[1] = mm[0]; 
-        score[2] = mm[1];
-    } 
-    return score;
-};
-
-
-bool EdgeScoreSignificantlyGreater(const EdgeScore &a, const EdgeScore &b, int count, int rate) {
-
-    // if (((a[1] - a[2]) - (b[1] - b[2]))  / 2>= threshold_count) {
-    //     double ra = (a[1] + a[2]) > 0 ? (a[1] - a[2])*1.0 / (a[1] + a[2]) : 0.0;
-    //     double rb = (b[1] + b[2]) > 0 ? (b[1] - b[2])*1.0 / (b[1] + b[2]) : 0.0;
-    //     if ((ra - rb)/2 >= threshold_rate) {
-    //         return true;
-    //     }
-    // }
-    return (a[1] - a[2]) - (b[1] - b[2]) >= std::max<int>((a[1] + a[2]) * 0.5 + (b[1]+b[2]) * 0.5, 6);
-    if (((a[1] - a[2]) - (b[1] - b[2]))  / 2>= count) {
-        double ra = (a[1] + a[2]) > 0 ? (a[1] - a[2])*1.0 / (a[1] + a[2]) : 0.0;
-        double rb = (b[1] + b[2]) > 0 ? (b[1] - b[2])*1.0 / (b[1] + b[2]) : 0.0;
-        if ((ra - rb)/2 >= rate) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 Simplifier::~Simplifier() {
 }
 

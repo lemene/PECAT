@@ -149,6 +149,29 @@ public:
 
     void EstimateGenomeSize();
    
+    bool HasDup(int qid, int tid) const  {
+        auto it = dup_groups_.find(tid);
+        if (it != dup_groups_.end()) {
+            return it->second.find(qid) != it->second.end();
+        } else {
+            return false;
+        }
+    }
+
+    const std::vector<const Overlap*>& GetDup(int qid, int tid) const {
+        static std::vector<const Overlap*> empty;
+        auto it = dup_groups_.find(tid);
+        if (it != dup_groups_.end()) {
+
+            auto itit = it->second.find(qid) ;
+            if (itit != it->second.end() ) {
+                return itit->second;
+            }
+        } 
+        return empty;
+
+    }
+
     AsmOptions& opts_;
     std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
     std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> dup_groups_;

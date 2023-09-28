@@ -109,7 +109,7 @@ void UnreliableSimplifier::Running() {
                     if (!remove) {
                         Debug("length: %d %d, %d, %f\n", iscore, best_score, min_length_, min_length_rate_);
                         if (iscore >= min_length_ || iscore >= best_score * min_length_rate_) {
-                            remove = accu_cov + icov > cov * max_cov_rate_;
+                            remove = accu_cov != 0 && accu_cov + icov > cov * max_cov_rate_;
                         } else {
                             remove = true;
                         }

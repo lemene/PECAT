@@ -4,8 +4,137 @@
 #include "read_store.hpp"
 #include "utils/project_file.hpp"
 #include "assemble/read_variants.hpp"
+#include "correct/corrector.hpp"
 
 namespace fsa {
+
+void Program_Filter::Running1() {
+    StringPool string_pool;
+    OverlapStore ol_store(string_pool);
+    
+    ol_store.Load(ifname_, "", thread_size_);
+    
+    LOG(INFO)("Load inconsistent pairs");
+    PhaseInfoFile phased_info(string_pool);
+    phased_info.Load(inconsistent_);
+        
+    LOG(INFO)("Load consistent pairs");
+    PhaseInfoFile consistent(string_pool);
+    consistent.Load(consistent_);
+
+    if (!range_fn_.empty()) {
+        LOG(INFO)("Load range of corrected reads");
+        LoadRanges(range_fn_, string_pool);
+    }
+
+    std::atomic<size_t> index {0};
+    auto work_func = [&](size_t tid) {
+        for (size_t i = index.fetch_add(1); i < ol_store.Size(); i = index.fetch_add(1)) {
+            const Overlap& o = ol_store.Get(i);
+
+            int off_1to0 = o.MappingToSource<1>({0})[0];
+            int off_0to1 = o.MappingToTarget<1>({0})[0];
+            auto r0 = ranges_.find(o.a_.id);
+            auto r1 = ranges_.find(o.b_.id);
+            if (r0 != ranges_.end()) {
+                if (o.SameDirect()) {
+                    off_1to0 += r0->second[0];
+                    off_0to1 -= r0->second[0];
+                } else {
+                    off_1to0 += r0->second[0];
+                    off_0to1 += r0->second[0];
+                }
+            }
+            
+            if (r1 != ranges_.end()) {
+                if (o.SameDirect()) {
+                    off_1to0 -= r1->second[0];
+                    off_0to1 += r1->second[0];
+                } else {
+                    off_1to0 += r1->second[0];
+                    off_0to1 += r1->second[0];
+                }
+            }
+            int th = std::max<int>(threshold_, rate_*std::max(off_1to0, off_0to1));
+            if (phased_info.Contain(o.a_.id, o.b_.id, o.SameDirect(), off_0to1, off_1to0, th, strict_)) {
+                o.attached = 1;
+            } 
+        }
+    };
+
+    MultiThreadRun((size_t)thread_size_, work_func);
+
+    
+    KeepExtend(ol_store);
+
+
+    ol_store.Save(ofname_, "", thread_size_, [](const Overlap& o) {
+        return o.attached == 0;
+    });
+}
+
+void Program_Filter::KeepExtend(OverlapStore &ol_store) {
+    const StringPool &sp = ol_store.GetStringPool();
+    OverlapGrouper grouper { ol_store };
+    grouper.BuildIndex(thread_size_, std::unordered_set<int>());
+
+    std::atomic<size_t> index {0};
+    auto work_func = [&](size_t tid) {
+        for (size_t i = index.fetch_add(1); i < sp.Size(); i = index.fetch_add(1)) {
+            OverlapGrouper::Group g = grouper.Get(i);
+            std::array<size_t, 2> count = {0, 0};
+            for (auto o : g.ols) {
+                if (o->attached == 1) continue;
+                auto loc = o->Location(i, 1000);
+                switch (loc) {
+                case Overlap::Loc::Left:
+                    count[0] ++;
+                    break;
+                case Overlap::Loc::Right:
+                    count[1] ++;
+                    break;
+                case Overlap::Loc::Contained:
+                    count[0] ++;
+                    count[1] ++;
+                    break;
+                case Overlap::Loc::Equal:
+                case Overlap::Loc::Containing:
+                case Overlap::Loc::Abnormal:
+                    break;
+                }
+            }
+            if (count[0] == 0 || count[1] == 0) {
+                for (auto o : g.ols) {
+                    if (o->attached == 1) {
+                        auto loc = o->Location(i, 0);
+                        switch (loc) {
+                        case Overlap::Loc::Left:
+                            if (count[0] == 0) {
+                                o->attached = 0;
+                            }
+                            break;
+                        case Overlap::Loc::Right:
+                            if (count[1] == 0) {
+                                o->attached = 0;
+                            }
+                            break;
+                        case Overlap::Loc::Contained:
+                        case Overlap::Loc::Equal:
+                        case Overlap::Loc::Containing:
+                        case Overlap::Loc::Abnormal:
+                            break;
+
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    MultiThreadRun((size_t)thread_size_, work_func);
+
+    
+}
 
 void Program_Filter::Running() {
     OverlapStore ol_store;
@@ -420,6 +549,7 @@ void Program_Accuracy::Running() {
     std::mutex mutex;
     
     struct Info {
+        Seq::Id id { -1 };
         size_t len { 0 };
         size_t match { 0 };
         size_t mismatch { 0 };
@@ -427,6 +557,7 @@ void Program_Accuracy::Running() {
         size_t insert { 0 };
         size_t dels { 0 };
         size_t hclip { 0 };
+        double local_error {0.0};
         void Print() const {
             printf("%zd, %zd, %zd, %zd, %zd, %zd, %zd\n", len, match, mismatch, clip, insert, dels, hclip);
         }
@@ -460,7 +591,7 @@ void Program_Accuracy::Running() {
         for (size_t curr = index.fetch_add(1); curr < ol_store.Size(); curr = index.fetch_add(1)) {
             auto& ol = ol_store.Get(curr);
             Info inf;
-
+            inf.id = ol.a_.id;
             inf.len = ol.a_.len;
             if (ol.SameDirect()) {
                 inf.clip += std::min(ol.a_.start, ol.b_.start);
@@ -471,26 +602,54 @@ void Program_Accuracy::Running() {
             }
             inf.hclip += ol.a_.start + ol.a_.len - ol.a_.end;
 
+            std::vector<int> err;
+            std::vector<int> ins;
+
             for (auto &d : ol.detail_) {
+            //LOG(INFO)("%zd, %zd, %d, %c\n", err.size(), ins.size(), d.len, d.type);
                 switch (d.type) {
                 case '=':
                     inf.match += d.len;
+                    err.insert(err.end(), d.len, 0);
+                    ins.insert(ins.end(), d.len, 0);
                     break;
                 case 'X':
                     inf.mismatch += d.len;
+                    err.insert(err.end(), d.len, 1);
+                    ins.insert(ins.end(), d.len, 0);
                     break;
                 case 'I':
                     inf.insert += d.len;
+                    if (ins.size() > 0) {
+                        ins.back() = d.len;
+                    }
                     break;
                 case 'D':
                     inf.dels += d.len;
+                    err.insert(err.end(), d.len, 1);
+                    ins.insert(ins.end(), d.len, 0);
                     break;
                 default:
                     LOG(ERROR)("Not support %c", d.type);
 
                 }
-                
             }
+            assert(ins.size() == err.size());
+            const size_t W = 1000;
+            int cur_err = std::accumulate(err.begin(), err.begin()+std::min<size_t>(W, err.size()), 0);
+            int cur_ins = std::accumulate(ins.begin(), ins.begin()+std::min<size_t>(W, ins.size()), 0);
+            double max_local_err = (cur_err + cur_ins)*1.0 / (std::min<size_t>(W, err.size()) + cur_ins);
+            for (size_t i = W; i < err.size(); ++i) {
+                cur_err = cur_err + err[i] - err[i-W];
+                cur_ins = cur_ins + ins[i] - ins[i-W];
+                assert(cur_err >= 0 && cur_ins >= 0);
+                double local_err = (cur_err + cur_ins)*1.0 / (W + cur_ins);
+                if (local_err > max_local_err) {
+                    max_local_err = local_err;
+                }
+                //printf("%zd, %d, %d:  %d, %d, %f, %f\n",i, err[i], ins[i], cur_err, cur_ins, local_err, max_local_err);
+            }
+            inf.local_error = max_local_err;
 
             merge_info(infos, ol.a_.id, inf);
         }
@@ -504,7 +663,23 @@ void Program_Accuracy::Running() {
     
     MultiThreadRun(thread_size_, work_func);
 
-    LOG(INFO)("%zd", all_infos.size());
+    LOG(INFO)("%zd", all_infos.size());    
+    if (!detail_.empty()) {
+        GzFileWriter writer(detail_);
+        std::ostringstream oss;
+        if (writer.Valid()) {
+            for (const auto& iter : all_infos) {
+                const auto& inf = iter.second;
+                oss << ol_store.GetStringPool().QueryStringById(inf.id) << '\t' 
+                    << inf.len << '\t' << inf.match << '\t' << inf.mismatch << '\t' 
+                    << inf.clip  << '\t' << inf.insert  << '\t' << inf.dels  << '\t' 
+                    << inf.hclip << '\t' << inf.local_error << '\n';
+                writer.Flush(oss);
+                oss.str("");
+            }
+        }
+    }
+
     Info accu;
     for (auto &i : all_infos) {
         accu.len += i.second.len;

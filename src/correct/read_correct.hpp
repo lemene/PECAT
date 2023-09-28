@@ -35,7 +35,7 @@ public:
         double percent { 0.95 };             // p Percentage of filled matrix
         double overhang_weight   { 0.0 };                // w overhang的比重
         int failures { 10 };               // f 连续失败次数
-        int max_number { 200 };             //  // MAX_COV - 1
+        int max_number { 200 };             // 
         int coverage { 80 };                    // 需要多少层数据
     };
 
@@ -70,8 +70,8 @@ protected:
             aligner_.SetParameter("aligner", owner_.aligner_);
         };
         ~Worker() {  }
-        bool Correct(int id, const std::unordered_map<int, const Overlap*>& g, bool uc=true);
-        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>> & cands);
+        bool Correct(int id, bool uc=true);
+        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>> & cands, double opt_ohwt);
         bool IsCoverageEnough(const std::vector<int> &cov);
         bool ExactFilter(const Alignment& r);
         bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);
@@ -168,12 +168,14 @@ protected:
     std::vector<Seq::Id> read_ids_;
     std::vector<Seq::Id> grouped_ids_;
     std::vector<size_t> group_ticks;
-    std::array<size_t, 2> group_size {{100, 1000}};
+    size_t  group_size  = 1000;
 
     std::unordered_set<int> reads_;
     ReadStore read_store_;
     OverlapStore ol_store_{read_store_.GetStringPool() };
-    std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
+    StringPool &string_pool_ {read_store_.GetStringPool()};
+
+    OverlapGrouper grouper_ { ol_store_ };
 
     StatInfo stat_info_;
 

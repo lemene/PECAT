@@ -98,9 +98,9 @@ void ReadCorrect::Running() {
     LoadReads();
 
     LOG(INFO)("Memory: %zd", GetMemoryUsage());
-    // TODO 根据read_ids来分组，不考虑其它的
-    ol_store_.Group(groups_, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()), opts_.thread_size);
-    LOG(INFO)("Group %zd %zd", groups_.size(), read_ids_.size());
+
+    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()));
+    LOG(INFO)("BuildIndex: memory=%zd", GetMemoryUsage());
 
     if (opts_.use_cache) GroupReadIds();
 
@@ -117,14 +117,17 @@ void ReadCorrect::LoadReads() {
         ids.insert(o.b_.id);
     }
     read_store_.Load(rread_fname_, "", false, ids);
-    LOG(INFO)("SIZE %zd %zd", ids.size(), read_store_.Size());
+    
+    if (read_ids_.empty()) {
+        read_ids_.assign(ids.begin(), ids.end());
+    }
 }
 
 void ReadCorrect::LoadOverlaps(const std::string &fname) {
     std::unordered_set<Seq::Id> ids(read_ids_.begin(), read_ids_.end());
     
-    ol_store_.LoadFast(fname, "", (size_t)opts_.thread_size, [this, &ids](Overlap &o) {
-        bool rel = ids.find(o.a_.id) != ids.end() || ids.find(o.b_.id) != ids.end();
+    ol_store_.Load(fname, "", (size_t)opts_.thread_size, [this, &ids](Overlap &o) {
+        bool rel = ids.empty() || ids.find(o.a_.id) != ids.end() || ids.find(o.b_.id) != ids.end();
         return rel && filter0_.Valid(o);
     });
 
@@ -136,24 +139,18 @@ void ReadCorrect::LoadOverlaps(const std::string &fname) {
 
 
 void ReadCorrect::LoadReadIds() {
-    read_store_.Load(rread_fname_, "", false);
-
-    std::unordered_set<Seq::Id> ids;
-
+    // read_store_.Load(rread_fname_, "", false);
+    std::unordered_set<Seq::Id> ids;    // Remove duplicate names
     if (!read_name_.empty()) {
-        ids.insert(read_store_.QueryIdByName(read_name_));
+        ids.insert(string_pool_.GetIdByStringUnsafe(read_name_));
     } else if (!read_name_fname_.empty()) {
         std::ifstream file(read_name_fname_);
         std::string line;
         while (std::getline(file, line)) {
-            ids.insert(read_store_.QueryIdByName(line));
+            ids.insert(string_pool_.GetIdByStringUnsafe(line));
         }
-
     } else {
-        std::array<size_t, 2> range = read_store_.GetIdRange();
-        for (size_t i=range[0]; i<range[1]; ++i) {
-            ids.insert(i);
-        }
+        // correct all reads in read file
     }
     read_ids_.assign(ids.begin(), ids.end());
 }
@@ -189,7 +186,7 @@ void ReadCorrect::Correct() {
     };
 
     struct GroupDispatcher : public Dispatcher {
-        GroupDispatcher(Progress &p, ReadCorrect::Worker &w) : progress(p), worker(w), ids(2000){}
+        GroupDispatcher(Progress &p, ReadCorrect::Worker &w) : progress(p), worker(w), ids(10000){}
 
         Seq::Id Get(bool &uc) {
             uc = true; 
@@ -222,20 +219,16 @@ void ReadCorrect::Correct() {
         std::ostringstream oss_scores;
         bool uc = false;
         for (auto tid=dispatcher->Get(uc); tid != Seq::NID; tid = dispatcher->Get(uc)) {
-            
-            auto it = groups_.find(tid);
-            if (it != groups_.end() && it->second.size() > 0) {
-                if (worker.Correct(it->first, it->second, uc)) {
-                    if ( worker.GetCorrected().size() > 0) {
-                        SaveCRead(oss_cread, it->first, worker.GetCorrected(), worker.GetTrueRange());
-                        if (save_infos) worker.SaveReadInfos(oss_scores, it->first, read_store_);
-                    } else {
-                        LOG(WARNING)("Corrected Read(%s) is emtpy", read_store_.QueryNameById(tid).c_str());
-                    }
+            if (worker.Correct(tid, uc)) {
+                if ( worker.GetCorrected().size() > 0) {
+                    SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
+                    if (save_infos) worker.SaveReadInfos(oss_scores, tid, read_store_);
+                } else {
+                    LOG(WARNING)("Corrected Read(%s) is emtpy", read_store_.QueryNameById(tid).c_str());
                 }
-                worker.Clear();
             }
-
+            worker.Clear();
+            
             if (oss_cread.tellp() > (int)flush_block) {
                 save_oss(oss_cread, oss_scores);
             }
@@ -273,12 +266,7 @@ void ReadCorrect::GroupReadIds() {
 
     for (auto i : read_ids_) {
         done[i] = false;
-        auto iter = groups_.find(i);
-        if (iter == groups_.end()) {
-            lens[i] = 0;
-        } else {
-            lens[i] = iter->second.begin()->second->GetRead(i).len;
-        }
+        lens[i] = read_store_.GetSeqLength(i);
     }
 
     std::sort(read_ids_.begin(), read_ids_.end(), [&lens](int a, int b) {return lens[a] > lens[b]; });
@@ -292,28 +280,25 @@ void ReadCorrect::GroupReadIds() {
             done[i] = true;
 
             while (s < grouped_ids_.size()) {
-                auto it = groups_.find(grouped_ids_[s]);
-                if (it != groups_.end()) {
-                    auto &ols = it->second;
-                    for (auto &o : ols) {
-                        auto d = done.find(o.first);
+                auto gp = grouper_.Get(grouped_ids_[s]);
+                if (!gp.Empty()) {
+                    for (size_t igp = 0; igp < gp.Size(); ++igp) {
+                        auto o = gp.Get(igp, 0);
+                        auto d = done.find(o->GetOtherRead(gp.id).id); 
                         if (d != done.end() && !d->second) {
-                            grouped_ids_.push_back(o.first);
+                            grouped_ids_.push_back(o->GetOtherRead(gp.id).id);
                             d->second = true;
-                            if (grouped_ids_.size() - group_ticks.back() >= group_size[1]) {
-                                break;
-                            }
                         }
                     }
                 }
-                if (grouped_ids_.size() - group_ticks.back() >= group_size[0]) {
+                s++;
+                if (grouped_ids_.size() >= group_ticks.back() + group_size) {
                     break;
-                } else {
-                    s++;
                 }
-
             }
-            group_ticks.push_back(grouped_ids_.size());
+            if (grouped_ids_.size() >= group_ticks.back() + group_size / 2) {
+                group_ticks.push_back(grouped_ids_.size());
+            }
         }
     }
 
@@ -389,6 +374,9 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
  std::array<size_t,2> MostEffectiveCoverage(size_t tsize, const std::vector<Alignment> &aligns, size_t stub, int min_coverage) {
     if (aligns.size() == 0) return {0, 0};
 
+    assert(tsize >= stub*2);
+    if (min_coverage == 0) return {stub, tsize - stub} ;
+    
     std::vector<int> coverage(tsize+1, 0);
     for (const auto& al : aligns) {
         //assert(al.target_end - al.target_start > 2*stub);
@@ -431,18 +419,24 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
 
 }
 
-bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Overlap*>& g, bool uc) {
+bool ReadCorrect::Worker::Correct(int id, bool uc) {
+    auto group = owner_.grouper_.Get(id);
+    if (group.Empty()) return false;
+
     const DnaSeq& target = owner_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)owner_.filter0_.min_length); 
 
-    std::vector<std::pair<const Overlap*, double>> cands(g.size());
-    std::transform(g.begin(), g.end(), cands.begin(), [](const std::pair<int, const Overlap*>& a) { return std::make_pair(a.second, 0.0); });
-    CalculateWeight(id, target, cands);
+    std::vector<std::tuple<const Overlap*, double, size_t>> cands(group.Size());
+    for (size_t i = 0; i < group.Size(); ++i) {
+        std::get<0>(cands[i]) = group.Get(i, 0);
+        std::get<1>(cands[i]) = 0.0;
+        std::get<2>(cands[i]) = i;
+    }
+    CalculateWeight(id, target, cands, owner_.cands_opts_.overhang_weight);
 
-    std::make_heap(cands.begin(), cands.end(), [](const std::pair<const Overlap*, double>& a, const std::pair<const Overlap*, double>& b) {
-       return a.second < b.second;    // CAUTION, calulated by CalculateWeight
+    std::make_heap(cands.begin(), cands.end(), [](const std::tuple<const Overlap*, double, size_t>& a, const std::tuple<const Overlap*, double, size_t>& b) {
+       return std::get<1>(a) < std::get<1>(b);    // CAUTION, calulated by CalculateWeight
     });
-    
     size_t heap_size = cands.size();
     aligner_.SetTarget(target);
     std::vector<int> coverage(target.Size(), 0);
@@ -450,18 +444,38 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
     std::vector<Alignment> first_als;
     std::vector<Alignment> flt_als;    // 
     int num_consecu_fail =  0;
+    int accu_base = 0;
     while (heap_size > 0) {
-        auto ol = cands[0].first;
+        auto i = std::get<2>(cands[0]);
+        auto ol = group.Get(i, 0);
         const auto& tread = ol->GetRead(id);
         const auto& qread = ol->GetOtherRead(id);
         
         Alignment al(tread.id, qread.id);
+        bool r = false;
+        double best_identity = 0.0;
 
-        auto r = GetAlignment(id, ol, uc, al);
-        DEBUG_printf("alignment: r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f\n", r,
-            al.query_start, al.query_end, al.QuerySize(), ol->SameDirect(),
-            al.target_start, al.target_end, al.TargetSize(), al.distance, al.Identity());
+        for (size_t j = 0; j < group.Size(i); ++j) {
+            auto ol = group.Get(i, j);
+            Alignment al_local(tread.id, qread.id);
         
+            auto r_local = GetAlignment(id, ol, uc, al_local);
+            DEBUG_printf("alignment: r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f\n", r_local,
+               al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
+               al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity());
+
+            //if (r) break;
+            if (r_local && !ExactFilter(al_local)) {
+                if (best_identity < al_local.Identity()) {
+                    best_identity = al_local.Identity();
+                    r = r_local;
+                    al = al_local;
+                    if (j >= 3) break;
+                }
+            }
+        }
+
+        if (r) accu_base += al.AlignSize();
         if (r && !ExactFilter(al)) { 
             stat_info.aligns[0]++;
             first_als.push_back(al);
@@ -476,11 +490,13 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
 
         if (owner_.cands_opts_.IsEndCondition(coverage, first_als.size(), num_consecu_fail)) break;
         
-        std::pop_heap(cands.begin(), cands.begin()+heap_size, [](std::pair<const Overlap*, double>& a, std::pair<const Overlap*, double>& b) {
-            return a.second < b.second;    // CAUTION, calulated by CalculateWeight
+        std::pop_heap(cands.begin(), cands.begin()+heap_size, [](std::tuple<const Overlap*, double, size_t>& a, std::tuple<const Overlap*, double, size_t>& b) {
+            return std::get<1>(a) < std::get<1>(b);    // CAUTION, calulated by CalculateWeight
         });
         heap_size--;
     }
+
+    if (first_als.size() > 0) {
 
     size_t stub = 500;
     auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.opts_.min_coverage); 
@@ -511,20 +527,20 @@ bool ReadCorrect::Worker::Correct(int id, const std::unordered_map<int, const Ov
         graph_.Consensus();
         return true;
     }
-
+    }
     return false;
 }
 
-void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::pair<const Overlap*, double>>& cands) {
+void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>>& cands, double opt_ohwt) {
     std::vector<double> cand_cov_wts (target.Size()+1);
 
     double wtsum = 0.0;
     for (auto &it : cands) {
-        auto o = it.first;
+        auto o = std::get<0>(it); // it.first;
         auto &t = o->GetRead(id);
         auto &q = o->GetOtherRead(id);
 
-        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_ / 100;
+        double ohwt = opt_ohwt * o->identity_ / 100;
         double olwt = o->identity_ / 100;
 
         auto mr = o->MappingTo<2>(t, {0, q.len});
@@ -550,12 +566,12 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
         cand_cov_wts[i] = wtsum - cand_cov_wts[i];
     }
 
-    std::for_each(cands.begin(), cands.end(), [this, id, &cand_cov_wts, wtsum](std::pair<const Overlap*, double>& it) {
-        auto o = it.first;
+    std::for_each(cands.begin(), cands.end(), [opt_ohwt, id, &cand_cov_wts, wtsum](std::tuple<const Overlap*, double, size_t>& it) {
+        auto o = std::get<0>(it);//it.first;
         auto &t = o->GetRead(id);
         auto &q = o->GetOtherRead(id);
 
-        double ohwt = owner_.cands_opts_.overhang_weight * o->identity_ / 100;
+        double ohwt = opt_ohwt * o->identity_ / 100;
         double olwt = o->identity_ / 100;
 
         auto mr = o->MappingTo<2>(t, {0, q.len});
@@ -568,7 +584,8 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
                     std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
                     std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
         
-        it.second = wt;
+        //it.second = wt;
+        std::get<1>(it) = wt;
     });
 }
 

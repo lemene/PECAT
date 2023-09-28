@@ -62,6 +62,7 @@ public:
 
     bool SameDirect() const { return a_.strand == b_.strand; }
     size_t AlignedLength() const { return (a_.end - a_.start + b_.end - b_.start) / 2;  }
+    size_t AlignedSize() const { return identity_ * AlignedLength(); }
     
     size_t IdealAlignedLength() const { 
         if (SameDirect()) {

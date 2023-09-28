@@ -87,6 +87,14 @@ phase_clair3_command =  docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pw
 polish_medaka_command = docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
 ```
 
+## Docker pre-built image
+There is a pre-built docker image[https://hub.docker.com/r/lemene/pecat]. We recommend running Docker using the following command.
+```
+docker run -i -v `pwd -P`:/mnt -v /var/run/docker.sock:/var/run/docker.sock lemene/pecat:0.0.2 pecat.pl unzip cfg
+```
+```-v `pwd -P`:/mnt```: Map current working directory of the host to current working directory of the container.
+```-v /var/run/docker.sock:/var/run/docker.sock```: Docker in Docker[https://devopscube.com/run-docker-in-docker/]. By adding this parameter, pecat in the container can run the docker images (clair3 and medaka) of the host.
+
 ## Testing
 We can run the demo to test whether PECAT has been succesfully installed. See [demo/README.md](demo/README.md).
 ```Shell

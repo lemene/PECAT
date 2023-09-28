@@ -226,7 +226,7 @@ std::unordered_set<int> PhaseInfoFile::Get(int id) const {
     std::unordered_set<int> result;
     auto it = phased_.find(id);
     if (it != phased_.end()) {
-        for (auto i : it->second) {
+        for (const auto &i : it->second) {
             result.insert(i.first);
         }
     }
@@ -236,4 +236,18 @@ std::unordered_set<int> PhaseInfoFile::Get(int id) const {
 }
 
 
+std::vector<std::array<int, 3>> PhaseInfoFile::GetInconsistent(int id) const {
+    std::vector<std::array<int, 3>> result;
+    auto it = phased_.find(id);
+    if (it != phased_.end()) {
+        for (const auto &i : it->second) {
+            for (auto &ii : i.second) {
+                result.push_back({i.first, ii.strand, ii.offset});
+            }
+        }
+    }
+
+    return result;
+
+}
 }

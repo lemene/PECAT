@@ -202,6 +202,7 @@ public:
     void Reactivate();
 
     double Identity() const;
+    void SetIdentity(double d) { const_cast<Overlap*>(ol_)->identity_ = d*100; }
     // edge score, the larger the score, the better the link 
     virtual size_t Score() const { return ol_->AlignedLength(); }
     virtual size_t  Length() const;
@@ -223,6 +224,7 @@ public:
     const Overlap* ol_ { nullptr } ;
     std::array<int, 2> score_;
     bool subject_ { true };
+    double identity_ { -1.0 };
 
 protected:
 };

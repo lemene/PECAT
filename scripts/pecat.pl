@@ -688,11 +688,15 @@ sub newjob_racon_prialt($$) {
     my $rd2ctg_flt = "$wrkdir/rd2ctg_flt.paf";
     my $rd2ctg_pri = "$wrkdir/rd2ctg_pri.paf";
     my $rd2ctg_alt = "$wrkdir/rd2ctg_alt.paf";
+    my $itype = "paf";
+    my $otype = "paf";
     if ($map_options=~/([ \t]|^)-[a-zAz]*a/) {
         $rd2ctg = "$wrkdir/rd2ctg.sam";
         $rd2ctg_flt = "$wrkdir/rd2ctg_flt.sam";
         $rd2ctg_pri = "$wrkdir/rd2ctg_pri.sam";
         $rd2ctg_alt = "$wrkdir/rd2ctg_alt.sam";
+        $itype = "sam";
+        $otype = "sam";
     }
     my $rd_2_pri_names = "$wrkdir/rd_2_pri_names";
     my $rd_2_alt_names = "$wrkdir/rd_2_alt_names";
@@ -702,7 +706,7 @@ sub newjob_racon_prialt($$) {
     
     my $filter_cmd = "";
     if ($filter_options ne "") {
-        $filter_cmd = " | $bin_path/fsa_ol_refine - - --itype paf --otype paf --thread_size 4 $filter_options ";
+        $filter_cmd = " | $bin_path/fsa_ol_refine - - --itype $itype --otype $otype --thread_size 4 $filter_options ";
     }
 
     my $job_map = $self->newjob(
@@ -794,12 +798,6 @@ sub newjob_racon_dual($$) {
         $readinfo = "$prjdir/4-phase/clair3/readinfos";
     }
 
-    my $rd2ctg = "$wrkdir/rd2ctg_hap.paf";
-    my $rd2ctg_flt = "$wrkdir/rd2ctg_flt_hap.paf";
-    my $rd2ctg_pri = "$wrkdir/rd2ctg_hap1.paf";
-    my $rd2ctg_alt = "$wrkdir/rd2ctg_hap2.paf";
-
-
     my $pol_pri = "$wrkdir/haplotype_1.fasta";
     my $pol_alt = "$wrkdir/haplotype_2.fasta";
     
@@ -812,11 +810,20 @@ sub newjob_racon_dual($$) {
     my $filter_options = $self->get_config("polish_filter_options");
     my $cns_options = $self->get_config("polish_cns_options");
 
+    my $rd2ctg = "$wrkdir/rd2ctg_hap.paf";
+    my $rd2ctg_flt = "$wrkdir/rd2ctg_flt_hap.paf";
+    my $rd2ctg_pri = "$wrkdir/rd2ctg_hap1.paf";
+    my $rd2ctg_alt = "$wrkdir/rd2ctg_hap2.paf";
+    my $itype = "paf";
+    my $otype = "paf";
+
     if ($map_options=~/([ \t]|^)-[a-zAz]*a/) {
-        $rd2ctg = "$wrkdir/rd2ctg.sam";
-        $rd2ctg_flt = "$wrkdir/rd2ctg_flt.sam";
-        $rd2ctg_pri = "$wrkdir/rd2ctg_pri.sam";
-        $rd2ctg_alt = "$wrkdir/rd2ctg_alt.sam";
+        $rd2ctg = "$wrkdir/rd2ctg_hap.sam";
+        $rd2ctg_flt = "$wrkdir/rd2ctg_flt_hap.sam";
+        $rd2ctg_pri = "$wrkdir/rd2ctg_hap1.sam";
+        $rd2ctg_alt = "$wrkdir/rd2ctg_hap2.sam";
+        $itype = "sam";
+        $otype = "sam";
     }
     my $rd_2_pri_names = "$wrkdir/rd_2_hap1_names";
     my $rd_2_alt_names = "$wrkdir/rd_2_hap2_names";
@@ -827,7 +834,7 @@ sub newjob_racon_dual($$) {
     
     my $filter_cmd = "";
     if ($filter_options ne "") {
-        $filter_cmd = " | $bin_path/fsa_ol_refine - - --itype paf --otype paf --thread_size 4 $filter_options ";
+        $filter_cmd = " | $bin_path/fsa_ol_refine - - --itype $itype --otype $otype --thread_size 4 $filter_options ";
     }
 
     my $job_map = $self->newjob(
@@ -949,7 +956,7 @@ sub newjob_medaka_oneset($) {
     my $reads = "$prjdir/0-prepare/prepared_reads.fasta";
 
     my $map_options = $self->get_config("polish_medaka_map_options");
-    #my $filter_options = $self->get_config("polish_filter_options");
+    my $filter_options = $self->get_config("polish_medaka_filter_options");
     my $cns_options = $self->get_config("polish_medaka_cns_options");
     if ($cns_options ne "") {
         if (not $cns_options =~ /\".*\"/) {
@@ -961,6 +968,11 @@ sub newjob_medaka_oneset($) {
 
     my $bin_path = $self->get_env("BinPath");
     my $threads = $self->get_config("threads");
+        
+    my $filter_cmd = "";
+    if ($filter_options ne "") {
+        $filter_cmd = " | $bin_path/fsa_ol_refine - - --itype sam --otype sam --thread_size 4 $filter_options ";
+    }
 
     my $sub_reads = "$wrkdir/sub_reads.fasta";
     my $rd_2_ctg_sam = "$wrkdir/rd_2_ctg.sam";
@@ -972,7 +984,7 @@ sub newjob_medaka_oneset($) {
         gfiles => [$rd_2_ctg_sam, $sub_reads],
         mfiles => [$sub_reads],
         cmds => ["$bin_path/fsa_rd_tools sub $reads $sub_reads --names_fname $rd_2_ctg_names",
-                 "minimap2 -a -t $threads $map_options $ctg $sub_reads > $rd_2_ctg_sam"],
+                 "minimap2 -a -t $threads $map_options $ctg $sub_reads $filter_cmd > $rd_2_ctg_sam"],
         msg => "mapping reads to contigs ($name)",
     );
 

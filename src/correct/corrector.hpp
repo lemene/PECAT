@@ -5,9 +5,10 @@
 #include <fstream>
 #include <array>
 #include <vector>
+#include <unordered_set>
 #include "align/alignment.hpp"
 #include "../utils/logger.hpp"
-
+#include "overlap_store.hpp"
 
 namespace fsa {
 
@@ -82,7 +83,6 @@ typedef BitSet MyBitSet;
 
 class Corrector {
 public:
-    static const int MAX_COV = 500;
     
     struct Loc {
         static Loc Invalid() { return { -1, 0, -1}; }
@@ -155,6 +155,41 @@ public:
     virtual void SaveReadInfos(std::ostream &os, int tid, const class ReadStore& rs) const = 0;
 
  
+};
+
+class OverlapGrouper {
+public:
+    OverlapGrouper(OverlapStore& ols) : ol_store_(ols) { }
+
+    void BuildIndex(size_t thread_size, const std::unordered_set<int>& read_ids);
+
+    void ClusterReads(const std::vector<Seq::Id>& reads);
+
+    class Group {
+    public:
+        Group(Seq::Id i) : id(i) {}
+        bool Empty() const { return ols.size() == 0; }
+        size_t Size() const { return index.size(); }
+        size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
+        const Overlap* Get(size_t i, size_t j) { return ols[index[i][0]+j]; }
+
+        void Sort(double opt_ohwt);
+        std::vector<double> GetWeight(double opt_ohwt);
+
+        Seq::Id id;
+        std::vector<const Overlap*> ols;
+        std::vector<std::array<size_t, 2>> index;
+    };
+    Group Get(int id);
+
+    struct Index {
+        std::array<int, 2> by_qurey; 
+        std::array<int, 2> by_target;
+    };
+//protected:
+    OverlapStore& ol_store_;
+    std::vector<const Overlap*> sorted_;
+    std::unordered_map<int, Index> index_;
 };
 
 

@@ -65,7 +65,11 @@ void BaseEdge::Reactivate() {
 
 double BaseEdge::Identity() const {
     assert(ol_ != nullptr);
-    return ol_->identity_;
+    if (identity_ >= 0) {
+        return identity_;
+    } else {
+        return ol_->identity_;
+    }
 }
 
 
@@ -130,13 +134,14 @@ std::string BubbleEdge::ToString(const StringPool &sp) const {
 
 std::vector<std::vector<SgEdge*>> BubbleEdge::IdentifyAllPath(SgNode* src, SgNode *dst, const std::unordered_set<const SgEdge*> &edges) const {
     std::vector<std::vector<SgEdge*>> paths;
+    const size_t MAX_ONE_PAHT_SIZE = 10;
+    
 
-    DUMPER["edge"]("IdentifyTwoPath: src=%d, dst=%d\n", src->Id().Value(0), dst->Id().Value(0));
-    std::vector<SgEdge*> stack;
     for (size_t i = 0; i < src->OutDegree(); ++i)  {
+        const size_t last_path_size = paths.size();
         auto e = src->OutEdge(i);
         if (edges.find(e) != edges.end()) {
-            stack.push_back(e);
+            std::vector<SgEdge*> stack {e};
             std::vector<size_t> index {0};
 
             while (stack.size() > 0)  {
@@ -146,6 +151,10 @@ std::vector<std::vector<SgEdge*>> BubbleEdge::IdentifyAllPath(SgNode* src, SgNod
 
                     stack.pop_back();
                     index.pop_back();
+
+                    if (paths.size() - last_path_size >= MAX_ONE_PAHT_SIZE) {
+                        break;
+                    }
                 } else {
                     size_t &idx = index.back();
                     if (idx < stack.back()->OutNode()->OutDegree()) {
@@ -174,17 +183,7 @@ void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
     if (string_edges_.size() == 0) {
         assert(simple_paths_.size() > 0);
 
-        // LOG(INFO)("MaxFlow %s, %s", in_node_->Id().ToString(string_graph.GetReadStore().GetStringPool()).c_str(), 
-        //     out_node_->Id().ToString(string_graph.GetReadStore().GetStringPool()).c_str());
         std::unordered_set<const SgEdge*> doable(simple_paths_.begin(), simple_paths_.end());
-        // LOG(INFO)("MaxFlow doable size, %zd", doable.size());
-        // for (auto e : doable) {
-        //     LOG(INFO)("MaxFlow doable %zd", e);
-        //     LOG(INFO)("MaxFlow doable %s", e->Id().ToString(string_graph.GetReadStore().GetStringPool()).c_str());
-        // }
-        
-        //std::vector<std::vector<SgEdge*>> subpaths = SgGraph::MaximumFlow(in_node_, out_node_, doable);
-        // LOG(INFO)("MaxFlow %zd, %zd", subpaths.size(), doable.size());
         std::vector<std::vector<SgEdge*>> subpaths = IdentifyAllPath(in_node_, out_node_, doable);
         std::vector<std::unordered_set<SgEdge*>> path_edges;
         for (auto & subpath : subpaths) {
@@ -198,7 +197,10 @@ void BubbleEdge::IdentifySimplePaths(StringGraph& string_graph) {
             }
             path_edges.push_back(std::unordered_set<SgEdge*>(s.begin(), s.end()));
             string_edges_.push_back(s);
+            if (string_edges_.size() >= 10) break;
         }
+        
+        DUMPER["edge"]("IdentifySimplePaths get all paths=%zd\n", string_edges_.size());
 
         if (subpaths.size() > 2) {
             auto pair_score = [](const std::unordered_set<SgEdge*>& a, const std::unordered_set<SgEdge*>& b) {

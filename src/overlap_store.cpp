@@ -83,6 +83,40 @@ std::string OverlapStore::DetectFileType(const std::string &fname) {
     }
 }
 
+// TODO may read one line less
+// ugly
+void OverlapStore::PreLoad(Reader &reader, std::vector<std::string>& done) {
+    std::vector<std::string> lines(1);
+    auto& line = lines[0];
+    reader.GetLines(lines);
+    done.push_back(line);
+    bool doing = 0;
+    while (line != "" && line[0] == '@') {
+        auto items = SplitStringBySpace(line);
+        std::string name;
+        int len = 0;
+        if (items[0] == "@SQ") {
+            doing = true;
+            for (size_t i = 1; i < items.size(); ++i) {
+                auto kv = SplitStringByChar(items[i], ':');
+                if (kv.size() == 2) {
+                    if (kv[0] == "SN") {
+                        name = kv[1];
+                    } else if (kv[0] == "LN") {
+                        len = std::stoi(kv[1]);
+                    }
+                }
+            }
+            auto nid = string_pool_.GetIdByString(name);
+            loading_infos_[nid] = len;
+        } else {
+            if (doing) break;
+        }
+        reader.GetLines(lines);
+        done.push_back(line);
+    }
+}
+
 void OverlapStore::PreLoad(const std::string &fname) {
     auto type = DetectFileType(fname);
     if (type == "sam" || type == "sam.gz") {
@@ -322,8 +356,6 @@ int OverlapStore::FromSamLine(const std::string &line, Overlap& o, StringPool::N
         // o.a_.start;
         // o.a_.end;
         o.a_.strand = (std::stoul(items[1]) & 16) ? 1 : 0;
-        
-    
         
         // target_name, target_lenght, target_start, target_end, 
         o.b_.id = ni.GetIdByName(items[2]);
@@ -590,6 +622,77 @@ void OverlapStore::Group(std::unordered_map<int, std::unordered_map<int, const O
 
     MultiThreadRun((int)thread_size, split_func, work_func);
 }
+
+void OverlapStore::Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, 
+                         std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> &dup_groups,
+                         bool (*better)(const Overlap&, const Overlap&),
+                         const std::unordered_set<int>& keys, 
+                         size_t thread_size) const {
+
+
+    std::mutex mutex;
+    auto add_overlap = [this, better](int low, int a, int b, const Overlap& o, 
+                              std::vector<std::unordered_map<Seq::Id, const Overlap*>>& group,
+                              std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &dups) {
+        
+        auto it = group[a-low].find(b);
+        if (it == group[a-low].end()) {
+            group[a-low][b] = &o;
+        } else {
+            if (better(o, *(it->second))) {
+                it->second = &o;
+            } 
+        }
+        dups[a-low][b].push_back(&o);
+    };
+
+    auto split_func = [this, thread_size]() {
+        auto r = GetReadIdRange();
+        return SplitRange(thread_size, r[0], r[1]);
+    };
+
+    auto comb_func = [&mutex, better, &groups, &dup_groups](int low, 
+                                    std::vector<std::unordered_map<Seq::Id, const Overlap*>>&& gs,
+                                    std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &&ds) {
+        std::lock_guard<std::mutex> lock(mutex);
+        assert(gs.size() == ds.size());
+        for (size_t i=0; i<gs.size(); ++i) {
+            if (gs[i].size() > 0) {
+                groups[low+(int)i] = std::move(gs[i]);
+            }
+
+            for (auto&& d : ds[i]) {
+                if (d.second.size() > 1) {
+                    std::sort(d.second.begin(), d.second.end(), [better](const Overlap* a, const Overlap* b){
+                        return better(*a, *b);
+                    });
+                    dup_groups[low+(int)i][d.first] = std::move(d.second);
+                }
+            }
+        }
+    };
+
+    auto work_func = [this, add_overlap, comb_func, &keys](std::array<Seq::Id, 2> r) {
+        std::vector<std::unordered_map<Seq::Id, const Overlap*>> gs(r[1] - r[0]);
+        std::vector<std::unordered_map<Seq::Id, std::vector<const Overlap*>>> ds(r[1] - r[0]);
+
+        for (size_t i=0; i<Size(); ++i) {
+            const auto &o = Get(i);
+            if (o.a_.id >= r[0] && o.a_.id < r[1] && keys.find(o.a_.id) != keys.end()) {
+                add_overlap(r[0], o.a_.id, o.b_.id, o, gs, ds); 
+            }
+            if (o.b_.id >= r[0] && o.b_.id < r[1] && keys.find(o.b_.id) != keys.end()) {
+                add_overlap(r[0], o.b_.id, o.a_.id, o, gs, ds);
+            }
+        }
+        comb_func(r[0], std::move(gs), std::move(ds));
+
+    };
+
+    MultiThreadRun((int)thread_size, split_func, work_func);
+
+}
+
 
 void OverlapStore::Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, const std::unordered_set<int>& keys, size_t thread_size) const {
     

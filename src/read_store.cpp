@@ -103,7 +103,7 @@ void ReadStore::AddItem(const SeqReader::Item &item, bool all, const std::unorde
     // TODO not support muli-threads
     Seq::Id id = string_pool_.GetIdByStringUnsafe(item.head);
     assert(id >= 0);
-    assert((size_t)id >= offset_ && (size_t)id - offset_ <= items_.size());
+    assert((size_t)id >= offset_);
     while (items_.size() <= id - offset_) {
         items_.push_back(Item());
     }

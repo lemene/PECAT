@@ -37,7 +37,7 @@ void SemiBubbleSimplifier::Running() {
         Debug("Find semi node id0: %s\n", n->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
         auto e = Detect(static_cast<PathNode*>(n));
         if (e != nullptr) {
-            Debug("Find semi id0: %s\n", e->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
+            Debug("Find semi id0: %s\n", ToString(e).c_str());
             if (!e->Validate(graph_.GetAsmData().GetInconsistentOverlaps(), graph_.GetReadStore(), graph_.string_graph_, graph_.Options().max_bubble_length)) { 
                 delete e;
                 e = nullptr;
@@ -133,11 +133,12 @@ SemiBubbleEdge* SemiBubbleSimplifier::Detect(PathNode* start_node, int depth_cut
 
         std::vector<PathEdge*>  path;
         Debug("Find semi contine 0: %s, - %d\n", e->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), e->OutNode()->OutDegree());
-        if (e->OutNode()->OutDegree() == 1) {
+        if (e->OutNode()->OutDegree() == 1 && e->OutNode()->InDegree() == 1) {
             path.push_back(e);
             PathEdge* curr = e->OutNode()->OutEdge<PathEdge>(0);
             while (is_edge_valid(curr) && curr->InNode()->InDegree() == 1 && curr->OutNode()->OutDegree() == 1) {
-
+                
+                Debug("Find semi contine 0 curr: %s, - %d\n", curr->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), curr->OutNode()->OutDegree());
                 path.push_back(curr);
                 curr = curr->OutNode()->OutEdge<PathEdge>(0);
             }
@@ -148,7 +149,9 @@ SemiBubbleEdge* SemiBubbleSimplifier::Detect(PathNode* start_node, int depth_cut
             } else if (is_edge_valid(curr) && curr->InNode()->InDegree() == 2 && curr->OutNode()->OutDegree() == 1 && 
                 curr->OutNode()->OutEdge(0)->OutNode() == curr->InNode()) {                      // loop
                 path.push_back(curr);
-            } 
+            } else if (is_edge_valid(curr) && curr->InNode()->InDegree() == 1 && curr->InNode()->OutDegree() == 1 ) {
+                path.push_back(curr);
+            }
             paths.push_back(path);
         } else {
             path.push_back(e);
@@ -172,8 +175,13 @@ SemiBubbleEdge* SemiBubbleSimplifier::Detect(PathNode* start_node, int depth_cut
             return aend > bend || (aend == bend && a.size() > b.size());
         });
 
+        auto is_path_loop = [this](const std::vector<PathEdge*>& path) {
+            auto start = path.front()->InNode();
+            auto end = path.back()->OutNode();
+            return start == end || start == graph_.ReverseNode(end);
+        };
         Debug("Find semi contine xxxx  %d: %zd, %zd\n", paths[1].back()->OutNode()->OutDegree() == 0 || is_loop_end(paths[1].back()), paths[0].size(), paths[1].size());
-        if (paths[1].back()->OutNode()->OutDegree() == 0 || is_loop_end(paths[1].back())) {
+        if (!is_path_loop(paths[0]) && (paths[1].back()->OutNode()->OutDegree() == 0 || is_loop_end(paths[1].back()))) {
 
             if (paths[0].size() > paths[1].size() + 30) {
                 paths[0].erase(paths[0].begin()+paths[1].size(), paths[0].end());

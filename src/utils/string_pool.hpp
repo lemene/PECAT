@@ -40,6 +40,28 @@ public:
         std::vector<std::string> names;
     };
 
+    struct TempNameId2 : public NameId {
+        TempNameId2(const StringPool& sp) : string_pool_(sp) {}
+        Seq::Id GetIdByName(const std::string &name) {
+            Seq::Id id = string_pool_.QueryIdByString(name);
+            if (id == StringPool::NID) {
+                id = name_id_.GetIdByName(name);
+                id += string_pool_.Size();
+            }
+            return id;
+        }
+        std::string QueryNameById(Seq::Id id) const {
+            assert(id >= 0);
+            if (id < (int)string_pool_.Size()) {
+                return string_pool_.QueryStringById(id);
+            } else {
+                return name_id_.QueryNameById(id - string_pool_.Size());
+            }
+        }
+        TempNameId name_id_;
+        const StringPool& string_pool_;
+    };
+
     struct SafeNameId : public NameId {
         SafeNameId(StringPool& rs) : rd_store(rs) {}
         virtual Seq::Id GetIdByName(const std::string &name) { 

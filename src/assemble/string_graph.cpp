@@ -945,6 +945,7 @@ double StringGraph::GetOverlapQuality(const Overlap &ol) {
     auto r = edlibAlign((const char*)&qseq[0], qseq.size(), (const char*)&tseq[0], tseq.size(),
         edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
     if (r.status == EDLIB_STATUS_OK) {
+        const_cast<Overlap&>(ol).identity_ = (1.0 - r.editDistance * 1.0 / ol.AlignedLength()) * 100;
         return 1.0 - r.editDistance * 1.0 / ol.AlignedLength();
     } else {
         return 0.0;

@@ -33,6 +33,8 @@ public:
         return ap;
     }
     virtual void Running();
+    virtual void Running1();
+    void KeepExtend(class OverlapStore &ol_store);
     void LoadRanges(const std::string& fname, StringPool& sp);
 protected:
     std::string ifname_;
@@ -136,6 +138,7 @@ public:
         ArgumentParser ap(Name(), Description(), "");
         ap.AddPositionOption(ifname_, "ifname", "paf file");
         ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+        ap.AddNamedOption(detail_, "detail", "filename for recording details");
 
         return ap;
     }
@@ -143,6 +146,7 @@ public:
 protected:
     std::string ifname_;
     int thread_size_ { 4 };
+    std::string detail_;
 };
 
 class Program_Accuracy2 : public Program {

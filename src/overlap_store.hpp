@@ -1,6 +1,4 @@
-#ifndef FSA_OVERLAP_STORE_HPP
-#define FSA_OVERLAP_STORE_HPP
-
+#pragma once
 
 #include <array>
 #include <vector>
@@ -102,6 +100,11 @@ public:
     std::unordered_map<int, std::unordered_map<int, Overlap*>> GroupQuery(bool (*better)(const Overlap* a, const Overlap *b));
     void Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, size_t thread_size) const;
     void Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, const std::unordered_set<int>& keys, size_t thread_size) const;
+    void Group(std::unordered_map<int, std::unordered_map<int, const Overlap*>>& groups, 
+               std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> &dup_groups,
+               bool (*better)(const Overlap&, const Overlap&),
+               const std::unordered_set<int>& keys, 
+               size_t thread_size) const;
     void GroupTarget(std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &groups, size_t threads) const;
     void GroupQuery(std::unordered_map<Seq::Id, std::unordered_map<Seq::Id, std::vector<const Overlap*>>> &groups, size_t threads) const;
 
@@ -120,6 +123,8 @@ public:
     template<typename C>
     void LoadFileTxtFast(const std::string &fname, C check, size_t thread_size);
 
+    // TODO ugly, only for sam
+    void PreLoad(Reader &reader, std::vector<std::string>& done);
     void PreLoad(const std::string &fname);
     void AfterLoad(const std::string &fname);
 
@@ -138,6 +143,11 @@ public:
     }
 
     static int FromPafLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen);
+
+    static int FromSamLineEx(const std::string &line, Overlap &o, StringPool::NameId& ni, int &replen) {
+        replen = 0;
+        return FromSamLine(line, o, ni);
+    }
 
     static std::string ToM4aLine(const Overlap& o, const  StringPool::NameId& ni);
     static std::string ToM4Line(const Overlap& o, const StringPool::NameId& ni);
@@ -175,13 +185,8 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
     std::mutex mutex_gen;
     std::mutex mutex_comb;
     GzFileReader in(fname);
-    const size_t block_size = 10000;
-    if (thread_size > load_threads) thread_size = load_threads;
 
-    auto generate_func = [&mutex_gen, &in](std::vector<std::string> &lines) {
-        std::lock_guard<std::mutex> lock(mutex_gen);
-        return in.GetLines(lines);
-    };
+    if (thread_size > load_threads) thread_size = load_threads;
 
     auto combine_func = [&check, &mutex_comb, this](std::vector<Overlap> &ols, size_t sz, StringPool::TempNameId &ni) {
         if (ni.names_to_ids.size() > 0) {
@@ -193,8 +198,17 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
                 o.b_.id = id2id[o.b_.id];
             }
         }
+        // TODO 
+        // std::vector<Overlap> v_ols;
+        // v_ols.reserve(sz);
+        // for (auto& o : ols) {
+        //     if (check(o)) {
+        //         v_ols.push_back(o);
+        //     }
+        // }
         {
             std::lock_guard<std::mutex> lock(mutex_comb);
+            //overlaps_.Insert(v_ols, v_ols.size());
             for (size_t i=0; i<sz; ++i) {
                 auto& o = ols[i];
                 if (check(o)) {
@@ -204,33 +218,35 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
         }
     };
 
-    auto work_func = [&check, this, lineToOl, block_size, generate_func, combine_func, &fname, &in](size_t id) {
-        std::vector<std::string> lines(block_size);
-        std::vector<Overlap> ols(block_size);
-        thread_local StringPool::TempNameId ni;
-        while (true) {
-            size_t line_size = generate_func(lines);
-            if (line_size > 0) {
-                size_t ol_size = 0;
-                for (size_t i=0; i<line_size; ++i) {
-                if (lines[i].size() < 1 || lines[i][0] == '#') continue;
-                    Overlap o;
-                    auto r = lineToOl(lines[i], o, ni);
-                    if (r > 0) {
-                        ols[ol_size++] = o;
-                    } else if (r < 0) {
-                        LOG(ERROR)("Failed to convert line to overlap \n   %s", lines[i].c_str());
-                    } else {
-                        // r == 0 pass
-                    }
-                }
-                combine_func(ols, ol_size, ni);;
-                
-            } else {
-                break;
-            }
+    auto work_func = [&check, this, lineToOl, combine_func, &fname, &mutex_gen, &in](size_t id) {
+        const size_t max_overlap_size = 1000000;
+        const size_t max_block_size = 10000000;
 
-        }   
+        std::vector<Overlap> ols(max_overlap_size);
+        size_t ol_size = 0;
+
+        LineInBlock line_in_block(in, max_block_size, &mutex_gen);
+        thread_local StringPool::TempNameId ni;
+        std::string line;
+        for (bool is_valid = line_in_block.GetLine(line); is_valid; is_valid = line_in_block.GetLine(line)) {
+            if (line.size() < 1 || line[0] == '#') continue;
+            Overlap o;
+            auto r = lineToOl(line, o, ni);
+            if (r > 0) {
+                ols[ol_size++] = o;
+            } else if (r < 0) {
+                LOG(ERROR)("Failed to convert line to overlap \n   %s", line.c_str());
+            } else {
+                // r == 0 pass
+            }
+            if (ol_size >= max_overlap_size) {
+                combine_func(ols, ol_size, ni);
+                ol_size = 0;
+            }
+        }
+        combine_func(ols, ol_size, ni);
+        ol_size = 0;
+
         if (!in.IsEnd()) {
             LOG(WARNING)("No all overlaps in file are loaded: %s", fname.c_str());
         }
@@ -245,120 +261,54 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
     }
 }
 
-
-// template<typename F, typename C>
-// void OverlapStore::LoadFileFast(const std::string &fname, F lineToOl, C check, size_t thread_size) {
-//     std::mutex mutex_gen;
-//     GzFileReader in(fname);
-
-//     const size_t block_size = 10000;
-//     if (thread_size > load_threads) thread_size = load_threads;
-    
-//     auto generate_func = [&mutex_gen, &in](std::vector<std::string> &lines) {
-//         std::lock_guard<std::mutex> lock(mutex_gen);
-//         return in.GetLines(lines);
-//     };
-
-//     auto combine_func = [&check, this](std::vector<Overlap> &ols, size_t sz) {
-//         std::lock_guard<std::mutex> lock(mutex_overlaps_);
-//         //overlaps_.insert(overlaps_.end(), ols.begin(), ols.begin()+sz);
-//         overlaps_.Insert(ols, sz);
-//     };
-
-//     auto work_func = [&check, this, lineToOl, block_size, generate_func, combine_func, &fname, &in](size_t id) {
-//         std::vector<std::string> lines(block_size);
-//         std::vector<Overlap> ols(block_size);
-//         thread_local StringPool::UnsafeNameId ni(string_pool_);
-//         while (true) {
-//             size_t line_size = generate_func(lines);
-            
-//             if (line_size > 0) {
-//                 size_t ol_size = 0;
-//                 for (size_t i=0; i<line_size; ++i) {
-//                     Overlap o;
-//                     if (lineToOl(lines[i], o, ni)) {
-//                         if (check(o)) {
-//                             ols[ol_size++] = o;
-//                         }
-//                     } else {
-//                         LOG(ERROR)("Failed to convert line to overlap \n   %s", lines[i].c_str());
-//                     }
-//                 }
-//                 combine_func(ols, ol_size);;
-//             } else {
-//                 break;
-//             }
-
-//         }   
-//         if (!in.IsEnd()) {
-//             LOG(WARNING)("No all overlaps in file are loaded: %s", fname.c_str());
-//         }
-//     };
-
-//     if (in.Valid()) {
-//         MultiThreadRun(thread_size, work_func);
-//     } else {
-//         LOG(ERROR)("Failed to load file: %s", fname.c_str());
-//     }
-// }
-
 template<typename F, typename C>
 void OverlapStore::LoadFileFast(const std::string &fname, F lineToOl, C check, size_t thread_size) {
     std::mutex mutex_gen;
     GzFileReader in(fname);
 
-    const size_t block_size = 10000;
     if (thread_size > load_threads) thread_size = load_threads;
-    
-    auto generate_func = [&mutex_gen, &in](std::vector<char> &block) {
-        std::lock_guard<std::mutex> lock(mutex_gen);
-        return in.GetBlock(block, "\n", 1);
-    };
 
     auto combine_func = [&check, this](std::vector<Overlap> &ols, size_t sz) {
         std::lock_guard<std::mutex> lock(mutex_overlaps_);
-        //overlaps_.insert(overlaps_.end(), ols.begin(), ols.begin()+sz);
         overlaps_.Insert(ols, sz);
     };
 
-    auto work_func = [&check, this, lineToOl, block_size, generate_func, combine_func, &fname, &in](size_t id) {
-        std::vector<char> block(10000000);
+    auto work_func = [&check, this, lineToOl, &mutex_gen, combine_func, &fname, &in](size_t id) {
+        const size_t max_block_size = 10000000;
+        const size_t max_overlap_size = 100000;
+
         std::vector<Overlap> ols;
-        ols.reserve(10000);
+        ols.reserve(max_overlap_size);
 
         StringPool::UnsafeNameId ni(string_pool_);
-        size_t block_size = generate_func(block);
+        LineInBlock line_in_block(in, max_block_size, &mutex_gen);
 
-        std::string line;
-        while (block_size > 0) {
-            auto curr = block.begin();
-            while (curr < block.begin()+block_size) {
-                auto next = std::find(curr, block.begin()+block_size, '\n');
-                line = std::string(curr, next);
-                if (line.size() < 1 || line[0] == '#') continue;
-                Overlap o;
-                auto r = lineToOl(line, o, ni);
-                if (r > 0) {
-                    if (check(o)) {
-                        ols.push_back(o);
-                    }
-                } else if (r < 0) {
-                    LOG(INFO)("line: %d %d, %zd, %c %c", curr-block.begin(), next-block.begin(), block_size, *curr, *next);
-                    LOG(ERROR)("Failed to convert line to overlap \n   \"%s\"", line.c_str());
-                } else {
-                    // r == 0 pass
+        std::string line;        
+        for (bool is_valid = line_in_block.GetLine(line); is_valid; is_valid = line_in_block.GetLine(line)) {
+            if (line.size() < 1 || line[0] == '#') continue;
+
+            Overlap o;
+            auto r = lineToOl(line, o, ni);
+            if (r > 0) {
+                if (check(o)) {
+                    ols.push_back(o);
                 }
-                curr = next;
-                if (curr < block.begin()+block_size && *curr == '\n')  curr++;
-
+            } else if (r < 0) {
+                LOG(ERROR)("Failed to convert line to overlap \n   \"%s\"", line.c_str());
+            } else {
+                // r == 0 pass
             }
 
+            if (ols.size() >= max_overlap_size) {
+                combine_func(ols, ols.size());
+                ols.clear();
+            }
+        }
+        if (ols.size() > 0) {
             combine_func(ols, ols.size());
             ols.clear();
-            block_size = generate_func(block);
         }
 
-    
         if (!in.IsEnd()) {
             LOG(WARNING)("No all overlaps in file are loaded: %s", fname.c_str());
         }
@@ -504,4 +454,3 @@ void OverlapStore::LoadFileTxtFast(const std::string &fname, C check, size_t thr
 
 } // namespace fsa {
 
-#endif // FSA_OVERLAP_STORE_HPP

@@ -12,9 +12,10 @@ public:
     void CheckArguments();
 
 
+
     int thread_size { 4 };
     int min_coverage { 4 };
-
+    bool skip_branch_check { false };
     bool use_cache { false };
     bool debug { false };
     int debug_flag { 0 };  
