@@ -16,7 +16,6 @@ RUN wget \
     && mkdir /root/.conda \
     && bash Miniconda3-latest-Linux-x86_64.sh -b \
     && rm -f Miniconda3-latest-Linux-x86_64.sh
-RUN conda --version
 
 # install docker
 RUN apt update -y
@@ -29,10 +28,15 @@ RUN conda config --add channels defaults
 RUN conda config --add channels bioconda
 RUN conda config --add channels conda-forge
 RUN conda config --set channel_priority strict
-RUN conda create -n pecat-env pecat=0.0.2 minimap2 racon perl samtools
-
-#RUN conda init bash && . /root/.bashrc && conda activate pecat-env
 
 ENV PATH /root/miniconda3/envs/pecat-env/bin:$PATH
+
+RUN conda create -n pecat-env  minimap2=2.24 racon=1.5 perl=5.32 samtools=1.17 python=3.11
+
+RUN wget https://github.com/lemene/PECAT/releases/download/v0.0.3/pecat_v0.0.3_d1e5be8.tar.gz
+RUN mkdir -p /root/miniconda3/envs/pecat-env/share
+RUN tar -zxf pecat_v0.0.3_d1e5be8.tar.gz -C /root/miniconda3/envs/pecat-env/share
+
+ENV PATH /root/miniconda3/envs/pecat-env/share/pecat_v0.0.3/build/bin:$PATH
 
 WORKDIR /mnt

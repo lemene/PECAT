@@ -83,17 +83,24 @@ polish_medaka_command = singularity exec -B `pwd -P`:`pwd -P` medaka_v1.7.2.sif 
 ##### Using docker
 Add the following parameters to the config file.
 ```
-phase_clair3_command =  docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P`  hkubal/clair3:latest /opt/bin/run_clair3.sh
-polish_medaka_command = docker run -i --user=$UID:$(id -g $USER) -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
+phase_clair3_command =  docker run -i -v `pwd -P`:`pwd -P`  hkubal/clair3:latest /opt/bin/run_clair3.sh
+polish_medaka_command = docker run -i -v `pwd -P`:`pwd -P` ontresearch/medaka:v1.7.2 medaka
 ```
 
 ## Docker pre-built image
-There is a pre-built docker image[https://hub.docker.com/r/lemene/pecat]. We recommend running Docker using the following command.
+There is a pre-built [docker image](https://hub.docker.com/r/lemene/pecat). We can use the following commands to run pecat.
 ```
-docker run -i -v `pwd -P`:/mnt -v /var/run/docker.sock:/var/run/docker.sock lemene/pecat:0.0.2 pecat.pl unzip cfg
+docker run -i -v $CWD:/mnt -v /var/run/docker.sock:/var/run/docker.sock lemene/pecat:v0.0.3 pecat.pl unzip cfg
 ```
-```-v `pwd -P`:/mnt```: Map current working directory of the host to current working directory of the container.
-```-v /var/run/docker.sock:/var/run/docker.sock```: Docker in Docker[https://devopscube.com/run-docker-in-docker/]. By adding this parameter, pecat in the container can run the docker images (clair3 and medaka) of the host.
++ ```-v $CWD:/mnt```: Map current working directory (`$CWD`) of the host to current working directory (`/mnt`) of the container.
++ ```-v /var/run/docker.sock:/var/run/docker.sock```: [Docker in Docker](https://devopscube.com/run-docker-in-docker/). By adding this parameter, pecat in the container can run the docker images (clair3 and medaka) of the host.
++ Other paths (parameter `reads`) should also be mapped carefully to ensure that PECAT in the container can access them.
+If clair3 and medaka are used to improve assembly performance, use the following parameters.
+```
+phase_clair3_command =  docker run -i -v $CWD:/mnt  hkubal/clair3:latest /opt/bin/run_clair3.sh
+polish_medaka_command = docker run -i -v $CWD:/mnt ontresearch/medaka:v1.7.2 medaka
+```
+`$CWD` should be set to an absolute path.
 
 ## Testing
 We can run the demo to test whether PECAT has been succesfully installed. See [demo/README.md](demo/README.md).
