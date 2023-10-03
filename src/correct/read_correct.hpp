@@ -171,9 +171,9 @@ protected:
     size_t  group_size  = 1000;
 
     std::unordered_set<int> reads_;
-    ReadStore read_store_;
-    OverlapStore ol_store_{read_store_.GetStringPool() };
-    StringPool &string_pool_ {read_store_.GetStringPool()};
+    StringPool string_pool_;
+    ReadStore read_store_ {string_pool_};
+    OverlapStore ol_store_{string_pool_ };
 
     OverlapGrouper grouper_ { ol_store_ };
 
