@@ -136,7 +136,7 @@ sub jobRead2ReadParallelly($$$$$$$) {
                 my $ofile = "$f.paf";
                 my $jobSub = $self->newjob(
                     name => "${name}_rd2rd_align_$i",
-                    ifiles => [$f],
+                    ifiles => [$blockInfo],
                     ofiles => [$ofile],
                     gfiles => [$ofile],
                     mfiles => [$f],

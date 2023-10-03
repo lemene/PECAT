@@ -1244,9 +1244,9 @@ sub cmd_config($) {
 
 
 sub usage() {
-    print "Usage: fsa.pl correct|assemble|bridge|config cfg_fname\n".
+    print "Usage: pecat.pl correct|assemble|unzip|config cfg_fname\n".
           "    correct:     correct rawreads\n" .
-          "    assemble:    generate contigs\n" .
+          "    assemble:    generate haplotype-collapsed assembly\n" .
           "    unzip:       generate diploid assembly\n" .
           "    config:      generate default config file\n" 
 }
