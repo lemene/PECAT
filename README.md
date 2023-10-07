@@ -237,6 +237,18 @@ grid= auto:4
 
 In the above example, `auto` means the pipeline automatically detects the type of cluster system. `pbs`, `sge`, `lsf` and `slurm` represent the corresponding systems, respectively. `4` computation nodes are used and each computation node run with `threads` CPU threads.
 
+### Additional options
+The parameter `grid_options` is used to add additional options. 
+
+Here is an example. When `grid_options` is set to
+```
+grid_options=  -A pi_zy --partition cpuQ -q cpuq
+```
+the command for `slurm` system is
+```
+sbatch -D `pwd` -J al_rd2rd_split.sh --cpus-per-task=1 -o al_rd2rd_split.sh.log -A pi_zy --partition cpuQ -q al_rd2rd_split.sh
+```
+
 
 
 # Contact
