@@ -12,6 +12,7 @@
     + `lsf`: LSF systems.
     + `slurm`:Slurm systems.
     + `local`: do not use cluster system.
++ `grid_options`: It is used to add additional options for submitting jobs.
 
 ### Preparing
 The pipeline extracts `genome_size`*`prep_output_coverage` longest reads from `reads` for the next steps.
@@ -109,6 +110,5 @@ Parameters for using `medaka`.
 + `polish_medaka_command`: medaka command. If using `singularity`, it can be set ```singularity exec --containall -B `pwd -P`:`pwd -P` medaka_1.7.2--aa54076.sif medaka``` 
 + `polish_medaka_map_options`: parameters for `minimap2` to find the alignments bewteen the outputs of `racon` and the reads.
 + `polish_medaka_cns_options`: parameters for `medaka`.
-
 
 
