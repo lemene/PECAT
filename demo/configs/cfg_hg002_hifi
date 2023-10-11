@@ -1,0 +1,36 @@
+project= human
+reads= $READS
+genome_size= 3000000000
+threads=48
+cleanup=0
+grid=auto
+prep_min_length=3000
+prep_output_coverage=60
+corr_iterate_number=1
+corr_block_size=4000000000
+corr_correct_options=--score=weight:lc=8 --aligner diff:s=100 --min_coverage 1 --filter1 oh=100 --min_identity 96 --min_local_identity 95
+corr_filter_options=--filter0=l=5000:al=2500:alr=0.5:aal=5000:oh=3000:ohr=0.3
+corr_rd2rd_options=-X -g3000 -w30 -k19 -m100 -r500 -f 0.002 -K8G -I 8G
+corr_output_coverage=60
+align_block_size=4000000000
+align_rd2rd_options=-X -g3000 -w30 -k19 -m100 -r500 -f 0.002 -K8G -I 8G
+align_filter_options=--filter0=l=5000:aal=6000:aalr=0.5:oh=3000:ohr=0.3 --task=extend --filter1=oh=50:ohr=0.01  --aligner diff:s=100 --min_identity 0.90
+asm1_assemble_options= --min_identity 0.99 --min_coverage 1
+
+phase_method=2
+phase_rd2ctg_options=-x map-hifi  -c -p 0.5 -r 1000 -K8G
+phase_use_reads=1
+phase_phase_options= --coverage lc=8 --phase_options icr=0.02:icc=3:sc=4 --filter=i=95.00:alr=0.80:oh=100:ohr=0.01:ilid=100
+
+phase_clair3_command= singularity exec --containall -B `pwd -P`:`pwd -P` -B /tmp:/tmp clair3_v0.1-r12.sif /opt/bin/run_clair3.sh
+phase_clair3_use_reads=0
+phase_clair3_options=--platform=hifi --model_path=/opt/models/hifi  --include_all_ctgs
+phase_clair3_rd2ctg_options=-x map-hifi  -c -p 0.5 -r 1000 -K8G
+phase_clair3_phase_options=--coverage lc=8 --phase_options icr=0.02:icc=2:sc=4 --filter i=95
+phase_clair3_filter_options=
+
+asm2_assemble_options= --reducer0 "best:cmp=2,0.1,0.1|phase:sc=2" --min_identity 0.99 --max_trivial_length 10000 --contig_format dual,prialt --min_coverage 1
+
+polish_map_options=-x map-hifi -I8G -K8G -a
+polish_filter_options=--filter0 oh=500:ohr=0.05:i=98
+polish_cns_options=
