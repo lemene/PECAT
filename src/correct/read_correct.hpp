@@ -14,8 +14,6 @@
 
 namespace fsa {
 
-
-
 class ReadCorrect : public Program {
 public:
     ReadCorrect();
@@ -50,12 +48,9 @@ protected:
     void Correct();
     void SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t, 2> &range);
     
-    std::string OutputPath(const std::string &fname) { return output_directory_+"/"+fname; }
 
-    void GroupOverlaps();
-    void SortOverlaps();
     void GroupReadIds();
-
+    void EstimateParameters();
 
 
     // 
@@ -70,10 +65,10 @@ protected:
     class Worker {
     public:
         Worker(ReadCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
-            graph_.SetParameter("score", owner.score_);
-            aligner_.SetParameter("min_identity", owner.min_identity_);  
-            aligner_.SetParameter("min_local_identity", owner.min_local_identity_);
-            aligner_.SetParameter("aligner", owner_.aligner_);
+            graph_.SetParameter("score", owner.opts_.score_);
+            aligner_.SetParameter("min_identity", owner.opts_.min_identity_);  
+            aligner_.SetParameter("min_local_identity", owner.opts_.min_local_identity_);
+            aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };
         ~Worker() {  }
         bool Correct(int id, bool uc=true);
@@ -146,32 +141,12 @@ protected:
         LOG(INFO)("alignment %d %d", stat_info_.aligns[0], stat_info_.aligns[1]);
     }
 protected:
-    std::string filter0_opts_ {"l=2000:al=2000:alr=0.50"};
-    std::string filter1_opts_ {"l=2000:al=3000:alr=0.50:aal=6000:oh=2000:ohr=0.2"};
+    CrrOptions opts_;
+    CrrDataset dataset_ { opts_ };
     Overlap::Filter filter0_;
     Overlap::Filter filter1_; 
-    std::string cands_opts_str_ { "c=80:f=10:p=0.95:ohwt=0.1"};
-    CandidateOptions cands_opts_ { cands_opts_str_ };
+    CandidateOptions cands_opts_ { opts_.cands_opts_str_ };
 
-    double min_identity_ { 60 };
-    double min_local_identity_ { 50 };
-    bool check_local_identity_ { false };
-
-
-    std::string read_name_ {""};
-    std::string read_name_fname_ { "" };
-
-    std::string aligner_ { "diff" };
-    std::string aligner_parameter { "" };
-    std::string score_ { "weight" };
-    std::string output_directory_ {"."};
-
-    std::string overlap_fname_;
-    std::string rread_fname_;
-    std::string cread_fname_;
-    std::string graph_fname_ {""};
-    std::string infos_fname_ {""}; 
-    
     std::vector<Seq::Id> read_ids_;
     std::vector<Seq::Id> grouped_ids_;
     std::vector<size_t> group_ticks;
@@ -186,8 +161,6 @@ protected:
 
     StatInfo stat_info_;
 
-    CrrOptions opts_;
-    CrrDataset dataset_ { opts_ };
 };
 
 } // namespace fsa {

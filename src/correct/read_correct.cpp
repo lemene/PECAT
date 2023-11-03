@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <atomic>
+#include <ctime>
+#include <random>
 #include "./utils/logger.hpp"
 #include "../utility.hpp"
 
@@ -13,36 +15,19 @@ ReadCorrect::ReadCorrect() {
 
 ArgumentParser ReadCorrect::GetArgumentParser() {
     ArgumentParser ap;
-    ap.AddPositionOption(overlap_fname_, "ol_fname", "overlap file name");
-    ap.AddPositionOption(rread_fname_, "rr_fname", "raw read file name");
-    ap.AddPositionOption(cread_fname_, "cr_fname", "corrected read file name");
-
-    ap.AddNamedOption(filter0_opts_, "filter0", "overlap filtering options using at loading step", "");
-    ap.AddNamedOption(filter1_opts_, "filter1", "overlap filtering options using at loading step", "");
-    ap.AddNamedOption(graph_fname_, "graph_fname", "The file recording graph");
-    ap.AddNamedOption(infos_fname_, "infos_fname", "The file recording score infos");
-    ap.AddNamedOption(output_directory_, "output_directory", "The directory for temporary files");
-    ap.AddNamedOption(read_name_, "read_name", "read name for correcting");
-    ap.AddNamedOption(read_name_fname_, "read_name_fname", "Set read name for correcting");
-    ap.AddNamedOption(aligner_, "aligner", "method for local alignment, diff|edlib.");
-    ap.AddNamedOption(score_, "score", "");
-    ap.AddNamedOption(cands_opts_str_, "candidate", "options for selecting candidate overlaps");
-    ap.AddNamedOption(min_identity_, "min_identity", "");
-    ap.AddNamedOption(min_local_identity_, "min_local_identity", "");
-    ap.AddNamedOption(check_local_identity_, "check_local_identity", "");
     opts_.SetArguments(ap);
     return ap;
 }
 
 void ReadCorrect::CheckArguments() {
-    filter0_.From(filter0_opts_);
-    filter1_.From(filter1_opts_);
+    filter0_.From(opts_.filter0_opts_);
+    filter1_.From(opts_.filter1_opts_);
     
-    filter0_opts_ = filter0_.ToString();
-    filter1_opts_ = filter1_.ToString();
+    opts_.filter0_opts_ = filter0_.ToString();
+    opts_.filter1_opts_ = filter1_.ToString();
 
-    cands_opts_.From(cands_opts_str_);          // 合并用户设置
-    cands_opts_str_ = cands_opts_.ToString();   // 输出所有参数
+    cands_opts_.From(opts_.cands_opts_str_);          // 合并用户设置
+    opts_.cands_opts_str_ = cands_opts_.ToString();   // 输出所有参数
     if (opts_.debug) SetDebug();
 }
 
@@ -94,7 +79,7 @@ void ReadCorrect::Running() {
     LoadReadIds();
 
     LOG(INFO)("Memory: %zd", GetMemoryUsage());
-    LoadOverlaps(overlap_fname_);
+    LoadOverlaps(opts_.overlap_fname_);
     LoadReads();
 
     LOG(INFO)("Memory: %zd", GetMemoryUsage());
@@ -105,6 +90,9 @@ void ReadCorrect::Running() {
     if (opts_.use_cache) GroupReadIds();
 
     LOG(INFO)("Memory: %zd", GetMemoryUsage());
+
+    // EstimateParameters();
+    EstimateParameters();
     Correct();
 }
 
@@ -116,7 +104,7 @@ void ReadCorrect::LoadReads() {
         ids.insert(o.a_.id);
         ids.insert(o.b_.id);
     }
-    read_store_.Load(rread_fname_, "", false, ids);
+    read_store_.Load(opts_.rread_fname_, "", false, ids);
     
     if (read_ids_.empty()) {
         read_ids_.assign(ids.begin(), ids.end());
@@ -141,10 +129,10 @@ void ReadCorrect::LoadOverlaps(const std::string &fname) {
 void ReadCorrect::LoadReadIds() {
     // read_store_.Load(rread_fname_, "", false);
     std::unordered_set<Seq::Id> ids;    // Remove duplicate names
-    if (!read_name_.empty()) {
-        ids.insert(string_pool_.GetIdByStringUnsafe(read_name_));
-    } else if (!read_name_fname_.empty()) {
-        std::ifstream file(read_name_fname_);
+    if (!opts_.read_name_.empty()) {
+        ids.insert(string_pool_.GetIdByStringUnsafe(opts_.read_name_));
+    } else if (!opts_.read_name_fname_.empty()) {
+        std::ifstream file(opts_.read_name_fname_);
         std::string line;
         while (std::getline(file, line)) {
             ids.insert(string_pool_.GetIdByStringUnsafe(line));
@@ -160,8 +148,8 @@ void ReadCorrect::Correct() {
 
     std::mutex mutex;
     
-    std::ofstream of_cread(cread_fname_);
-    std::ofstream of_infos(infos_fname_);
+    std::ofstream of_cread(opts_.cread_fname_);
+    std::ofstream of_infos(opts_.infos_fname_);
     const bool save_infos = of_infos.is_open();
     const size_t flush_block = 20*1024*1024;
 
@@ -247,7 +235,7 @@ void ReadCorrect::Correct() {
     if (of_cread.is_open()) {
         MultiThreadRun((size_t)opts_.thread_size, work_func);
     } else {
-        LOG(INFO)("Failed to open file: %s", rread_fname_.c_str());
+        LOG(INFO)("Failed to open file: %s", opts_.rread_fname_.c_str());
     }
 
     Report();
@@ -313,6 +301,45 @@ void ReadCorrect::GroupReadIds() {
 
 }
 
+void ReadCorrect::EstimateParameters() {
+
+    size_t count = std::min<size_t>(10, read_ids_.size());
+
+    std::unordered_set<int> tests;
+
+    std::default_random_engine e;
+    std::uniform_int_distribution<int> u(0, read_ids_.size());
+    e.seed(time(0));
+    
+    while (tests.size() < count) {
+        tests.insert(u(e));
+    }
+
+    auto aligner = ToolAligner::Create("edlib");
+
+    for (auto id : tests) {
+        auto group = grouper_.Get(id);
+        if (group.Empty()) continue;
+
+        std::vector<double> idts;
+        std::vector<double> lidts;
+
+        for (size_t i = 0; i < group.Size(); ++i) {
+            auto o = group.Get(i, 0);
+            const auto& tread = o->GetRead(id);
+            const auto& qread = o->GetOtherRead(id);
+            std::vector<uint8_t> tseq = read_store_.GetSeq(tread.id).ToUInt8(tread.start, tread.end, false);
+            std::vector<uint8_t> qseq = read_store_.GetSeq(qread.id).ToUInt8(qread.start, qread.end, !o->SameDirect());
+            Alignment al;
+            auto r = aligner->Align((const char*)&qseq[0], qseq.size(), (const char*)&tseq[0], tseq.size(), {0, qseq.size()}, {0, tseq.size()}, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+            if (r) {
+                printf("%f\n", al.Identity());
+            }
+        }
+    }
+
+}
+
 bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_t,2> &trange) {
     size_t start = std::max(trange[0], r.target_start);
     size_t end = std::min(trange[1], r.target_end);
@@ -321,7 +348,7 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_
     if (align_size < (size_t)owner_.filter1_.min_aligned_length && 
         align_size < (trange[1]-trange[0]) * owner_.filter1_.min_aligned_rate) return true;
     
-    if (r.Identity() < owner_.min_identity_) return true;
+    if (r.Identity() < owner_.opts_.min_identity_) return true;
 
     if (align_size >= (size_t)owner_.filter1_.min_accept_aligned_length) return false;
 
@@ -340,7 +367,7 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r) {
     if (r.AlignSize() < (size_t)owner_.filter1_.min_aligned_length && 
         r.AlignSize() < r.TargetSize() * owner_.filter1_.min_aligned_length) return true;
 
-    if (r.Identity() < owner_.min_identity_) return true;
+    if (r.Identity() < owner_.opts_.min_identity_) return true;
 
     if (r.AlignSize() >= (size_t)owner_.filter1_.min_accept_aligned_length) return false;
 
@@ -550,8 +577,8 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
     if (first_als.size() > 0) {
     ////////
 
-    if (owner_.check_local_identity_) {
-        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 40, owner_.min_identity_);
+    if (owner_.opts_.check_local_identity_) {
+        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 40, owner_.opts_.min_identity_);
         
         std::vector<Alignment> first_als1;
         for (size_t i = 0; i < first_als.size(); ++i) {
