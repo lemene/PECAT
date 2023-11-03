@@ -34,18 +34,16 @@ show.kmers3 <- function (kmertypes, fnames, methods, output) {
 
   alldata <- do.call("rbind", datas)
   
-  #p <- ggplot(alldata, aes(x=V3, y=V4,color=Method)) + geom_point(alpha=0.4) + xlab(kmertypes[1]) + ylab(kmertypes[2]) + facet_wrap(~ Method, nrow = 1, ncol = 4) +
-  #     coord_fixed(ratio=1) + theme(legend.position="None", text = element_text(family = "Times New Roman",size=12))
   p <- ggplot(alldata, aes(x=V3, y=V4,color=Method)) + 
         geom_point(alpha=0.4) + xlab(kmertypes[1]) + ylab(kmertypes[2]) + 
         facet_wrap(~ Method, nrow=1) +
         coord_fixed(ratio=1) + xlim(0, limxy) +  ylim(0, limxy)+
-        theme_bw()+ theme( legend.position="None", text = element_text(family = "Arial",size=7),  
-                        axis.title=element_text(size=8),
+        theme_bw()+ theme(legend.position="None", text = element_text(family = "Arial",size=7),  
+                          axis.title=element_text(size=8),
                           strip.background = element_rect(fill = "white", size = 0.5, linetype = "solid", colour = "NA"),
                           strip.text = element_text(size=8)
             )
-  ggsave(p, filename=output, width=18, units="cm", height=6)
+  ggsave(p, filename=output, width=18,  units="cm", dpi=500)
 }
 
 show.kmers3(kmertypes, fnames, methods, output)
