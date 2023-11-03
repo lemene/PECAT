@@ -29,6 +29,7 @@ ArgumentParser ReadCorrect::GetArgumentParser() {
     ap.AddNamedOption(cands_opts_str_, "candidate", "options for selecting candidate overlaps");
     ap.AddNamedOption(min_identity_, "min_identity", "");
     ap.AddNamedOption(min_local_identity_, "min_local_identity", "");
+    ap.AddNamedOption(check_local_identity_, "check_local_identity", "");
     opts_.SetArguments(ap);
     return ap;
 }
@@ -53,7 +54,7 @@ void ReadCorrect::CandidateOptions::From(const std::string& str) {
         if (kv[0] == "c") {
             coverage = std::stoi(kv[1]);
         } else if (kv[0] == "n") {
-            max_number = std::stoi(kv[1]);
+            // pass 
         } else if (kv[0] == "f") {
             failures = std::stoi(kv[1]);
         } else if (kv[0] == "p") {
@@ -71,7 +72,6 @@ std::string ReadCorrect::CandidateOptions::ToString() const  {
     oss.precision(2);
     // oss.setf(std::ios::fixed);
     oss << "c=" << coverage
-        << ":n=" << max_number
         << ":f=" << failures
         << ":p=" << percent
         << ":ohwt=" << overhang_weight;
@@ -218,6 +218,7 @@ void ReadCorrect::Correct() {
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
         bool uc = false;
+        LOG(INFO)("start batch %zd", i);
         for (auto tid=dispatcher->Get(uc); tid != Seq::NID; tid = dispatcher->Get(uc)) {
             if (worker.Correct(tid, uc)) {
                 if ( worker.GetCorrected().size() > 0) {
@@ -233,6 +234,7 @@ void ReadCorrect::Correct() {
                 save_oss(oss_cread, oss_scores);
             }
         }
+        LOG(INFO)("end batch %zd", i);
 
         if (oss_cread.tellp() > 0) {
             save_oss(oss_cread, oss_scores);
@@ -258,7 +260,6 @@ void ReadCorrect::SaveCRead(std::ostream &os, int tid, const std::string &cread,
        <<  cread << "\n";
     
 }
-
 
 void ReadCorrect::GroupReadIds() {
     std::unordered_map<Seq::Id, bool> done;
@@ -304,6 +305,10 @@ void ReadCorrect::GroupReadIds() {
 
     if (grouped_ids_.size() > group_ticks.back()) {
         group_ticks.push_back(grouped_ids_.size());
+    }
+
+    for (auto t : group_ticks) {
+        LOG(INFO)("TICK: %zd", t);
     }
 
 }
@@ -419,6 +424,53 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
 
 }
 
+std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& als, size_t cov, double identity) {
+    assert(als.size() > 0);
+    size_t n = als[0].local_distances.size();
+    std::vector<int> thresholds(n, -1);
+
+    for (size_t i = 0; i < n; ++i) {
+        std::vector<int> dis;
+        for (const auto &al : als) {
+            if (al.local_distances[i] >= 0) {
+                dis.push_back(al.local_distances[i]);
+            DEBUG_printf("ckck add %zd\n", al.local_distances[i]);
+            }
+        }
+
+        if (dis.size() == 0) continue;
+
+
+        if (dis.size() <= 30) {
+            auto m = ComputeMeanAbsoluteDeviation(dis);
+            thresholds[i] = m[0] + 6*1.253*m[1];
+            DEBUG_printf("ckck mean th(%zd) = %d, %d, %d, %zd\n", i , thresholds[i], m[0], m[1], dis.size());
+        } else {
+            std::sort(dis.begin(), dis.end(), [](int a, int b) { return a < b; });
+            std::vector<int> oks(dis.begin(), dis.begin() + std::min(dis.size(), cov));
+            auto m = ComputeMedianAbsoluteDeviation(oks);
+            thresholds[i] = m[0] + 6*1.4826*m[1];
+            DEBUG_printf("ckck median th(%zd) = %d, %d, %d, %zd\n", i , thresholds[i], m[0], m[1], dis.size());
+        }
+    }
+    return thresholds;
+}
+
+bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) {
+    assert(al.local_distances.size() == thresholds.size());
+
+    for (size_t i = 0; i < thresholds.size(); ++i) {
+        if (thresholds[i] >= 0 && al.local_distances[i] >= 0) {
+            DEBUG_printf("ckck CMP %d %d\n", al.local_distances[i] , thresholds[i]);
+            if (al.local_distances[i] > thresholds[i]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
 bool ReadCorrect::Worker::Correct(int id, bool uc) {
     auto group = owner_.grouper_.Get(id);
     if (group.Empty()) return false;
@@ -450,7 +502,6 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
         auto ol = group.Get(i, 0);
         const auto& tread = ol->GetRead(id);
         const auto& qread = ol->GetOtherRead(id);
-        
         Alignment al(tread.id, qread.id);
         bool r = false;
         double best_identity = 0.0;
@@ -497,6 +548,27 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
     }
 
     if (first_als.size() > 0) {
+    ////////
+
+    if (owner_.check_local_identity_) {
+        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 40, owner_.min_identity_);
+        
+        std::vector<Alignment> first_als1;
+        for (size_t i = 0; i < first_als.size(); ++i) {
+            if (CheckLocalDistance(first_als[i], local_thresholds)) {
+                first_als1.push_back(first_als[i]);
+                DEBUG_printf("ckck ADD\n");
+            } else {
+                
+                DEBUG_printf("ckck 00\n");
+            }
+        }
+        
+        DEBUG_printf("ckck first_als size %zd\n", first_als.size());
+        std::swap(first_als1, first_als);
+        DEBUG_printf("ckck first_als size %zd\n", first_als.size());
+    }
+
 
     size_t stub = 500;
     auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.opts_.min_coverage); 

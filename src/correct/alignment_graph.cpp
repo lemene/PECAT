@@ -651,6 +651,11 @@ void AlignmentGraph::Consensus() {
         ? FindBestPathBasedOnWeight()
         : FindBestPathBasedOnCount();
 
+    auto segs = SplitSegment(seg.end);
+    DEBUG_printf("seg: size=%zd\n", segs.size());
+    for (auto &s : segs) {
+        DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
+    }
     if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
         sequence_ = ReconstructSimple(seg);
     } else {
@@ -703,6 +708,12 @@ void AlignmentGraph::AddQuery(size_t sid, size_t query_start, const std::string 
             continue;
         }
 
+        if ( !(bt == '-' || (*target_)[index_t] == Base2Num[bt])) {
+            LOG(INFO)("Error %c(%d) %d(%zd) == %d", bt, bt, (*target_)[index_t], index_t, Base2Num[bt]);
+            LOG(INFO)("SSS: %zd, %zd, %zd", sid, query_start,target_start);
+            printf("q:%s\nt:%s\n", aligned_query.c_str(), aligned_target.c_str());
+            printf("%s\n", (*target_).ToString()->c_str());
+        }
         assert(bt == '-' || (*target_)[index_t] == Base2Num[bt]);
 
         if (index_t < (int)range_[0]) continue;
@@ -1965,7 +1976,7 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
 
     double scale = std::max<double>(std::pow<double>(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].weight, branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
-
+    
     return s - compensate;
 }
 

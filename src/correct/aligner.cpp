@@ -74,34 +74,6 @@ void Aligner::SetAligner(const std::string& opts) {
     }
 }
 
-//std::array<double,2> Aligner::ComputeIdentity(const unsigned char* al, size_t allen, size_t window_size) {
-//
-//    auto get_score = [](unsigned char m) {
-//        return m == EDLIB_EDOP_MATCH ? 0 :
-//               m == EDLIB_EDOP_INSERT || m == EDLIB_EDOP_DELETE ? 1 :
-//               2; // EDLIB_EDOP_MISMATCH
-//    };
-
-    
-//    int max_score = 0;
-//    int all_score = 0;
-//    size_t index = 0;
-//    for (; index < std::min(allen, window_size); ++index) {
-//        all_score += get_score(al[index]);
-//        max_score += get_score(al[index]);
-//    }
-
-//    int curr_score = max_score;
-//    for (; index < allen; ++index) {
-//        all_score += get_score(al[index]);
-//        curr_score = curr_score - get_score(al[index-window_size]) + get_score(al[index]);
-//        if (curr_score > max_score) {
-//            max_score = curr_score;
-//        }
-//    }
-//    return {100.0 - (all_score *100.0) / allen, 100.0 - (max_score * 100.0) / window_size };
-//}
-
 std::array<double,2> Aligner::ComputeIdentity(const std::string& alq, const std::string& alt, size_t window_size) {
     assert(alq.size() == alt.size() && window_size <= alq.size());
 
@@ -220,6 +192,8 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
             al.target_end = 0;
             al.query_start = 0;
             al.query_end = 0;
+        } else {
+            al.ComputeLocalDistance(local_window_size_);
         }
     }
     

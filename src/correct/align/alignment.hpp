@@ -32,6 +32,8 @@ public:
     static void Rearrange(std::string &alq, std::string &alt);
     static void Rearrange1(std::string &alq, std::string &alt);
     bool TrimEnds(size_t checklen=2000, int stub=8);
+    
+    void ComputeLocalDistance(size_t local_window_size);
 
     Seq::Id tid { Seq::NID };
     Seq::Id qid { Seq::NID };
@@ -42,6 +44,7 @@ public:
     size_t distance {0};
     std::string aligned_target;
     std::string aligned_query;
+    std::vector<int16_t> local_distances;
 
     const DnaSeq* target { nullptr };
     const DnaSeq* query { nullptr };

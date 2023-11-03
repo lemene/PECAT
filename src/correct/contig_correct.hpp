@@ -1,5 +1,4 @@
-#ifndef FSA_CONTIG_CORRECT_HPP
-#define FSA_CONTIG_CORRECT_HPP
+#pragma once
 
 #include <string>
 #include <vector>
@@ -10,6 +9,8 @@
 #include "read_store.hpp"
 #include "alignment_graph.hpp"
 #include "utils/program.hpp"
+#include "crr_dataset.hpp"
+#include "crr_options.hpp"
 
 namespace fsa {
 using ArrayGraph = AlignmentGraph;
@@ -25,6 +26,7 @@ protected:
     void LoadOverlaps(const std::string &fname);
     void LoadReadIds();
     void Correct();
+    void CalcCoverage();
     
     std::string OutputPath(const std::string &fname) { return output_directory_+"/"+fname; }
 
@@ -83,9 +85,7 @@ protected:
 
     class Worker {
     public:
-        Worker(ContigCorrect& owner) : owner_(owner) {
-            graph_.SetParameter("score", owner.score_);
-            graph_.SetParameter("min_coverage", owner.min_coverage_);
+        Worker(ContigCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
             aligner_.SetParameter("min_identity", owner.min_identity_);  
             aligner_.SetParameter("min_local_identity", owner.min_local_identity_);
             aligner_.SetParameter("aligner", owner_.aligner_);
@@ -154,9 +154,10 @@ protected:
     ReadStore read_store_;
     OverlapStore ol_store_{read_store_.GetStringPool() };
     std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> groups_;
+    
+    CrrOptions opts_;
+    CrrDataset dataset_ { opts_ };
 };
 
 } // namespace fsa {
     
-#endif // FSA_CONTIG_CORRECT_HPP
-

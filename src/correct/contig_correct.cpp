@@ -30,6 +30,7 @@ ArgumentParser ContigCorrect::GetArgumentParser() {
     ap.AddNamedOption(min_coverage_, "min_coverage", "");
     ap.AddNamedOption(max_overhang_, "max_overhang", "");
     ap.AddNamedOption(max_overhang_rate_, "max_overhang_rate", "");
+    opts_.SetArguments(ap);
 
     return ap;
 }
@@ -42,6 +43,55 @@ void ContigCorrect::CheckArguments() {
     filter1_opts_ = filter1_.ToString();
 
 }
+void ContigCorrect::CalcCoverage() {
+    for (auto ctgid : read_ids_) {
+        const auto ctglen = read_store_.GetSeqLength(ctgid);
+        std::vector<int> cov(ctglen+1, 0);
+
+        auto ctg_ols = groups_.find(ctgid);
+        if (ctg_ols != groups_.end()) {
+            for (auto ols : ctg_ols->second) {
+                for (auto ol : ols.second) {
+                    if (ol->a_.start < ol->a_.len*0.1 && (ol->a_.len - ol->a_.end) < ol->a_.len*0.1) {
+                        cov[ol->b_.start]++;
+                        cov[ol->b_.end]--;
+                    }
+                }
+            }
+            for (size_t i=1; i < cov.size(); ++i) {
+                cov[i] += cov[i-1];
+            }
+            int start = -1;
+            for (size_t i = 0; i + 1 < cov.size(); ++i) {
+                if (cov[i] < 5) {
+                    //printf("cov\t%s\t%zd\t%d\n", read_store_.QueryNameById(ctgid).c_str(), i, cov[i]);
+                    if (start == -1) {
+                        start = i;
+                    }
+                } else {
+                    if (start != -1) {
+                        printf("lowcov\t%s\t%d\t%zd\n", read_store_.QueryNameById(ctgid).c_str(), start, i);
+                        start = -1;
+                    }
+                }
+            }
+        }
+    }
+
+    std::unordered_set<int> done;
+    for (size_t i = 0; i < ol_store_.Size(); ++i) {
+        auto ol = ol_store_.Get(i);
+        if (ol.a_.start < ol.a_.len*0.1 && (ol.a_.len - ol.a_.end) < ol.a_.len*0.1) {
+            done.insert(ol.a_.id);
+        }
+    }
+
+    for (size_t i = 0; i < read_store_.GetIdRange()[1]; ++i) {
+        if (done.find(i) == done.end()) {
+            printf("abn %s\n", read_store_.QueryNameById(i).c_str());
+        }
+    }
+}
 
 void ContigCorrect::Running() {
     read_store_.Load(ctg_fname_, "", true);
@@ -52,6 +102,8 @@ void ContigCorrect::Running() {
 
     ol_store_.GroupTarget(groups_, thread_size_);
 
+    CalcCoverage();
+    assert(0);
     LOG(INFO)("Start Correcting");
     Correct();
 }
@@ -84,7 +136,7 @@ void ContigCorrect::LoadReadIds() {
         }
 
     } else {
-        std::array<int, 2> range = read_store_.GetIdRange();
+        std::array<size_t, 2> range = read_store_.GetIdRange();
         for (int i=range[0]; i<range[1]; ++i) {
             read_ids_.push_back(i);
         }
@@ -250,7 +302,7 @@ bool ContigCorrect::Worker::Correct(WindowJob &job) {
     });
     
     size_t heap_size = cands.size();
-    aligner_.SetTarget(target);
+    aligner_.SetTarget(target); 
     std::vector<int> coverage(target.Size(), 0);
     Alignment al;
     while (heap_size > 0) {
@@ -267,7 +319,7 @@ bool ContigCorrect::Worker::Correct(WindowJob &job) {
             aligned_.push_back(al);
 
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
-            if (IsCoverageEnough(coverage) || (int)aligned_.size() >= owner_.max_number_) {
+            if (IsCoverageEnough(coverage) ) {
                 break;
             }
         }
@@ -286,6 +338,8 @@ bool ContigCorrect::Worker::Correct(WindowJob &job) {
     graph_.Build(target, range, aligned_);
     graph_.Consensus();
     job.seq = graph_.GetSequence();
+    auto s = graph_.GetTrueRange();
+    printf("rrr: %zd, %zd, %zd\n", s[0], s[1], target.Size());
 
     job.done = true;
 
@@ -361,6 +415,7 @@ std::string ContigCorrect::ContigJob::GetSeq() const {
     assert(windows.size() > 0);
 
     std::string seq(windows.front()->seq);
+    printf("begin\n");
 
     for (size_t i=1; i < windows.size(); ++i) {
         // 取后一节窗口的overlap的中间二分一的数据，在前一个窗口的overlap中寻找。
@@ -407,8 +462,9 @@ std::string ContigCorrect::ContigJob::GetSeq() const {
         }
         
         edlibFreeAlignResult(r);
-
+        printf("end next\n");
     }
+    printf("end\n");
 
     return seq;
 }
