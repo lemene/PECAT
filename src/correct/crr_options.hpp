@@ -66,7 +66,6 @@ public:
     bool skip_branch_check { false };
     bool use_cache { false };
     bool debug { false };
-    int debug_flag { 0 };  
     std::string variants;
 };
 

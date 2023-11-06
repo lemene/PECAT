@@ -34,7 +34,6 @@ void CrrOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(variants, "variants", "");
     ap.AddNamedOption(use_cache, "use_cache", "use cache for alignment");
     ap.AddNamedOption(debug, "debug", "Output debugging information");
-    ap.AddNamedOption(debug_flag, "debug_flag", "Output debugging information");
     ap.AddNamedOption(skip_branch_check, "skip_branch_check", "skip branch check");
     ap.AddNamedOption(output_directory, "output_directory", "The directory for temporary files");
 }
