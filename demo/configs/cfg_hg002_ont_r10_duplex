@@ -1,7 +1,7 @@
 project= human
 reads= $READS
-genome_size= $GNOME_SIZE
-threads=40
+genome_size= 3000000000
+threads=48
 cleanup=0
 grid=auto
 prep_min_length=3000
