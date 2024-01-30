@@ -25,10 +25,11 @@ public:
 
     void TaskExtend(Overlap& o, const StringPool::NameId &ni);
     void TaskIdentity(Overlap& o, const StringPool::NameId &ni);
+    void TaskRealign(Overlap& o, const StringPool::NameId &ni);
     void TaskIdle(Overlap& o, const StringPool::NameId &ni) { return; }
     void (OverlapRefine::* GetTask(const std::string& task))(Overlap& o, const StringPool::NameId &ni) ;
-protected:
 
+protected:
     std::string ifname_;
     std::string ofname_;
     std::string itype_;
