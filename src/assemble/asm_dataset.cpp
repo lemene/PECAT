@@ -482,6 +482,39 @@ void AsmDataset::FilterCoverage() {
 
     MultiThreadRun(opts_.thread_size, groups_, SplitMapKeys<decltype(groups_)>, work_func);  
 
+    std::unordered_set<Seq::Id> done;
+    for (const auto &i : read_infos_) {
+        if (done.find(i.first) != done.end()) continue;
+        if (i.second.minmax_coverage[1] >= 120) {
+            std::unordered_set<Seq::Id> group {i.first};
+            
+            std::vector<Seq::Id> check_list { i.first };
+            size_t index = 0;
+            while (index < check_list.size()) {
+                auto id = check_list[index];
+                index++;
+                auto ols = groups_.find(id);
+                if (ols != groups_.end()) {
+                    for (auto ol : ols->second) {
+                        auto oid = ol.second->GetOtherRead(id).id;
+                        if (group.find(oid) == group.end()) {
+                            if (read_infos_[oid].minmax_coverage[1] >= 90) {
+                                check_list.push_back(oid);
+                                group.insert(oid);
+                            }
+                        }
+                    }
+                }
+            }
+
+            LOG(INFO)("Group: %zd", group.size());
+            for (auto i : group) {
+                DUMPER["data"]("g %zd %s %d\n", group.size(), rd_store_.QueryNameById(i).c_str(), read_infos_[i].minmax_coverage[1]);
+            }
+            done.insert(group.begin(), group.end());
+
+        }
+    }
     auto threshold = CalcCoverageThreshold();
     int mincov = opts_.min_coverage < 0 ? threshold[0] : opts_.min_coverage;
     int maxcov = threshold[1];
