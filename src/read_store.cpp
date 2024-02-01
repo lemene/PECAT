@@ -54,27 +54,27 @@ void ReadStore::LoadFofn(const std::string &fname, bool all, const std::unordere
 }
 
 std::string ReadStore::DetectFileType(const std::string &fname) {
+    const std::vector<std::array<std::string,2>> suffix = {
+        {".fasta", "fasta"},
+        {".fasta.gz", "fasta.gz"},
+        {".fa", "fasta"},
+        {".fa.gz", "fasta.gz"},
+        {".fastq", "fastq"},
+        {".fastq.gz", "fastq.gz"},
+        {".fq", "fastq"},
+        {".fq.gz", "fastq.gz"},
+        {".fofn", "txt"},
+        {".txt", "txt"},
+    };
 
-    if (fname.size() >= 6 && fname.substr(fname.size()-6) == ".fasta") {
-        return "fasta";
-    } else if (fname.size() >= 9 && fname.substr(fname.size()-9) == ".fasta.gz") {
-        return "fasta.gz";
-    } else if (fname.size() >= 3 && fname.substr(fname.size()-3) == ".fa") {
-        return "fasta";
-    } else if (fname.size() >= 6 && fname.substr(fname.size()-6) == ".fa.gz") {
-        return "fasta.gz";
-    } else if (fname.size() >= 6 && fname.substr(fname.size()-6) == ".fastq") {
-        return "fastq";
-    } else if (fname.size() >= 9 && fname.substr(fname.size()-9) == ".fastq.gz") {
-        return "fastq.gz";
-    } else if (fname.size() >= 5 && fname.substr(fname.size()-5) == ".fofn") {
-        return "fofn";
-    } else if (fname.size() >= 4 && fname.substr(fname.size()-4) == ".txt") {
-        return "txt";
-    } else {
-        LOG(WARNING)("Unrecognized the suffix of %s", fname.c_str());
-        return "fasta";
+    for (const auto& sx : suffix) {
+        // check the length first
+        if (fname.length() >= sx[0].length() && fname.rfind(sx[0]) == fname.length() - sx[0].length()) {
+            return sx[1];
+        }
     }
+    LOG(WARNING)("Unrecognized the suffix of %s", fname.c_str());
+    return "fasta";
 }
 
 void ReadStore::LoadReader(SeqReader& reader, bool all, const std::unordered_set<Seq::Id>& seqids) {
