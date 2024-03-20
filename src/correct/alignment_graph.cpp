@@ -651,11 +651,12 @@ void AlignmentGraph::Consensus() {
         ? FindBestPathBasedOnWeight()
         : FindBestPathBasedOnCount();
 
-    auto segs = SplitSegment(seg.end);
-    DEBUG_printf("seg: size=%zd\n", segs.size());
-    for (auto &s : segs) {
-        DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
-    }
+
+    //auto segs = SplitSegment(seg.end);
+    // DEBUG_printf("seg: size=%zd\n", segs.size());
+    // for (auto &s : segs) {
+    //     DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
+    // }
     if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
         sequence_ = ReconstructSimple(seg);
     } else {
