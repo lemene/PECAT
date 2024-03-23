@@ -504,8 +504,8 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
                     best_identity = al_local.Identity();
                     r = r_local;
                     al = al_local;
-                    if (j >= 3) break;
                 }
+                if (j >= 3) break;
             }
         }
 
