@@ -34,20 +34,13 @@ void ReadCorrect::CheckArguments() {
 void ReadCorrect::Running() {
     LoadReadIds();
 
-    LOG(INFO)("Memory: %zd", GetMemoryUsage());
     LoadOverlaps(opts_.overlap_fname_);
     LoadReads();
 
-    LOG(INFO)("Memory: %zd", GetMemoryUsage());
-
     dataset_.grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(dataset_.read_ids_.begin(), dataset_.read_ids_.end()));
-    LOG(INFO)("BuildIndex: memory=%zd", GetMemoryUsage());
 
     if (opts_.use_cache) GroupReadIds();
 
-    LOG(INFO)("Memory: %zd", GetMemoryUsage());
-
-    // EstimateParameters();
     EstimateParameters();
     Correct();
 }
@@ -162,7 +155,6 @@ void ReadCorrect::Correct() {
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
         bool uc = false;
-        LOG(INFO)("start batch %zd", i);
         for (auto tid=dispatcher->Get(uc); tid != Seq::NID; tid = dispatcher->Get(uc)) {
             if (worker.Correct(tid, uc)) {
                 if ( worker.GetCorrected().size() > 0) {
@@ -178,7 +170,6 @@ void ReadCorrect::Correct() {
                 save_oss(oss_cread, oss_scores);
             }
         }
-        LOG(INFO)("end batch %zd", i);
 
         if (oss_cread.tellp() > 0) {
             save_oss(oss_cread, oss_scores);
@@ -264,23 +255,22 @@ void ReadCorrect::EstimateParameters() {
     std::unordered_set<int> tests;
 
     std::default_random_engine e;
-    std::uniform_int_distribution<int> u(0, dataset_.read_ids_.size());
+    std::uniform_int_distribution<int> u(0, dataset_.read_ids_.size()-1);
     e.seed(time(0));
     
     while (tests.size() < count) {
-        tests.insert(u(e));
+        tests.insert(dataset_.read_ids_[u(e)]);
     }
 
     auto aligner = ToolAligner::Create("edlib");
 
+    double max_idt = 0.0;
+    
     for (auto id : tests) {
         auto group = dataset_.grouper_.Get(id);
         if (group.Empty()) continue;
 
-        std::vector<double> idts;
-        std::vector<double> lidts;
-
-        for (size_t i = 0; i < group.Size(); ++i) {
+        for (size_t i = 0; i < group.Size() && i < 10; ++i) {
             auto o = group.Get(i, 0);
             const auto& tread = o->GetRead(id);
             const auto& qread = o->GetOtherRead(id);
@@ -288,12 +278,32 @@ void ReadCorrect::EstimateParameters() {
             std::vector<uint8_t> qseq = dataset_.read_store_.GetSeq(qread.id).ToUInt8(qread.start, qread.end, !o->SameDirect());
             Alignment al;
             auto r = aligner->Align((const char*)&qseq[0], qseq.size(), (const char*)&tseq[0], tseq.size(), {0, qseq.size()}, {0, tseq.size()}, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-            if (r) {
-                printf("%f\n", al.Identity());
+            if (r && al.AlignSize() > al.TargetSize() / 2) {
+                if (al.Identity() > max_idt) {
+                    max_idt = al.Identity();
+                }
+
             }
         }
     }
 
+    double min_idt = 0.0, min_lc_idt = 0.0;
+    if (max_idt >= 0.99) {
+        min_idt = 95;
+        min_lc_idt = 90;
+    } else if (max_idt >= 0.95) {
+        min_idt = 90;
+        min_lc_idt = 80;
+    } else if (max_idt >= 0.85) {
+        min_idt = 75;
+        min_lc_idt = 65;
+    } else {
+        min_idt = 60;
+        min_lc_idt = 50;
+    }
+    opts_.min_identity_ = opts_.min_identity_ < 0 ? min_idt : opts_.min_identity_;
+    opts_.min_local_identity_ = opts_.min_local_identity_ < 0 ? min_lc_idt : opts_.min_local_identity_;
+    LOG(INFO)("Estimate parameters(%0.02f): min_identity = %f min_local_identity = %f", max_idt, opts_.min_identity_, opts_.min_local_identity_);
 }
 
 bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_t,2> &trange) {
@@ -424,15 +434,15 @@ std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& a
         if (dis.size() == 0) continue;
 
 
-        if (dis.size() <= 30) {
+        if (dis.size() <= 10) {
             auto m = ComputeMeanAbsoluteDeviation(dis);
-            thresholds[i] = m[0] + 6*1.253*m[1];
+            thresholds[i] = m[0] + 3*1.253*m[1];
             DEBUG_printf("ckck mean th(%zd) = %d, %d, %d, %zd\n", i , thresholds[i], m[0], m[1], dis.size());
         } else {
             std::sort(dis.begin(), dis.end(), [](int a, int b) { return a < b; });
             std::vector<int> oks(dis.begin(), dis.begin() + std::min(dis.size(), cov));
             auto m = ComputeMedianAbsoluteDeviation(oks);
-            thresholds[i] = m[0] + 6*1.4826*m[1];
+            thresholds[i] = m[0] + 3*1.4826*m[1];
             DEBUG_printf("ckck median th(%zd) = %d, %d, %d, %zd\n", i , thresholds[i], m[0], m[1], dis.size());
         }
     }
@@ -478,7 +488,7 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
 
     std::vector<Alignment> first_als;
     std::vector<Alignment> flt_als;    // 
-    int num_consecu_fail =  0;
+    int num_consecu_fail = 0;
     int accu_base = 0;
     while (heap_size > 0) {
         auto i = std::get<2>(cands[0]);
@@ -498,7 +508,6 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
                al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
                al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity());
 
-            //if (r) break;
             if (r_local && !ExactFilter(al_local)) {
                 if (best_identity < al_local.Identity()) {
                     best_identity = al_local.Identity();
@@ -574,10 +583,7 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
             if (owner_.opts_.cands_opts_.IsEnough(aligned_.size())) break;
         }
 
-        DEBUG_printf("al count: %zd\n", aligned_.size());
-        for (auto &al : aligned_) {
-            al.Rearrange();
-        }
+        for (auto &al : aligned_) { al.Rearrange(); }
         graph_.Build(target, range, aligned_);
         graph_.Consensus();
         return true;

@@ -34,6 +34,7 @@ public:
     bool TrimEnds(size_t checklen=2000, int stub=8);
     
     void ComputeLocalDistance(size_t local_window_size);
+    std::array<double,2> MinLocalIdentity(size_t winsize);
 
     Seq::Id tid { Seq::NID };
     Seq::Id qid { Seq::NID };

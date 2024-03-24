@@ -1882,11 +1882,22 @@ void AlignmentGraph::QueryInfos::SaveReadInfos(std::ostream& os, int tid, const 
     }
 }   
 
+double mypow(double x, size_t n) { // GLIBC_2.29
+    if (n > 0) {
+        double y = x;
+        for (int i = 1; i < n; ++i) {
+            y *= x;
+        }
+        return y;
+    } else {
+        return 1;
+    }
+}
 
 double AlignmentGraph::LinkScoreCount(size_t col, size_t row, const Link& link) { 
     //return link.count - cols[col].coverage*std::max(branch_score_*4/(4+row), 0.3); 
     
-    double scale = std::max<double>(std::pow<double>(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
+    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].coverage, sopts_.min_coverage * branch_score_[0]);
     return link.count - compensate;
 } 
@@ -1906,7 +1917,7 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
     //printf("score: %d %d %zd %f %f %f\n",row, col, cols[col].coverage, compensate, min_coverage_ * branch_score_ / cols[col].coverage, std::max(branch_score_*4/(4+row), 0.3));
     //return s - std::max<double>(compensate*cols[col].weight, min_coverage_ * branch_score_ * cols[col].weight / cols[col].coverage );
 
-    double scale = std::max<double>(std::pow<double>(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
+    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].weight, branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
     
     return s - compensate;

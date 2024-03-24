@@ -38,7 +38,7 @@ void AsmDataset::Purge() {
     
     GroupAndFilterDuplicate();
 
-    //FilterLowQuality();
+    FilterLowQuality();
 
     //CheckOverlapEnd();
 
