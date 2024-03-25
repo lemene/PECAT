@@ -4,8 +4,6 @@
 #include <vector>
 #include <mutex>
 
-#include "overlap_store.hpp"
-#include "read_store.hpp"
 #include "alignment_graph.hpp"
 #include "utils/program.hpp"
 #include "align/alignment_cache.hpp"
@@ -20,25 +18,6 @@ public:
     virtual ArgumentParser GetArgumentParser();
     virtual void Running();
     virtual void CheckArguments();
-    
-    // the options for selecting candiate overlaps
-    struct CandidateOptions {
-        CandidateOptions(const std::string &str) { From(str); }
-        void From(const std::string &str);
-        std::string ToString() const;
-
-        bool IsEndCondition(const std::vector<int> &cov, size_t number, size_t fail) const {
-            return (int)fail >= failures || IsEnough(cov);
-        }
-        bool IsEnough(const std::vector<int> &cov) const ;
-        bool IsEnough(size_t number) const { return false; }
-
-        double percent { 0.95 };             // p Percentage of filled matrix
-        double overhang_weight   { 0.0 };                // w overhang的比重
-        int failures { 10 };               // f 连续失败次数
-        int max_number { 200 };             // 
-        int coverage { 80 };                    // 需要多少层数据
-    };
 
 protected:
 
@@ -100,23 +79,23 @@ protected:
         Seq::Id Get() {
             auto curr = index.fetch_add(1);
             if (curr % log_block_size == 0) {
-             LOG(INFO)("done %zd, all %zd %zd", curr, owner.read_ids_.size(), GetMemoryUsage());
+             LOG(INFO)("done %zd, all %zd %zd", curr, owner.dataset_.read_ids_.size(), GetMemoryUsage());
             }
-            return curr < owner.read_ids_.size() ? owner.read_ids_[curr] : Seq::NID;
+            return curr < owner.dataset_.read_ids_.size() ? owner.dataset_.read_ids_[curr] : Seq::NID;
         }
         
         size_t Get(std::vector<Seq::Id> &ids) {
             auto curr = index.fetch_add(1);
-            if (curr < owner.group_ticks.size()-1) {
-                if (owner.group_ticks[curr] - last_log >= log_block_size) {
-                    last_log = owner.group_ticks[curr];
-                    LOG(INFO)("done %zd/%zd %zd", owner.group_ticks[curr], owner.grouped_ids_.size(), GetMemoryUsage());
+            if (curr < owner.dataset_.group_ticks.size()-1) {
+                if (owner.dataset_.group_ticks[curr] - last_log >= log_block_size) {
+                    last_log = owner.dataset_.group_ticks[curr];
+                    LOG(INFO)("done %zd/%zd %zd", owner.dataset_.group_ticks[curr], owner.dataset_.grouped_ids_.size(), GetMemoryUsage());
                 }
-                assert(owner.group_ticks[curr+1]-owner.group_ticks[curr] <= ids.size());
-                for (size_t i=owner.group_ticks[curr]; i<owner.group_ticks[curr+1]; ++i) {
-                    ids[i-owner.group_ticks[curr]] = owner.grouped_ids_[i];
+                assert(owner.dataset_.group_ticks[curr+1]-owner.dataset_.group_ticks[curr] <= ids.size());
+                for (size_t i=owner.dataset_.group_ticks[curr]; i<owner.dataset_.group_ticks[curr+1]; ++i) {
+                    ids[i-owner.dataset_.group_ticks[curr]] = owner.dataset_.grouped_ids_[i];
                 }
-                return owner.group_ticks[curr+1] - owner.group_ticks[curr];
+                return owner.dataset_.group_ticks[curr+1] - owner.dataset_.group_ticks[curr];
             } else {
                 return (size_t)0;
             }
@@ -143,21 +122,6 @@ protected:
 protected:
     CrrOptions opts_;
     CrrDataset dataset_ { opts_ };
-    Overlap::Filter filter0_;
-    Overlap::Filter filter1_; 
-    CandidateOptions cands_opts_ { opts_.cands_opts_str_ };
-
-    std::vector<Seq::Id> read_ids_;
-    std::vector<Seq::Id> grouped_ids_;
-    std::vector<size_t> group_ticks;
-    size_t  group_size  = 1000;
-
-    std::unordered_set<int> reads_;
-    StringPool string_pool_;
-    ReadStore read_store_ {string_pool_};
-    OverlapStore ol_store_{string_pool_ };
-
-    OverlapGrouper grouper_ { ol_store_ };
 
     StatInfo stat_info_;
 

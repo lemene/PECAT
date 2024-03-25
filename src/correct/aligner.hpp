@@ -46,7 +46,7 @@ protected:
     std::array<size_t, 2> trange_ {{0, 0}};
     double min_identity_ { 70 };
     double min_local_identity_ { 50 };
-    double local_window_size_ { 1000 };
+    double local_window_size_ { 5000 };
 
     std::shared_ptr<ToolAligner> worker;
 };

@@ -192,8 +192,6 @@ public:
     const std::string& GetQuality() const { return quality_; }
     const std::array<size_t, 2>& GetTrueRange() const { return true_range_; }
 
-
-    void ComputeSimilarity();
     void ComputeSimilarity4();
     struct ImportantBranch {
         size_t c;   // column

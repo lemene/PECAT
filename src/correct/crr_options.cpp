@@ -1,7 +1,8 @@
 #include "crr_options.hpp"
 
 #include "../utils/logger.hpp"
-
+#include "../utility.hpp"
+#include <sstream>
 
 namespace fsa {
 void CrrOptions::SetArguments(ArgumentParser &ap) {
@@ -33,13 +34,58 @@ void CrrOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(variants, "variants", "");
     ap.AddNamedOption(use_cache, "use_cache", "use cache for alignment");
     ap.AddNamedOption(debug, "debug", "Output debugging information");
-    ap.AddNamedOption(debug_flag, "debug_flag", "Output debugging information");
     ap.AddNamedOption(skip_branch_check, "skip_branch_check", "skip branch check");
     ap.AddNamedOption(output_directory, "output_directory", "The directory for temporary files");
 }
 
 void CrrOptions::CheckArguments() {
 }
+
+
+void CrrOptions::CandidateOptions::From(const std::string& str) {
+    auto items = SplitStringByChar(str, ':');
+
+    for (auto &i : items) {
+        auto kv = SplitStringByChar(i, '=');
+        if (kv[0] == "c") {
+            coverage = std::stoi(kv[1]);
+        } else if (kv[0] == "n") {
+            // pass 
+        } else if (kv[0] == "f") {
+            failures = std::stoi(kv[1]);
+        } else if (kv[0] == "p") {
+            percent = std::stod(kv[1]);
+        } else if (kv[0] == "ohwt") {
+            overhang_weight = std::stod(kv[1]);
+        } else {
+            LOG(ERROR)("Unrecoginze candidate overlaps options %s", kv[0].c_str());
+        }
+    }
+}
+
+std::string CrrOptions::CandidateOptions::ToString() const  {
+    std::ostringstream oss;
+    oss.precision(2);
+    // oss.setf(std::ios::fixed);
+    oss << "c=" << coverage
+        << ":f=" << failures
+        << ":p=" << percent
+        << ":ohwt=" << overhang_weight;
+    return oss.str();
+}
+
+bool CrrOptions::CandidateOptions::IsEnough(const std::vector<int> &cov) const {
+
+    int maxcov = coverage;
+    double filled = std::accumulate(cov.begin(), cov.end(), 0, [maxcov](int a, int c) {
+        return a + (c > maxcov ? maxcov : c); 
+    } ) * 1.0 / maxcov / cov.size();
+
+    size_t base = std::accumulate(cov.begin(), cov.end(), 0);
+    return filled / (maxcov * cov.size()) >= percent || base > coverage * (cov.size() - 1);
+}
+
+
 
 
 }   // namespace fsa

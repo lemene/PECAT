@@ -232,11 +232,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
 
     double global_score = -1;
     
-    if (sopts_.debug_flag == 0) {
-        ComputeSimilarity4();
-    } else {
-        ComputeSimilarity();
-    }
+    ComputeSimilarity4();
 
     score_range_ = { 1.0, -1.0};
     for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
@@ -752,70 +748,6 @@ std::vector<const AlignmentGraph::Link*> AlignmentGraph::CollectLinks(size_t i) 
     }
     return links;
 }
-
-void AlignmentGraph::ComputeSimilarity() {
-    assert(cols.size() > 0 );
-
-    for (size_t i=range_[0]+1; i<range_[1]-1; ++i) {     // Skip the first and last bases
-        std::vector<const Link*> links = CollectLinks(i);
-        size_t link_count = std::accumulate(links.begin(), links.end(), 0, [](size_t a, const Link* b) {
-            return a + b->count;
-        });
-        
-        int min_coverage = opts_.range[0];
-        if (links.size() >= 2 && (int)link_count >= min_coverage) {
-            std::sort(links.begin(), links.end(), [](const Link* a, const Link *b) {
-                return a->count > b->count || (a->count == b->count && a->prev < b->prev);
-            });
-
-            int branch_threshold = opts_.BranchThreshold(cols[i].coverage);
-
-            size_t sz = 0;
-            for (; sz < links.size(); ++sz) {
-                if ((int)links[sz]->count < branch_threshold) break;    
-            }
-
-            if (sz >= 2) {
-                auto find_link = [&links,sz](size_t id) -> const Link*{
-                    for (size_t i=0; i<sz; ++i) {
-                        if (links[i]->seqs[id]) { return links[i]; }
-                    }
-                    return nullptr;
-                };
-
-                const int qw = 1;
-                DEBUG_printf("position: %zd\n", i);
-
-                auto tlink = find_link(0);
-                for (size_t si = 0; si<query_infos_.scores_.size(); ++si) {
-                    int qid = si;
-                    if (cols[i].queries[qid+1]) {
-                        query_infos_.scores_[si].cross += qw;
-
-                        auto qlink = find_link(qid+1);
-                        
-                        query_infos_.scores_[si].branches[i] = qlink;
-                        if (tlink != nullptr) {
-                            query_infos_.scores_[si].t_in_cross += qw;
-                        }
-                        if (qlink != nullptr) {
-                            query_infos_.scores_[si].q_in_cross += qw;
-                        }
-
-                        if (tlink  != nullptr && qlink != nullptr) {
-                            if (tlink == qlink) query_infos_.scores_[si].q_t_one+= qw;
-                            else                query_infos_.scores_[si].q_t_two+= qw;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    query_infos_.SelectReads(min_selected);
-    
-}
-
 
 void AlignmentGraph::ComputeSimilarity4() {
     assert(cols.size() > 0 );
@@ -1951,11 +1883,22 @@ void AlignmentGraph::QueryInfos::SaveReadInfos(std::ostream& os, int tid, const 
     }
 }   
 
+double mypow(double x, size_t n) { // GLIBC_2.29
+    if (n > 0) {
+        double y = x;
+        for (int i = 1; i < n; ++i) {
+            y *= x;
+        }
+        return y;
+    } else {
+        return 1;
+    }
+}
 
 double AlignmentGraph::LinkScoreCount(size_t col, size_t row, const Link& link) { 
     //return link.count - cols[col].coverage*std::max(branch_score_*4/(4+row), 0.3); 
     
-    double scale = std::max<double>(std::pow<double>(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
+    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].coverage, sopts_.min_coverage * branch_score_[0]);
     return link.count - compensate;
 } 
@@ -1975,7 +1918,7 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
     //printf("score: %d %d %zd %f %f %f\n",row, col, cols[col].coverage, compensate, min_coverage_ * branch_score_ / cols[col].coverage, std::max(branch_score_*4/(4+row), 0.3));
     //return s - std::max<double>(compensate*cols[col].weight, min_coverage_ * branch_score_ * cols[col].weight / cols[col].coverage );
 
-    double scale = std::max<double>(std::pow<double>(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
+    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].weight, branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
     
     return s - compensate;

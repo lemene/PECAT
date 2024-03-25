@@ -268,4 +268,27 @@ void Alignment::ComputeLocalDistance(size_t local_window_size) {
     if (it % winsize != 0) local_distances[it / winsize] = -1;
 }
 
+std::array<double,2> Alignment::MinLocalIdentity(size_t winsize) {
+    const std::string& alq = aligned_query; const std::string& alt = aligned_target;
+    
+    assert(alq.size() == alt.size() && winsize <= alq.size());
+
+    std::vector<int> score(alq.size(), 0);
+    for (size_t i=0; i < alq.size(); ++i) {
+        if (alq[i] != alt[i]) {
+            score[i] = 1;
+        }
+    }
+    
+    std::vector<int> local_identity(alq.size() - winsize + 1, 0);
+            
+    local_identity[0] = std::accumulate(score.begin(), score.begin()+winsize, 0);
+    for (size_t i=1; i<local_identity.size(); ++i) {
+        local_identity[i] = local_identity[i-1] - score[i-1] + score[i+winsize-1];
+    }
+
+    return {100.0 - std::accumulate(score.begin(), score.end(), 0)*1.0 / alq.size() * 100, 
+        100 - *std::max_element(local_identity.begin(), local_identity.end()) * 1.0 / winsize * 100};
+}
+
 } // namespace fsa {
