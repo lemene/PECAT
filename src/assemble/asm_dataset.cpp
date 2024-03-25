@@ -250,13 +250,14 @@ void AsmDataset::FilterLowQuality() {
 }
 
 void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored) {
-    const int winsize = 1000;
+    const int winsize = 4000;
 
     auto& rinfo = read_infos_[id];
     std::vector<std::vector<double>> winidents((rinfo.len + winsize / 2) / winsize);
     std::vector<double> lohs;
     std::vector<double> rohs;
 
+    // collect target read information: 
     for (const auto& g : group) {
         auto &ol = *g.second;
 
@@ -284,16 +285,20 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
                 if (oh[1] & 0x2) {
                     rohs.push_back(tr.len - tr.end);
                 }
-
             }
         }
     }
 
     std::vector<double> identity_threshold(winidents.size());
-    std::transform(winidents.begin(), winidents.end(), identity_threshold.begin(), [this](std::vector<double>& ident) {
+    std::transform(winidents.begin(), winidents.end(), identity_threshold.begin(), [this, id](std::vector<double>& ident) {
         if (ident.size() > 0) {
+            std::sort(ident.begin(), ident.end(), [](double a, double b) { return a > b; });
+
             double median, mad;
-            ComputeMedianAbsoluteDeviation(ident, median, mad);
+            ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+std::min<size_t>(30, ident.size())),  median, mad);
+            if (rd_store_.QueryNameById(id) == "740780") {
+                LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
+            }
             return std::max(opts_.filter0.min_identity, median-6*1.4826*mad);
 
         } else {

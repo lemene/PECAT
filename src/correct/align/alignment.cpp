@@ -1,5 +1,6 @@
 #include "alignment.hpp"
 
+#include <numeric>
 namespace fsa {
 
 void Alignment::Swap(bool isSameDirect) {
