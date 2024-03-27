@@ -16,15 +16,13 @@ public:
         void From(const std::string &str);
         std::string ToString() const;
 
-        bool IsEndCondition(const std::vector<int> &cov, size_t number, size_t fail) const {
-            return (int)fail >= failures || IsEnough(cov);
+        bool IsEndCondition(const std::vector<int> &cov) const {
+            return IsEnough(cov);
         }
         bool IsEnough(const std::vector<int> &cov) const ;
-        bool IsEnough(size_t number) const { return false; }
 
         double percent { 0.95 };             // p Percentage of filled matrix
         double overhang_weight   { 0.0 };                // w overhang的比重
-        int failures { 10 };               // f 连续失败次数
         int max_number { 200 };             // 
         int coverage { 80 };                    // 需要多少层数据
     };

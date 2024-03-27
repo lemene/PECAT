@@ -52,7 +52,7 @@ void CrrOptions::CandidateOptions::From(const std::string& str) {
         } else if (kv[0] == "n") {
             // pass 
         } else if (kv[0] == "f") {
-            failures = std::stoi(kv[1]);
+            // pass
         } else if (kv[0] == "p") {
             percent = std::stod(kv[1]);
         } else if (kv[0] == "ohwt") {
@@ -68,7 +68,6 @@ std::string CrrOptions::CandidateOptions::ToString() const  {
     oss.precision(2);
     // oss.setf(std::ios::fixed);
     oss << "c=" << coverage
-        << ":f=" << failures
         << ":p=" << percent
         << ":ohwt=" << overhang_weight;
     return oss.str();

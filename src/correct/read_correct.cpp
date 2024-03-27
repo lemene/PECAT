@@ -473,9 +473,9 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
 
     std::vector<std::tuple<const Overlap*, double, size_t>> cands(group.Size());
     for (size_t i = 0; i < group.Size(); ++i) {
-        std::get<0>(cands[i]) = group.Get(i, 0);
-        std::get<1>(cands[i]) = 0.0;
-        std::get<2>(cands[i]) = i;
+        std::get<0>(cands[i]) = group.Get(i, 0);        // overlap
+        std::get<1>(cands[i]) = 0.0;                    // weight
+        std::get<2>(cands[i]) = i;                      // order
     }
     CalculateWeight(id, target, cands, owner_.opts_.cands_opts_.overhang_weight);
 
@@ -487,12 +487,9 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
     std::vector<int> coverage(target.Size(), 0);
 
     std::vector<Alignment> first_als;
-    std::vector<Alignment> flt_als;    // 
-    int num_consecu_fail = 0;
-    int accu_base = 0;
     while (heap_size > 0) {
         auto i = std::get<2>(cands[0]);
-        auto ol = group.Get(i, 0);
+        auto ol = group.Get(i, 0); // == std::get<0>(cands[0])
         const auto& tread = ol->GetRead(id);
         const auto& qread = ol->GetOtherRead(id);
         Alignment al(tread.id, qread.id);
@@ -518,20 +515,16 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
             }
         }
 
-        if (r) accu_base += al.AlignSize();
         if (r && !ExactFilter(al)) { 
             stat_info.aligns[0]++;
             first_als.push_back(al);
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
 
-            num_consecu_fail = 0;
         } else {
             stat_info.aligns[1]++;
-            if (r) { flt_als.push_back(al); }
-            num_consecu_fail++;
         }
 
-        if (owner_.opts_.cands_opts_.IsEndCondition(coverage, first_als.size(), num_consecu_fail)) break;
+        if (owner_.opts_.cands_opts_.IsEndCondition(coverage)) break;
         
         std::pop_heap(cands.begin(), cands.begin()+heap_size, [](std::tuple<const Overlap*, double, size_t>& a, std::tuple<const Overlap*, double, size_t>& b) {
             return std::get<1>(a) < std::get<1>(b);    // CAUTION, calulated by CalculateWeight
@@ -576,13 +569,6 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
             }
         }
 
-        for (const auto &al : flt_als) {
-            if (!ExactFilter(al, range)) {
-                aligned_.push_back(al);
-            }
-            if (owner_.opts_.cands_opts_.IsEnough(aligned_.size())) break;
-        }
-
         for (auto &al : aligned_) { al.Rearrange(); }
         graph_.Build(target, range, aligned_);
         graph_.Consensus();
@@ -595,16 +581,15 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
 void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>>& cands, double opt_ohwt) {
     std::vector<double> cand_cov_wts (target.Size()+1);
 
-    double wtsum = 0.0;
     for (auto &it : cands) {
-        auto o = std::get<0>(it); // it.first;
-        auto &t = o->GetRead(id);
-        auto &q = o->GetOtherRead(id);
+        auto ol = std::get<0>(it); // it.first;
+        auto &t = ol->GetRead(id);
+        auto &q = ol->GetOtherRead(id);
 
-        double ohwt = opt_ohwt * o->identity_ / 100;
-        double olwt = o->identity_ / 100;
+        double ohwt = opt_ohwt * ol->identity_ / 100;
+        double olwt = ol->identity_ / 100;
 
-        auto mr = o->MappingTo<2>(t, {0, q.len});
+        auto mr = ol->MappingTo<2>(t, {0, q.len});
         auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
         auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
         // start -- t.start -- t.end -- end
@@ -614,8 +599,6 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
         cand_cov_wts[t.start] += (olwt - ohwt);
         cand_cov_wts[t.end]   -= (olwt - ohwt);
         cand_cov_wts[end]     -= ohwt;
-
-        wtsum += olwt;
     }
 
     for (size_t i=1; i<cand_cov_wts.size(); ++i) {
@@ -623,19 +606,15 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
     }
     assert(std::abs(cand_cov_wts.back()) < 0.0000001);  // cand_cov_wts.back() == 0
 
-    for (size_t i=0; i<cand_cov_wts.size(); ++i) {
-        cand_cov_wts[i] = wtsum - cand_cov_wts[i];
-    }
+    std::for_each(cands.begin(), cands.end(), [opt_ohwt, id, &cand_cov_wts](std::tuple<const Overlap*, double, size_t>& it) {
+        auto ol = std::get<0>(it);
+        auto &t = ol->GetRead(id);
+        auto &q = ol->GetOtherRead(id);
 
-    std::for_each(cands.begin(), cands.end(), [opt_ohwt, id, &cand_cov_wts, wtsum](std::tuple<const Overlap*, double, size_t>& it) {
-        auto o = std::get<0>(it);//it.first;
-        auto &t = o->GetRead(id);
-        auto &q = o->GetOtherRead(id);
+        double ohwt = opt_ohwt * ol->identity_ / 100;
+        double olwt = ol->identity_ / 100;
 
-        double ohwt = opt_ohwt * o->identity_ / 100;
-        double olwt = o->identity_ / 100;
-
-        auto mr = o->MappingTo<2>(t, {0, q.len});
+        auto mr = ol->MappingTo<2>(t, {0, q.len});
         auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
         auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
         // start -- t.start -- t.end -- end
@@ -644,9 +623,8 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
         double wt = std::accumulate(cand_cov_wts.begin()+start, cand_cov_wts.begin()+t.start, 0.0) * ohwt +
                     std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
                     std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
-        
-        //it.second = wt;
-        std::get<1>(it) = wt;
+
+        std::get<1>(it) = -wt;
     });
 }
 
