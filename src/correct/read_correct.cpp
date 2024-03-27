@@ -384,9 +384,11 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
         }
      }
 
-     for (size_t i=1; i< coverage.size(); ++i) {
-         coverage[i] += coverage[i-1];
-     }
+    for (size_t i=1; i< coverage.size(); ++i) {
+        coverage[i] += coverage[i-1];
+        DEBUG_printf("COV(%zd) %d\n", i, coverage[i]);
+    }
+
 
     std::vector<std::array<size_t, 2>> ranges;
     int start = -1;
@@ -488,6 +490,7 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
 
     std::vector<Alignment> first_als;
     while (heap_size > 0) {
+        DEBUG_printf("done = %zd, heap_size = %zd, cands.size() = %zd wt=%.02f\n", cands.size()-heap_size, heap_size, cands.size(), std::get<1>(cands[0]));
         auto i = std::get<2>(cands[0]);
         auto ol = group.Get(i, 0); // == std::get<0>(cands[0])
         const auto& tread = ol->GetRead(id);
@@ -604,6 +607,11 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
     for (size_t i=1; i<cand_cov_wts.size(); ++i) {
         cand_cov_wts[i] += cand_cov_wts[i-1];
     }
+    double max_cov_wts = *std::max_element(cand_cov_wts.begin(), cand_cov_wts.end());
+    for (size_t i = 0; i+1 < cand_cov_wts.size(); ++i) {
+        cand_cov_wts[i] = max_cov_wts - cand_cov_wts[i];
+    }
+    
     assert(std::abs(cand_cov_wts.back()) < 0.0000001);  // cand_cov_wts.back() == 0
 
     std::for_each(cands.begin(), cands.end(), [opt_ohwt, id, &cand_cov_wts](std::tuple<const Overlap*, double, size_t>& it) {
@@ -624,7 +632,7 @@ void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std
                     std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
                     std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
 
-        std::get<1>(it) = -wt;
+        std::get<1>(it) = wt;
     });
 }
 

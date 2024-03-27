@@ -75,16 +75,14 @@ std::string CrrOptions::CandidateOptions::ToString() const  {
 
 bool CrrOptions::CandidateOptions::IsEnough(const std::vector<int> &cov) const {
 
-    int maxcov = coverage;
-    double filled = std::accumulate(cov.begin(), cov.end(), 0, [maxcov](int a, int c) {
-        return a + (c > maxcov ? maxcov : c); 
-    } ) * 1.0 / maxcov / cov.size();
+    int expcov = coverage;      // expected coverage
+    double expected = expcov * (cov.size() - 1);
+    double effective = std::accumulate(cov.begin(), cov.end(), 0, [expcov](int a, int c) {
+        return a + (c > expcov ? expcov : c); 
+    });
+    double total = std::accumulate(cov.begin(), cov.end(), 0);
 
-    size_t base = std::accumulate(cov.begin(), cov.end(), 0);
-    return filled / (maxcov * cov.size()) >= percent || base > coverage * (cov.size() - 1);
+    return effective / expected >= percent || total / expected >= 1.5;
 }
-
-
-
 
 }   // namespace fsa

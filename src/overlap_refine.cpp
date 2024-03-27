@@ -42,7 +42,7 @@ void OverlapRefine::CheckArguments() {
 }
 
 void OverlapRefine::Running() {
-    if (task_ == "extend" || task_ == "identity") {
+    if (task_ == "extend" || task_ == "identity" || task_ == "realign") {
         if (!read_fname_.empty()) rd_store_.Load(read_fname_);
     }
 
@@ -207,6 +207,41 @@ void OverlapRefine::TaskExtend(Overlap &o, const StringPool::NameId &ni) {
     }
 }
 
+void OverlapRefine::TaskRealign(Overlap &ol, const StringPool::NameId &ni) {
+    thread_local auto aligner = ToolAligner::Create(aligner_opts_);
+
+    const auto & query = rd_store_.GetSeq(ni.QueryNameById(ol.a_.id));
+    const auto & target = rd_store_.GetSeq(ni.QueryNameById(ol.b_.id));
+
+
+    auto qseq = query.ToUInt8(0, -1, !ol.SameDirect());
+    auto tseq = target.ToUInt8(0, -1);
+    size_t tstart = ol.b_.start;
+    size_t tend = ol.b_.end;
+    size_t qstart = ol.SameDirect() ? ol.a_.start : ol.a_.len - ol.a_.end;
+    size_t qend   = ol.SameDirect() ? ol.a_.end   : ol.a_.len - ol.a_.start;
+    
+    Alignment al;
+    auto r = aligner->Align((const char*)&qseq[0], qseq.size(), 
+                            (const char*)&tseq[0], tseq.size(), 
+                            {qstart, qend}, {tstart, tend}, al);
+
+    if (al.Valid()) {
+        ol.b_.start = al.target_start;
+        ol.b_.end   = al.target_end;
+        ol.a_.start = ol.SameDirect() ? al.query_start : ol.a_.len - al.query_end;
+        ol.a_.end   = ol.SameDirect() ? al.query_end   : ol.a_.len - al.query_start;
+        ol.identity_ = al.Identity();
+    } else {
+        ol.b_.start = 0;
+        ol.b_.end   = 0;
+        ol.a_.start = 0;
+        ol.a_.end = 0;
+        ol.identity_ = 0.0;
+    }
+} 
+
+
 void OverlapRefine::TaskIdentity(Overlap &o, const StringPool::NameId &ni) {
     thread_local auto aligner = ToolAligner::Create(aligner_opts_);
 
@@ -332,6 +367,8 @@ void (OverlapRefine::* OverlapRefine::GetTask(const std::string& task))(Overlap&
         return &OverlapRefine::TaskExtend;
     } else if (task == "identity") {
         return &OverlapRefine::TaskIdentity;
+    } else if (task == "realign") {
+        return &OverlapRefine::TaskRealign;
     } else {
         return &OverlapRefine::TaskIdle;
     }
