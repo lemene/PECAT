@@ -429,7 +429,7 @@ std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& a
         for (const auto &al : als) {
             if (al.local_distances[i] >= 0) {
                 dis.push_back(al.local_distances[i]);
-            DEBUG_printf("ckck add %zd\n", al.local_distances[i]);
+                DEBUG_printf("ckck add %zd\n", al.local_distances[i]);
             }
         }
 
@@ -543,12 +543,10 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
         
         std::vector<Alignment> first_als1;
         for (size_t i = 0; i < first_als.size(); ++i) {
+            DEBUG_printf("ckck qid=%s check\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
             if (CheckLocalDistance(first_als[i], local_thresholds)) {
                 first_als1.push_back(first_als[i]);
-                DEBUG_printf("ckck ADD\n");
-            } else {
-                
-                DEBUG_printf("ckck 00\n");
+                DEBUG_printf("ckck qid=%s pass\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
             }
         }
         

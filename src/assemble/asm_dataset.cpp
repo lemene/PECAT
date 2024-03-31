@@ -270,6 +270,10 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
                 v.push_back(ol.identity_);
             });
             
+            if (rd_store_.QueryNameById(id) == "42605") {
+                LOG(INFO)("add idt: %s: (%zd, %zd) %.02f", rd_store_.QueryNameById(ol.GetOtherRead(id).id).c_str(), s, e, ol.identity_);
+            }
+            
             auto oh = ol.Overhang2();
             if (tr.id == ol.a_.id) {    
                 if (oh[0] & 0x1) {
@@ -296,8 +300,11 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
 
             double median, mad;
             ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+std::min<size_t>(30, ident.size())),  median, mad);
-            if (rd_store_.QueryNameById(id) == "740780") {
+            if (rd_store_.QueryNameById(id) == "42605") {
                 LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
+                for (size_t i = 0; i <ident.size(); ++i) {
+                    LOG(INFO)("detial: %zd = %.02f", i, ident[i]);
+                }
             }
             return std::max(opts_.filter0.min_identity, median-6*1.4826*mad);
 
@@ -829,7 +836,7 @@ void AsmDataset::GroupAndFilterDuplicate() {
         if (it == group[a-low].end()) {
             group[a-low][b] = &o;
         } else {
-            if (BetterAlignedLength(o, *(it->second))) {
+            if (BetterIdentity(o, *(it->second))) {
                 //SetOlReason(*(it->second), OlReason::Duplicate());
                 rmd.push_back(it->second);
                 it->second = &o;
@@ -858,7 +865,7 @@ void AsmDataset::GroupAndFilterDuplicate() {
             for (auto&& d : dups[i]) {
                 if (d.second.size() > 1) {
                     std::sort(d.second.begin(), d.second.end(), [](const Overlap* a, const Overlap* b) {
-                        return a->AlignedLength() > b->AlignedLength();
+                        return a->identity_ > b->identity_;
                     });
                     dup_groups_[low+(int)i][d.first] = std::move(d.second);
                 }

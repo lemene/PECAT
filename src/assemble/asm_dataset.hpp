@@ -114,6 +114,7 @@ public:
     void DumpReadInfos(const std::string &fname, const std::unordered_map<int, ReadStatInfo> &readInfos) const;
 
     static bool BetterAlignedLength(const Overlap &a, const Overlap &b) { return a.AlignedLength()*a.identity_ > b.AlignedLength()*b.identity_; }
+    static bool BetterIdentity(const Overlap &a, const Overlap &b) { return a.identity_ > b.identity_; }
     static void SetOlReason(const Overlap &o, OlReason rs);
     static OlReason GetOlReason(const Overlap &o);
 

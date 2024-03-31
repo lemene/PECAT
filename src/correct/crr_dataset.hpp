@@ -16,7 +16,8 @@ public:
     CrrDataset(const CrrOptions &opt) : opts_(opt) {}
     const CrrOptions& opts_;
 
-    void Load(const class StringPool &sp);    
+    void Load(const class StringPool &sp);
+    const std::string QueryStringById(Seq::Id id) const { return string_pool_.QueryStringById(id); }    
     std::shared_ptr<SnpFile> variants;
 
     
