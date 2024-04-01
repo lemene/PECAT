@@ -911,7 +911,7 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
     VerifyImportantSitesByConsistent(cands, 0.6, removed);
     VerifyImportantSitesByConsistent(cands, 0.7, removed);
     ReactivateImportantSitesByConsistent(cands, 0.7, removed);
-    //VerifyImportantBranchesByDensity(cands);
+    VerifyImportantBranchesByDensity(cands);
 }
 
 void AlignmentGraph::VerifyImportantBranchesByVariants(std::vector<ImportantBranch>& cands) {
@@ -1324,21 +1324,6 @@ void AlignmentGraph::VerifyImportantBranchesByDensity(std::vector<ImportantBranc
             density[p] = position.size();
         }
     }
-
-    // for (size_t i = 0; i < cands.size(); ++i) {
-    //     if (!cands[i].valid) continue;
-    //     density[i]++;
-    //     for (size_t j = i+1; j < cands.size(); ++j) {
-    //         if (cands[j].c - cands[i].c <= D) {
-    //             if (cands[j].valid) {
-    //                 density[i]++;
-    //                 density[j]++;
-    //             }
-    //         } else {
-    //             break;
-    //         }
-    //     }
-    // }
 
     const size_t C = 6;
 
