@@ -292,4 +292,67 @@ std::array<double,2> Alignment::MinLocalIdentity(size_t winsize) {
         100 - *std::max_element(local_identity.begin(), local_identity.end()) * 1.0 / winsize * 100};
 }
 
+double Alignment::IdentityIgnoreHomo(size_t len) const {
+    const std::string& alq = aligned_query; 
+    const std::string& alt = aligned_target;
+    assert(alq.size() == alt.size());
+
+    auto get_unit_end = [](const std::string& str, size_t s) {
+        assert(str[s] == '-');
+        for (size_t i = s+1; i < str.size(); ++i) {
+            if (str[i] != '-') return i;
+        } 
+        return str.size();
+    };
+
+    size_t err = 0;
+    size_t i = 0; 
+    while (i < alq.size()) {
+        if (alq[i] != alt[i]) {
+            if (alq[i] == '-' || alt[i] == '-') {
+                const std::string& delstr = alq[i] == '-' ? alq : alt;
+                const std::string& insstr = alq[i] == '-' ? alt : alq;
+                size_t s = i;
+                size_t e = get_unit_end(delstr, s);
+                assert(e > s);
+
+                std::string unit(insstr.begin()+s, insstr.begin()+e);
+ 
+                size_t count = 0;
+                for (size_t j = e; j+unit.size() < alq.size(); j += unit.size()) {
+                    if (unit == std::string(alq.begin()+j, alq.begin()+j+unit.size())) {
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+                for (size_t j = s; j > unit.size(); j -= unit.size()) {
+                    if (unit == std::string(alq.begin()+j-unit.size(), alq.begin()+j)) {
+                        count += 1;
+                    } else {
+                        break;
+                    }
+                }
+                printf("unit: %s:%zd\n", unit.c_str(), count);
+                if (count > len) {
+                    // err 不计
+                } else {
+                    err += unit.size();
+                }
+                i += unit.size();
+
+            } else {
+                err ++;
+                i++;
+            }
+        } else {
+            i++;
+        }
+    }
+    printf("q:%s\nt:%s", alq.c_str(), alt.c_str());
+    printf("err: %zd %zd %.02f %.02f\n", err, alt.size(), 100*(1 - err *1.0 / alt.size()), Identity());
+    return 100*(1 - err *1.0 / alt.size());
+
+}
+
 } // namespace fsa {

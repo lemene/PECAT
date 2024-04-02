@@ -232,6 +232,9 @@ void OverlapRefine::TaskRealign(Overlap &ol, const StringPool::NameId &ni) {
         ol.a_.start = ol.SameDirect() ? al.query_start : ol.a_.len - al.query_end;
         ol.a_.end   = ol.SameDirect() ? al.query_end   : ol.a_.len - al.query_start;
         ol.identity_ = al.Identity();
+        // check INDEL is homopolymer or STR
+        al.Rearrange();
+        ol.identity_ = al.IdentityIgnoreHomo(8);
     } else {
         ol.b_.start = 0;
         ol.b_.end   = 0;

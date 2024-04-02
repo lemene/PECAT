@@ -24,6 +24,7 @@ public:
     size_t TargetSize() const { return target == nullptr ? 0 : target->Size(); }
     size_t QuerySize() const { return query == nullptr ? 0 : query->Size(); }
     double Identity() const { return 100*(1- distance * 1.0 / aligned_target.size()); }
+    double IdentityIgnoreHomo(size_t len) const;
     std::array<char,2> GetAlign(size_t i) const { return {aligned_query[i], aligned_target[i]}; }
 
     bool Valid() const { return target_end - target_start > 0; }
