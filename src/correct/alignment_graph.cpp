@@ -908,9 +908,10 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
         }
     }
     std::unordered_set<size_t> removed;
-    VerifyImportantSitesByConsistent(cands, 0.6, removed);
-    VerifyImportantSitesByConsistent(cands, 0.7, removed);
-    ReactivateImportantSitesByConsistent(cands, 0.7, removed);
+    //VerifyImportantSitesByConsistent(cands, 0.6, removed);
+    //VerifyImportantSitesByConsistent(cands, 0.7, removed);
+    //ReactivateImportantSitesByConsistent(cands, 0.7, removed);
+    VerifyBranchConsistent(cands);
     VerifyImportantBranchesByDensity(cands);
 }
 
@@ -1296,27 +1297,144 @@ void AlignmentGraph::ReactivateImportantSitesByConsistent(std::vector<ImportantB
     }
 }
 
-void AlignmentGraph::VerifyImportantBranchesByDensity(std::vector<ImportantBranch> &cands) {
-    std::vector<size_t> density(cands.size(), 0);
+void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
 
-    const size_t D = 10000;
+    const int MIN_COUNT = 10;
+    const int MIN_INV = 10;
+
+    // calcuate consistent sorce between each branch pair.
+    std::vector<std::array<uint16_t, 2>> scores(brs.size()*brs.size(), {0, 0});
+    std::vector<uint16_t> v_count(brs.size(), 0);
+
+    for (size_t i = 0; i < brs.size(); ++i) {
+        if (!brs[i].valid) continue;
+
+        for (size_t j = 0; j < i; ++j) {
+            if (!brs[j].valid) continue;
+
+            std::array<uint16_t, 4> links = {0, 0, 0, 0};
+            links[0] = (brs[i].links[0].l->seqs & brs[j].links[0].l->seqs).count();
+            links[1] = (brs[i].links[0].l->seqs & brs[j].links[1].l->seqs).count();
+            links[2] = (brs[i].links[1].l->seqs & brs[j].links[0].l->seqs).count();
+            links[3] = (brs[i].links[1].l->seqs & brs[j].links[1].l->seqs).count();
+
+
+            DEBUG_printf("consistent (%zd, %zd) %zd,%zd,%zd,%zd\n", brs[i].c, brs[j].c, links[0], links[1], links[2], links[3]);
+
+            auto& ss = scores[i*brs.size() + j];
+            ss[0] = links[0] + links[1] + links[2] + links[3];
+            ss[1] = std::max(links[0] + links[3], links[1] + links[2]);
+            // scores[j*brs.size() + i] = scores[i*brs.size() + j];
+
+            if (brs[i].c < brs[j].c + MIN_INV && brs[i].c + MIN_INV > brs[j].c) continue;
+            if (ss[0] < MIN_COUNT) continue;
+
+            if (ss[1]*1.0 / ss[0] >= 0.7) {
+                v_count[i] ++;
+                v_count[j] ++;
+            }
+        } 
+    }
+
+
+    for (size_t i = 0; i < brs.size(); ++i) {
+        if (!brs[i].valid) continue;
+        if (v_count[i] == 0) brs[i].valid = false;
+    }
+
+    std::unordered_set<size_t> removed;
+    VerifyBranchConsistent(brs, scores, 0.65, removed);
+    VerifyBranchConsistent(brs, scores, 0.75, removed);
+
+    // re verify
+    std::unordered_set<size_t> restored;
+    for (auto i : removed) {
+        std::array<size_t,2> score = {0, 0};
+        for (size_t j = 0; j < brs.size(); ++j) {
+            if (!brs[j].valid) continue;
+
+            const auto &ss = i > j ? scores[i*brs.size() + j] : scores[j*brs.size() + i];
+            if (ss[0] < MIN_COUNT) continue;
+
+            score[0] += ss[0];
+            score[1] += ss[1];
+            DEBUG_printf("-consistent (%zd, %zd) %zd,%zd\n", brs[i].c, brs[j].c, ss[0], ss[1]);
+        }
+        
+        DEBUG_printf("consistent score(%zd), %zd / %zd = %0.2f < %0.2f\n", brs[i].c, score[1], score[0], score[1]*1.0/(score[0]), 0.7);
+        if (score[1]*1.0/score[0] >= 0.75) {
+            restored.insert(i);
+        }
+    }
+    //std::for_each(restored.begin(), restored.end(), [&brs](size_t i) { brs[i].valid = true;});
+    for (auto i : restored) {
+        brs[i].valid = true;
+    }
+}
+
+void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs, const std::vector<std::array<uint16_t, 2>>& scores, double th, std::unordered_set<size_t> &removed) {
+
+    const int MIN_COUNT = 10;
+    const int MIN_INV = 10;
+
+    for (size_t i = 0; i < brs.size(); ++i) {
+        if (!brs[i].valid ) continue;
+        
+        std::array<uint32_t,2> score = {0, 0};
+        size_t prev_j = brs.size();
+        for (size_t j = 0; j < brs.size(); ++j) {
+            if (!brs[j].valid) continue;
+
+            if (brs[i].c < brs[j].c + MIN_INV && brs[i].c + MIN_INV > brs[j].c) continue;
+            if (prev_j < brs.size() && brs[prev_j].c < brs[j].c + MIN_INV && brs[prev_j].c + MIN_INV > brs[j].c) continue;
+
+            const auto &ss = i > j ? scores[i*brs.size() + j] : scores[j*brs.size() + i];
+            if (ss[0] < MIN_COUNT) continue;
+
+            prev_j = j;
+            score[0] += ss[0];
+            score[1] += ss[1];
+            DEBUG_printf("-consistent (%zd, %zd) %zd,%zd\n", brs[i].c, brs[j].c, ss[0], ss[1]);
+        }
+
+        DEBUG_printf("consistent score(%zd), %zd / %zd = %0.2f < %0.2f\n", brs[i].c, score[1], score[0], score[1]*1.0/(score[0]), th);
+        if (score[1]*1.0/score[0] < th) {
+            removed.insert(i);
+        }
+    }
+
+    for (auto i : removed) {
+        brs[i].valid = false;
+    }
+}
+
+void AlignmentGraph::VerifyImportantBranchesByDensity(std::vector<ImportantBranch> &cands) {
+
+    const size_t R = 30000;                     // param: range
+    const size_t I = 10;                        // param: min interval, If two positions are too close, they are considered one position
+    const size_t C = 2;                         // param: min count with in RANGE
+
+    std::vector<size_t> density(cands.size(), 0);
     std::list<size_t> position;
 
-    for (size_t i = 0; i < cands.size(); ++i) {
+    for (size_t i = 0; i < cands.size(); ++i) { // cands is in order
         if (!cands[i].valid) continue;
 
-        if (position.size() > 0 && cands[i].c - cands[position.front()].c > D) {
+        if (position.size() > 0 && cands[i].c - cands[position.front()].c > R) {
             for (auto p : position) {
                 if (position.size() > density[p] ) {
                     density[p] = position.size();
                 }
             }
-            while(position.size() > 0 && cands[i].c - cands[position.front()].c > D) {
+            while(position.size() > 0 && cands[i].c - cands[position.front()].c > R) {
                 position.pop_front();
             }
         }
-        assert (position.size() == 0 || cands[i].c - cands[position.front()].c <= D);
-        position.push_back(i);
+        assert (position.size() == 0 || cands[i].c - cands[position.front()].c <= R);
+
+        if (position.size() == 0 || cands[i].c >= cands[position.back()].c + I ) {
+            position.push_back(i);
+        }
     }
 
     for (auto p : position) {
@@ -1324,8 +1442,11 @@ void AlignmentGraph::VerifyImportantBranchesByDensity(std::vector<ImportantBranc
             density[p] = position.size();
         }
     }
-
-    const size_t C = 6;
+    for (size_t i = 1; i < density.size(); ++i) {
+        if (density[i] == 0 && density[i-1] != 0 && cands[i].c < cands[i-1].c + I) {
+            density[i] = density[i-1];
+        }
+    }
 
     for (size_t i = 0; i < cands.size(); ++i) {
         if (cands[i].valid) {

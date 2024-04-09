@@ -250,10 +250,13 @@ void AsmDataset::FilterLowQuality() {
 }
 
 void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored) {
-    const int winsize = 4000;
+    const int WIN_SIZE = 4000;      // param: 
 
     auto& rinfo = read_infos_[id];
-    std::vector<std::vector<double>> winidents((rinfo.len + winsize / 2) / winsize);
+    const size_t win_count = (rinfo.len + WIN_SIZE / 2) / WIN_SIZE;
+    const size_t win_size = (rinfo.len + win_count - 1 ) /  win_count;
+
+    std::vector<std::vector<double>> winidents(win_count);
     std::vector<double> lohs;
     std::vector<double> rohs;
 
@@ -264,13 +267,15 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
         if (IsReserved(ol)) {
             auto &tr = ol.GetRead(id);
 
-            size_t s = (tr.start + winsize / 2) / winsize;
-            size_t e = (tr.end + winsize / 2) / winsize;
+            size_t s = (tr.start + win_size / 2 ) / win_size;
+            size_t e = (tr.end + win_size / 2 ) / win_size;
+
+            assert(e >= s);
             std::for_each(winidents.begin()+s, winidents.begin()+e, [&ol](std::vector<double>& v) {
                 v.push_back(ol.identity_);
-            });
+            });  
             
-            if (rd_store_.QueryNameById(id) == "42605") {
+            if (rd_store_.QueryNameById(id) == opts_.debug_name) {
                 LOG(INFO)("add idt: %s: (%zd, %zd) %.02f", rd_store_.QueryNameById(ol.GetOtherRead(id).id).c_str(), s, e, ol.identity_);
             }
             
@@ -300,7 +305,7 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
 
             double median, mad;
             ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+std::min<size_t>(30, ident.size())),  median, mad);
-            if (rd_store_.QueryNameById(id) == "42605") {
+            if (rd_store_.QueryNameById(id) == opts_.debug_name) {
                 LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
                 for (size_t i = 0; i <ident.size(); ++i) {
                     LOG(INFO)("detial: %zd = %.02f", i, ident[i]);
@@ -335,10 +340,10 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
     rinfo.overhang_l_threshold = overhang_l_threshold;
     rinfo.overhang_r_threshold = overhang_r_threshold;
 
-    auto area_threshold = [winsize](const std::vector<double>& idents, int start, int end) {
+    auto area_threshold = [win_size](const std::vector<double>& idents, int start, int end) {
  
-        size_t s = (start + winsize / 2) / winsize;
-        size_t e = (end + winsize / 2) / winsize;
+        size_t s = (start + win_size / 2) / win_size;
+        size_t e = (end + win_size / 2) / win_size;
         assert (s >= 0 && s <= e && e <= idents.size());
 
         size_t count = 0;

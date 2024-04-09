@@ -333,7 +333,7 @@ double Alignment::IdentityIgnoreHomo(size_t len) const {
                         break;
                     }
                 }
-                printf("unit: %s:%zd\n", unit.c_str(), count);
+                //printf("unit: %s:%zd\n", unit.c_str(), count);
                 if (count > len) {
                     // err 不计
                 } else {
@@ -349,8 +349,8 @@ double Alignment::IdentityIgnoreHomo(size_t len) const {
             i++;
         }
     }
-    printf("q:%s\nt:%s", alq.c_str(), alt.c_str());
-    printf("err: %zd %zd %.02f %.02f\n", err, alt.size(), 100*(1 - err *1.0 / alt.size()), Identity());
+    //printf("q:%s\nt:%s", alq.c_str(), alt.c_str());
+    //printf("err: %zd %zd %.02f %.02f\n", err, alt.size(), 100*(1 - err *1.0 / alt.size()), Identity());
     return 100*(1 - err *1.0 / alt.size());
 
 }

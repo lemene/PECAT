@@ -488,6 +488,7 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
     aligner_.SetTarget(target);
     std::vector<int> coverage(target.Size(), 0);
 
+    DEBUG_printf("total_cand_size=%zd\n", cands.size());
     std::vector<Alignment> first_als;
     while (heap_size > 0) {
         DEBUG_printf("done = %zd, heap_size = %zd, cands.size() = %zd wt=%.02f\n", cands.size()-heap_size, heap_size, cands.size(), std::get<1>(cands[0]));
