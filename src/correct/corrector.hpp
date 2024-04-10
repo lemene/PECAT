@@ -20,15 +20,12 @@ public:
         for (auto &b : bits) b.reset();
     }
     void set(size_t i, bool torf) {
-        //LOG(INFO)("SSET %d %d", i, torf);
         while (i >= block_size*bits.size()) {
             bits.push_back(std::bitset<block_size>());
         }
         auto ib = i / block_size;
         auto off = i % block_size;
-        //LOG(INFO)("off %d %d, %zd", ib, off, bits.size());
         bits[ib].set(off, torf);
-        //LOG(INFO)("cSET");
     }
 
     bool operator [](size_t i) const {
