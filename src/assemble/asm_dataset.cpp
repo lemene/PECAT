@@ -1944,7 +1944,9 @@ void AsmDataset::EstimateGenomeSize() {
     }
     std::sort(covs.begin(), covs.end());
     int ave_cov = covs[covs.size()/2];
-    long long int gsize = size / ave_cov;
+    if (ave_cov == 0) LOG(WARNING)("The estimated average coverage of the reads is 0");
+
+    long long int gsize = ave_cov != 0 ? size / ave_cov : 0;
     LOG(INFO)("Esitmate genome size(%lld): %lld = %lld / %d", opts_.genome_size, gsize, size, ave_cov);
 
     opts_.UpdateByGenomeSize(gsize);
