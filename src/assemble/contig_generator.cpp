@@ -665,7 +665,7 @@ void ContigGenerator::Contig::SaveBubbles(std::ostream& fctg0, std::ostream& fti
             count[0] += paths.size();
 
         }
-        DUMPER["asm"]("ctg(%zd): overlap: %zd %zd", id_, count[0], count[1]);
+        DUMPER["asm"]("ctg(%zd): overlap: %zd %zd\n", id_, count[0], count[1]);
         if (count[1] < 0.5 * count[0]) {
             SavePrimary(fctg0, ftile0, 1);
         }

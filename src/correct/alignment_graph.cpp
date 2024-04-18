@@ -908,9 +908,6 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
         }
     }
     std::unordered_set<size_t> removed;
-    //VerifyImportantSitesByConsistent(cands, 0.6, removed);
-    //VerifyImportantSitesByConsistent(cands, 0.7, removed);
-    //ReactivateImportantSitesByConsistent(cands, 0.7, removed);
     VerifyBranchConsistent(cands);
     VerifyImportantBranchesByDensity(cands);
 }
@@ -1301,6 +1298,7 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
 
     const int MIN_COUNT = 10;
     const int MIN_INV = 10;
+    const std::vector<double> THRESHOLDS = {0.8, 0.6, 0.7};
 
     // calcuate consistent sorce between each branch pair.
     std::vector<std::array<uint16_t, 2>> scores(brs.size()*brs.size(), {0, 0});
@@ -1329,7 +1327,7 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
             if (brs[i].c < brs[j].c + MIN_INV && brs[i].c + MIN_INV > brs[j].c) continue;
             if (ss[0] < MIN_COUNT) continue;
 
-            if (ss[1]*1.0 / ss[0] >= 0.7) {
+            if (ss[1]*1.0 / ss[0] >= 0.8) {
                 v_count[i] ++;
                 v_count[j] ++;
             }
@@ -1362,7 +1360,7 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
         }
         
         DEBUG_printf("consistent score(%zd), %zd / %zd = %0.2f < %0.2f\n", brs[i].c, score[1], score[0], score[1]*1.0/(score[0]), 0.7);
-        if (score[1]*1.0/score[0] >= 0.75) {
+        if (score[1]*1.0/score[0] >= 0.70) {
             restored.insert(i);
         }
     }
@@ -1412,7 +1410,7 @@ void AlignmentGraph::VerifyImportantBranchesByDensity(std::vector<ImportantBranc
 
     const size_t R = 30000;                     // param: range
     const size_t I = 10;                        // param: min interval, If two positions are too close, they are considered one position
-    const size_t C = 2;                         // param: min count with in RANGE
+    const size_t C = 4;                         // param: min count with in RANGE
 
     std::vector<size_t> density(cands.size(), 0);
     std::list<size_t> position;

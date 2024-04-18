@@ -359,34 +359,49 @@ sub job_phase_method0($$$$$) {
     );
 }
 
-## about Hi-C
-# {
-#     my @hic_reads = split(";", $self->get_config("hic_reads"));
-#     my $hic1_2_ctg = "$wrkdir/hic1_2_ctg.paf";
-#     my $hic2_2_ctg = "$wrkdir/hic2_2_ctg.paf";
-#     my $snp_in_hic = "$wrkdir/hic_infos";
 
-#     my $job_map_hic = $self->job_map_hic_reads_to_contigs("phs", $wrkdir, \@hic_reads, [$prictg, $altctg], "");
-#     my $job_snp_in_hic = $self->job_identify_snps_in_hic("phs", $wrkdir, \@hic_reads);
+sub job_map_hic($$$) {
+    my ($self, $name, $wrkdir, $prictg, $altctg) = @_;
 
-#     my $job_map_all = $self->newjob(
-#         name => "phs_map_step",
-#         ifiles => [], # [$reads, @hic_reads, $prictg, $altctg],
-#         ofiles => [$rd2ctg, $hic1_2_ctg, $hic2_2_ctg], #TODO 有两份独立依赖关系
-#         mfiles => [],
-#         pjobs => [$job_map, @$job_map_hic],
-#         msg => "phasing reads and hic reads",
-#     );
+    my @hic_reads = split(";", $self->get_config("hic_reads"));
+    my $hic1_2_ctg = "$wrkdir/hic1_2_ctg.paf";
+    my $hic2_2_ctg = "$wrkdir/hic2_2_ctg.paf";
+    my $snp_in_hic = "$wrkdir/hic_infos";
 
-#     return $self->newjob(
-#         name => "phs_step1",
-#         ifiles => [], # [$reads, $prictg, $altctg],
-#         ofiles => [$rd2rd_flt, $snp_in_hic], #TODO 有两份独立依赖关系
-#         mfiles => [$rd2ctg, $hic1_2_ctg, $hic2_2_ctg],
-#         jobs => [$job_map_all, $job_phase, $job_filter, $job_snp_in_hic],
-#         msg => "phasing reads",
-#     );
-# }
+    my $job_map_hic = $self->job_map_hic_reads_to_contigs($name, $wrkdir, \@hic_reads, [$prictg, $altctg], "");
+    my $job_snp_in_hic = $self->job_identify_snps_in_hic("$name", $wrkdir, \@hic_reads);
+
+
+    return $self->newjob(
+        name => "${name}_map_hic",
+        ifiles => [], # [$reads, $prictg, $altctg],
+        ofiles => [$snp_in_hic], #TODO 有两份独立依赖关系
+        mfiles => [$hic1_2_ctg, $hic2_2_ctg],
+        jobs => [$job_map_hic, $job_snp_in_hic],
+        msg => "map hi-c reads",
+    );
+}
+
+
+sub run_map_hic($) {
+    my ($self) = @_;
+    
+    if ($self->get_config("hic_reads") ne "") {
+
+        my $name = "phs";
+        my $wrkdir = $self->get_work_folder("4-phase");
+        my $prjdir = $self->get_project_folder();
+
+        mkdir $wrkdir;
+        
+        my $prictg = "$prjdir/3-assemble/primary.fasta";
+        my $altctg = "$prjdir/3-assemble/alternate.fasta";
+
+        $self->run_jobs($self->job_map_hic($name, $wrkdir, $prictg, $altctg));
+    }
+}
+ 
+
 
 sub run_phase_with_contig($) {
     my ($self) = @_;
