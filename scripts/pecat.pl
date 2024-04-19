@@ -1163,7 +1163,7 @@ package main;
 my @defaultConfig = (
     ["project", "", 1, "project name"],
     ["reads", "", 1, "reads path"],
-#    ["hic_reads", "", 0, "hic reads path"],
+    ["hic_reads", "", 0, "hic reads path"],
     ["genome_size", "", 1, "genome size"],
     ["threads", "4", 0],
 #    ["memory", "0", 0],
@@ -1239,7 +1239,8 @@ sub cmd_unzip($) {
     cmd_assemble($fname);
     $pipeline->initialize($fname);
 
-    $pipeline->run_phase_with_contig();
+    $pipeline->run_phase_with_contig(); 
+    $pipeline->run_map_hic();
     $pipeline->run_assemble2();
     $pipeline->run_polish();
 }

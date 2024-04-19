@@ -361,10 +361,19 @@ sub job_map_hic_reads_to_contigs($$$$$$) {
         gfiles => [$hic2_2_ctg],
         mfiles => [],
         cmds => ["minimap2  -t $threads -x sr -c $prictg $hic2_reads > $hic2_2_ctg"],
-        msg => "mapping reads to contigs, ${name}_hic2",
+        msg => "mapping hic2 reads to contigs, ${name}_hic2",
     );
 
-    return [$job1, $job2];
+    #return [$job1, $job2];
+    return $self->newjob(
+        name => "${name}_hic_2_ctg",
+        ifiles => [$hic1_reads, $hic2_reads, $prictg], # [$reads, $prictg, $altctg],
+        ofiles => [$hic1_2_ctg, $hic2_2_ctg], #TODO 有两份独立依赖关系
+        mfiles => [],
+        jobs => [$job1, $job2],
+        msg => "mapping hic reads to contigs, ${name}_hic2",
+    );
+
 }
 
 sub job_identify_snps_in_hic($$$$) {
@@ -379,7 +388,7 @@ sub job_identify_snps_in_hic($$$$) {
 
     my $hic1_2_ctg = "$wrkdir/hic1_2_ctg.paf";
     my $hic2_2_ctg = "$wrkdir/hic2_2_ctg.paf";
-    my $variants = "$wrkdir/variants";
+    my $variants = "$wrkdir/fsa/variants";
     my $snp_in_hic = "$wrkdir/hic_infos";
 
     my $job = $self->newjob(
