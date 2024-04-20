@@ -736,13 +736,16 @@ def fx_find_switch(argv):
     try:
         args = parser.parse_args(argv)
         infos = []
+        kmer_total = 0
         for line in open(args.binfos):
             its = line.split()
             pkmer, mkmer = int(its[2]), int(its[3])
+            kmer_total += pkmer + mkmer
             infos.append((line, min(pkmer, mkmer)))
 
-        infos.sort(key = lambda x:  -x[1])
+        print("hamming error: %.06f" % (sum([i[1] for i in infos]) / kmer_total))
 
+        infos.sort(key = lambda x:  -x[1])
         for i, it in enumerate(infos):
             if i > args.max_count: break
             print(it[0], end="")
@@ -941,51 +944,6 @@ def fx_crrsub(argv):
         
         logger.info("get sub ols by running %s" % cmd)
         run_cmd(cmd)
-
-        names = set()
-        for line in open("ols.paf"):
-            its = line.split()
-            names.add(its[0])
-            names.add(its[5])
-        
-        with open("ns", "w") as f:
-            for n in names:
-                f.write("%s\n" % n)
-        
-        cmd = "%s/fsa_rd_tools sub %s sub.fasta --names_fname ns" % (args.fsa, (prjpath+ "/0/corrected_reads.fasta") if args.iteration == 1 else (prjpath + "/../0-prepare/prepared_reads.fasta"))
-        
-        logger.info("get sub reads by running %s" % cmd)
-        run_cmd(cmd)
-        
-
-    except:
-        traceback.print_exc()
-        print("-----------------")
-        parser.print_usage()
-
-
-def fx_crrsub1(argv):
-    parser = argparse.ArgumentParser("extract infos for debugging correction")
-    parser.add_argument("reads", type=str, default='')
-    parser.add_argument("--iteration", type=int, default=0)
-    parser.add_argument("--fsa", type=str, default="~/work/fsa/build/bin/")
-    parser.add_argument("--paf", type=str)
-   
-    try:
-        args = parser.parse_args(argv)
-
-        reads = set([i.strip() for i in open(args.reads)])
-
-        # get ols
-        prjpath = prj.find_prjpath("1-correct", 5)
-        with open("ols.paf", "w") as ofile:
-            #for f in glob.glob("%s/%d/*fasta.paf" % (prjpath, args.iteration)):
-            for f in glob.glob(args.paf):
-                logger.info("get ols from %s" % f)
-                for line in open(f):
-                    its = line.split()
-                    if its[0] in reads or its[1] in reads:
-                        ofile.write(line)
 
         names = set()
         for line in open("ols.paf"):

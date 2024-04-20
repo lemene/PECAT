@@ -1242,7 +1242,7 @@ sub cmd_unzip($) {
     $pipeline->run_phase_with_contig(); 
     $pipeline->run_map_hic();
     $pipeline->run_assemble2();
-    $pipeline->run_polish();
+    #$pipeline->run_polish();
 }
 
 

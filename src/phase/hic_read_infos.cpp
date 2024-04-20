@@ -20,7 +20,7 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
 
     LOG(INFO)("Id range: %zd, %zd",hic_store.GetIdRange()[0], hic_store.GetIdRange()[1]);
     size_t hiclen = hic_store.GetSeqLength(hic_store.GetIdRange()[0]);
-    LOG(INFO)("hiclen: %zd",hiclen);
+    LOG(INFO)("hiclen: %zd", hiclen);
     
     OverlapStore ols_store(string_pool_);
     ols_store.Load(fn_paf, "", 1);
@@ -89,7 +89,7 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
 
                         auto snp = ctgvar.find(ctg_i);
                         if (snp != ctgvar.end()) {
-                            uint8_t rd_b = o.a_.strand == o.b_.strand ? rd[rd_i] : 3 - rd[rd_i];
+                            uint8_t rd_b = o.SameDirect() ? rd[rd_i] : 3 - rd[rd_i];
                             if (rd_b == snp->second[0] || rd_b == snp->second[1]) {
                                 info.back().alleles.push_back({{(uint32_t)o.b_.id, (uint32_t)ctg_i}, rd_b});
                             }

@@ -565,6 +565,7 @@ void Program_Hic::Running() {
     StringPool string_pool;
     HicReadInfos hic_infos(string_pool);
     hic_infos.Build(fn_hic1_, fn_paf1_, fn_hic2_, fn_paf2_, fn_vars_);
+    LOG(INFO)("Save hic_infos");
     hic_infos.Save(fn_snp_in_hic_);
 
  
