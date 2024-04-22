@@ -688,10 +688,8 @@ void ContigGenerator::Contig::SaveBubbles(std::ostream& fctg0, std::ostream& fti
     }
 }
 
-void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const ReadVariants& rvs) {
-    if (acontigs.size() < 2) return;
 
-    DUMPER["asm"]("phasing: ctg=%zd\n", id_);
+std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class HicReadInfos &infos, const ReadVariants& rvs) {
 
     std::vector<size_t> scores(acontigs.size()*2*acontigs.size()*2, 0);
 
@@ -798,13 +796,50 @@ void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const Read
         DUMPER["asm"]("\n");
     }
 
+    return scores;
+}
+
+void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const ReadVariants& rvs) {
+    if (acontigs.size() < 2) return;
+
+    DUMPER["asm"]("phasing: ctg=%zd\n", id_);
+    auto scores = BubbleLinkCountsByHic(infos, rvs);
+
+    const auto actgsize = acontigs.size();
+
+    // initial value
+    for (size_t  i = 1; i < actgsize; ++i) {
+        std::array<size_t, 2> count = {0, 0};
+        for (size_t j = 0; j < i; ++j) {
+            if (phasing_[i] == phasing_[j]) {
+                count[0] += scores[i*2*actgsize*2 + j*2];
+                count[0] += scores[(i*2+1)*actgsize*2 + j*2+1];
+
+                count[1] += scores[i*2*actgsize*2 + j*2+1];
+                count[1] += scores[(i*2+1)*actgsize*2 + j*2];
+            } else {
+                count[0] += scores[i*2*actgsize*2 + j*2+1];
+                count[0] += scores[(i*2+1)*actgsize*2 + j*2];
+                
+                count[1] += scores[i*2*actgsize*2 + j*2];
+                count[1] += scores[(i*2+1)*actgsize*2 + j*2+1];
+            }
+        }
+        if (count[1] > count[0]) {
+            phasing_[i] = (phasing_[i] + 1) % 2;
+        }
+    }
+    for (size_t i = 0; i < phasing_.size(); ++i) {
+        DUMPER["asm"]("phasing initial[%zd] = %d\n", i, phasing_[i]);
+    }
+
     for (size_t _ = 0; _ < 1000; ++_) {
         DUMPER["asm"]("phasing(%zd), size=%zd\n", _, phasing_.size());
         std::vector<double> link_scores(phasing_.size(), 0.0);
         for (size_t  i = 0; i < link_scores.size(); ++i) {
             std::array<size_t, 2> count = {0, 0};
-            for (size_t j = 0; j < link_scores.size(); ++j) {
-                if (i == j) continue;
+            for (size_t j = i+1; j < link_scores.size(); ++j) {
+
                 if (phasing_[i] == phasing_[j]) {
                     count[0] += scores[i*2*acontigs.size()*2 + j*2];
                     count[0] += scores[(i*2+1)*acontigs.size()*2 + j*2+1];

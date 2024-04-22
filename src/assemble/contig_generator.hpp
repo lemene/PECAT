@@ -45,6 +45,8 @@ public:
 
         void PhaseBubbles(const class HicReadInfos &infos, const ReadVariants& rvs);
         void PhaseBubbles();
+        /** calculate bubble link score through alignemnts of hic vs ctg */
+        std::vector<size_t> BubbleLinkCountsByHic(const class HicReadInfos &infos, const ReadVariants& rvs);
         void PhaseHeadTail();
         int PhaseCross(BaseEdge* in_edge_0, BaseEdge *in_edge_1, BaseEdge *out_edge_0, BaseEdge *out_edge_1);
 
