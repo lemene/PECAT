@@ -3,6 +3,7 @@
 #include<stdarg.h>  
 #include <time.h>
 #include <thread>
+#include "utility.hpp"
 
 namespace fsa {
 
@@ -100,7 +101,7 @@ void Logger::Log(Level level, const char* format, va_list arglist) {
         time(&timep);
         char tmp[64];
         strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&timep));
-        fprintf(file_, "%s", tmp);
+        fprintf(file_, "%s men=%.02fg", tmp, GetMemoryUsage()*1.0 / 1024 / 1024);
 
         fprintf(file_, " [%s] ", levelname_[level].c_str());
 

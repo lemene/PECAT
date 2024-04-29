@@ -80,7 +80,7 @@ size_t GetMemoryUsage() {
         char buf[BUF_SIZE];
         char* line = fgets(buf, BUF_SIZE, file);
         while (line != NULL) {
-            if(strstr(line, "VmRSS:") != NULL) {
+            if(strstr(line, "VmRSS:") != NULL) { // KB
                 char vmrss_name[48];
                 sscanf(line, "%s %d", vmrss_name, &vmrss_num);
                 break;

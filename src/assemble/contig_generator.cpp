@@ -694,15 +694,13 @@ std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class 
     std::vector<size_t> scores(acontigs.size()*2*acontigs.size()*2, 0);
 
     std::unordered_map<SnpAllele, size_t, SnpAllele::Hash> alleles;
-    std::unordered_set<SnpAllele, SnpAllele::Hash> dups;
 
-
-    size_t index = 0;
+    size_t index = 0;   // index of bubbles
     for (auto& actg : acontigs) {
         assert(actg.second.size() >= 2);
 
         std::array<std::unordered_map<SnpSite, std::array<uint8_t, 4>, SnpSite::Hash>, 2> ctg_vars;
-        for (size_t i = 0; i < 2; ++i) {
+        for (size_t i = 0; i < 2; ++i) { // two paths of bubble
             auto &path = actg.second[i];
             for (auto &p : path) {
                 if (&p != &path.back()) {
@@ -755,14 +753,15 @@ std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class 
         
         index += 2;
     }
-    for (const auto& d : dups) {
-        alleles.erase(d);
-    }
-    DUMPER["asm"]("alleles size = %zd\n", alleles.size());
-    // for (auto &a: alleles) {
-    //     printf("al: (%u,%u,%u)->%zd\n", a.first.site.ctg, a.first.site.offset, a.first.base, a.second);
-    // }
-    // fflush(stdout);
+
+    auto dump_alleles = [](const std::unordered_map<SnpAllele, size_t, SnpAllele::Hash>& alleles) {
+        DUMPER["asm"]("alleles size = %zd\n", alleles.size());
+        for (auto &a: alleles) {
+            DUMPER["asm"]("alleles(%u, %u, %u) -> %zd\n", a.first.site.ctg, a.first.site.offset, a.first.base, a.second);
+        }
+    };
+    dump_alleles(alleles);
+
     DUMPER["asm"]("actg.size = %zd, index=%zd\n", acontigs.size(), index);
     for (auto& info : infos.GetInfos()) {
         std::array<std::vector<size_t>, 2> links; 
@@ -779,22 +778,23 @@ std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class 
 
         for (auto s : links[0]) {
             for (auto t : links[1]) {
-                //if (s != t) {
-                    assert(s*acontigs.size()*2 + t < scores.size());
-                    scores[s*acontigs.size()*2 + t] ++;
-                    scores[t*acontigs.size()*2 + s] ++;
-                //}
+                assert(s*acontigs.size()*2 + t < scores.size());
+                scores[s*acontigs.size()*2 + t] ++;
+                scores[t*acontigs.size()*2 + s] ++;
             }
         }
     }
 
-    DUMPER["asm"]("print scores\n");
-    for (size_t i = 0; i < acontigs.size()*2; ++i) {
-        for (size_t j = 0; j < acontigs.size()*2; ++j) {
-            DUMPER["asm"]("%zd, ", scores[i*acontigs.size()*2+j]);
+    auto dump_score = [&]() {
+        DUMPER["asm"]("print scores\n");
+        for (size_t i = 0; i < acontigs.size()*2; ++i) {
+            for (size_t j = 0; j < acontigs.size()*2; ++j) {
+                DUMPER["asm"]("%zd, ", scores[i*acontigs.size()*2+j]);
+            }
+            DUMPER["asm"]("\n");
         }
-        DUMPER["asm"]("\n");
-    }
+    };
+    dump_score();
 
     return scores;
 }
@@ -838,8 +838,9 @@ void ContigGenerator::Contig::PhaseBubbles(const HicReadInfos &infos, const Read
         std::vector<double> link_scores(phasing_.size(), 0.0);
         for (size_t  i = 0; i < link_scores.size(); ++i) {
             std::array<size_t, 2> count = {0, 0};
-            for (size_t j = i+1; j < link_scores.size(); ++j) {
-
+            for (size_t j = 0; j < link_scores.size(); ++j) {
+                if (j == i) continue;
+                
                 if (phasing_[i] == phasing_[j]) {
                     count[0] += scores[i*2*acontigs.size()*2 + j*2];
                     count[0] += scores[(i*2+1)*acontigs.size()*2 + j*2+1];

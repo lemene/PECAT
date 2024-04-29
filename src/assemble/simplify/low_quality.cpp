@@ -4,7 +4,7 @@ namespace fsa {
 
 
 bool QualitySimplifier::ParseParameters(const std::vector<std::string> &params) {
-    //assert(params[0] == "quality");
+    assert(params[0] == "quality");
 
     for (size_t i = 1; i < params.size(); ++i) {
         auto it = SplitStringByChar(params[i], '=');
@@ -27,7 +27,6 @@ void QualitySimplifier::Running() {
 }
 
 double QualitySimplifier::ComputeThreshold() {
-
 
     nodes_ = graph_.CollectNodes([](BaseNode* n) {
         return n->OutDegree() >= 1;

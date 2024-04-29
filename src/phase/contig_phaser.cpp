@@ -644,7 +644,7 @@ void ContigPhaser::DumpReadInfos(std::ostream& of) const {
 void ContigPhaser::DumpVariants(std::ostream& of) const {
     const auto & cname = dataset_.rd_store_.QueryNameById(ctg_);
     for (size_t i=0; i<variants_.size(); ++i) {
-        if (true || variants_[i].Valid()) {
+        if (variants_[i].Valid()) {
             of << cname << " ";
             of << i;
 

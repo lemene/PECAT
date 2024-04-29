@@ -743,7 +743,7 @@ def fx_find_switch(argv):
             kmer_total += pkmer + mkmer
             infos.append((line, min(pkmer, mkmer)))
 
-        print("hamming error: %.04f%" % (sum([i[1] for i in infos]) / kmer_total * 100))
+        print("hamming error: %.04f%%" % (sum([i[1] for i in infos]) / kmer_total * 100))
 
         infos.sort(key = lambda x:  -x[1])
         for i, it in enumerate(infos):
