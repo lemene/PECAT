@@ -36,16 +36,20 @@ void PhsDataset::Load() {
 
 void PhsDataset::LoadOverlaps(const std::string &fname) {
     auto filter_simple = [&](Overlap& o) {
+        // if (rd_store_.QueryNameById(o.a_.id) == "450506") {
+        //     printf("--- %s <-> %s %0.2f > %0.2f, %.02f\n", rd_store_.QueryNameById(o.a_.id).c_str(), rd_store_.QueryNameById(o.b_.id).c_str(), o.identity_, opts_.filter_opts_.min_identity, 
+        //     opts_.filter_opts_.IdentityIgnoringIndel(o,100));
+        // }
         if (!opts_.filter_opts_.Valid(o)) {
             return false;
         }
+        // if (rd_store_.QueryNameById(o.a_.id) == "450506") {
+        //     printf("xxx %s <-> %s %0.2f\n", rd_store_.QueryNameById(o.a_.id).c_str(), rd_store_.QueryNameById(o.b_.id).c_str(),  o.identity_);
+        // }
 
         if (contig_ids_.find(o.b_.id) == contig_ids_.end()) {
             return false;
         }
-
-//        // TODO for debug
-//        if (o.b_.start < 66229153 - 1000000 || o.b_.start > 66332061 + 1000000) return false;
 
         return true;
     };

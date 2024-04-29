@@ -31,35 +31,21 @@ public:
     const OverlapStore& GetOverlapStore() const { return ol_store_; }
 
     void Load();
-    void LoadPurged();
 
     void LoadOverlaps(const std::string &fname);
-    void LoadOverlaps2(const std::string &fname);
-    void LoadOverlapsWithoutLowQuality(const std::string &fname);
 
     void Purge();
     void FilterLowQuality();
     void FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored);
     double GetOverlapQuality(const Overlap &ol);
+    void GroupOverlaps();
+    void FilterDuplicate();
     void GroupAndFilterDuplicate();
-    void CheckOverlapEnd();
-    void CheckOverlapEnd(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored, std::unordered_set<int>& ignReads);
     void ExtendOverlapToEnd();
-    void ExtendOverlap();
 
     void FilterContained();
     bool IsContained(const Overlap& o, std::array<int, 2> &rel);
     void FilterCoverage();
-
-    void FilterConsistency();
-    void CalcConsistency(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &best, std::unordered_set<const Overlap*> &ignored);
-    MatrixGraph CalcConsistencyGraph(int id, const std::vector<const Overlap*> ols);
-    void SelectBestExtends(Seq::Id id, const MatrixGraph& graph, const std::vector<std::set<int>>& clusters, const std::vector<const Overlap*>& ols, 
-                           std::unordered_set<const Overlap*> &best, std::unordered_set<const Overlap*> &ignored);
-
-    void Debug_PrintGraph(const std::string &name, const MatrixGraph& graph, const std::vector<std::set<int>>& clusters, const std::vector<const Overlap*>& ols);
-
-    double CalcLocalIdentityThreshold(std::vector<std::array<double,2>> &idents, int base_lower_limit, int base_upper_limit);
 
     void ModifyEnd(const Overlap &o, int maxoh);
 
@@ -70,7 +56,6 @@ public:
     void CoverageConfidencePoints(const std::vector<int>& cov, bool log=false);
     std::array<int,2> CoverageConfidencePoints1(const std::vector<int>& cov, bool log=false);
 
-    int CalcMinCoverage() const;
     std::array<int, 3> CalcCoverageThreshold() const;
   
     bool IsReserved(const Overlap &o) const { return GetOlReason(o).type == OlReason::RS_OK; }
@@ -103,7 +88,6 @@ public:
     void ReplaceOverlapInGroup(const Overlap* new_ol, const Overlap* old_ol);
 
     std::unordered_set<Seq::Id> ReservedReads();
-    void ExtendReservedReads();
 
     /* */
     void Check_Group() const;
@@ -145,7 +129,6 @@ public:
     static int Percentile(const std::vector<int>& data, double percent);
     static int FirstTrough(const std::vector<int>& data, size_t last, size_t k);
 
-    void ScanOverlapsToSelectParams(const std::string &fname);    
     double CalcLocalOverhangThreshold(std::vector<std::array<double,2>> &overhang);
 
     void EstimateGenomeSize();
@@ -176,7 +159,6 @@ public:
     AsmOptions& opts_;
     std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
     std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> dup_groups_;
-
     std::unordered_map<Seq::Id, ReadStatInfo> read_infos_;
 
     StatReadInfo sread_info_;
@@ -184,6 +166,8 @@ public:
     StringPool string_pool_;
     ReadStore rd_store_ { string_pool_ };
     OverlapStore ol_store_ { string_pool_ };
+    OverlapGrouper grouper_ { ol_store_ };
+
     
     std::shared_ptr<ReadVariants> read_variants_;
     std::shared_ptr<PhaseInfoFile> phased_reads_;

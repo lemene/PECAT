@@ -31,7 +31,6 @@ void AsmOptions::SetArguments(ArgumentParser &ap) {
     ap.AddNamedOption(hic_info, "hic_info", "information of alignment between hic sequences and the first round of assembly");
     
     // for debuging the program
-    ap.AddNamedOption(skip_purge, "skip_purge", "it is for debuging");
     ap.AddNamedOption(debug_name, "debug_name", "");
     ap.AddNamedOption(dump, "dump", "dump intermediate data, 0: dump nothing, 4: dump all data");
 

@@ -36,7 +36,8 @@ struct AsmOptions {
     int coverage { 60 };
     std::string coverage_opts { "2|1000|500" };
 
-    std::string reduction0 {"transitive:fuzz=500|quality|spur|best|spur|extend|phase|unreliable|spur|bridge|"};
+    //std::string reduction0 {"transitive:fuzz=500|quality|spur|best|spur|extend|phase|unreliable|spur|bridge|"};
+    std::string reduction0 {"transitive:fuzz=500|spur|best|spur|extend|phase|unreliable|spur|bridge|"};
     std::string reduction1 {"transitive|spur|duplicate|cross|bridge|bubble:s=1|bridge|bubble:s=0|spur|loop|semi"};
 
     std::string reducer0 {""};
@@ -57,7 +58,6 @@ struct AsmOptions {
     std::string contig_format { "prialt "};
 
     int dump { 0 };
-    bool skip_purge { false };
 };
 
 }

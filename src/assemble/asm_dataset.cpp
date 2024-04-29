@@ -9,38 +9,18 @@
 namespace fsa {
     
 void AsmDataset::Load() {
-    if (!opts_.read_file.empty()) {
-        rd_store_.Load(opts_.read_file, "", true);
-        rd_store_.SaveIdToName(opts_.OutputPath("id2name.txt.gz"));
-    }
+    assert(!opts_.read_file.empty());
+    rd_store_.Load(opts_.read_file, "", true);
     
     LoadOverlaps(opts_.ifname);
-    DumpReadInfos(OutputPath("readinfos"), read_infos_); 
 }
 
-void AsmDataset::LoadPurged() {
-    if (!opts_.read_file.empty()) {
-        rd_store_.Load(opts_.read_file, "", true);
-        rd_store_.SaveIdToName(opts_.OutputPath("id2name.txt.gz"));
-    }
-    
-    
-    if (rd_store_.Size() > 0) {    // read names have been loaded
-        ol_store_.LoadFast(OutputPath("filter.m4a"), "", (size_t)opts_.thread_size);
-    } else {
-        ol_store_.Load(OutputPath("filter.m4a"), "", (size_t)opts_.thread_size);
-    }
-
-    LOG(INFO)("Overlap size: %zd ", ol_store_.Size());
-}
 
 void AsmDataset::Purge() {
     
     GroupAndFilterDuplicate();
 
-    //FilterLowQuality();
-
-    //CheckOverlapEnd();
+    FilterLowQuality();
 
     ExtendOverlapToEnd();
 
@@ -48,141 +28,34 @@ void AsmDataset::Purge() {
 
     EstimateGenomeSize();
 
-    //FilterConsistency();
-
     FilterContained();
     
     Dump();
 }
 
 void AsmDataset::LoadOverlaps(const std::string &fname) {
-    
-    bool scan_overlaps_ = false;
-    if (scan_overlaps_) {
-        LOG(INFO)("Scan overlaps to select params");
-        ScanOverlapsToSelectParams(opts_.ifname);
-        LOG(INFO)("Load overlap file");
-        LoadOverlapsWithoutLowQuality(opts_.ifname);
-    } else {
-        
-        LOG(INFO)("Load overlap file");
-        LoadOverlaps2(opts_.ifname);
-    }
+    LOG(INFO)("Load overlap file");
 
-    
-    if (opts_.dump >= 2) {
-        DumpOverlaps(OutputPath("load.m4a"));
-    }
-}
-
-    
-void AsmDataset::LoadOverlaps2(const std::string &fname) {
     std::atomic<size_t> count {0};
     auto check = [&](Overlap& o) {
         count++;
         return opts_.filter0.Valid(o);
     };
 
-    if (rd_store_.Size() > 0) {    // read names have been loaded
-        ol_store_.LoadFast(fname, "", (size_t)opts_.thread_size, check);
-    } else {
-        ol_store_.Load(fname, "", (size_t)opts_.thread_size, check);
-    }
+    assert(rd_store_.Size() > 0);
+    ol_store_.LoadFast(fname, "", (size_t)opts_.thread_size, check);
 
     LOG(INFO)("Overlap size: %zd/%zd", ol_store_.Size(), count.load());
 
-    //
-    
     for (size_t i=0; i<rd_store_.Size(); ++i) {
         read_infos_[i] = ReadStatInfo();
         read_infos_[i].len = rd_store_.GetSeqLength(i);
         read_infos_[i].id = i; // TODO
     }
-}
 
-
-void AsmDataset::LoadOverlapsWithoutLowQuality(const std::string &fname) {
-    std::atomic<size_t> total { 0 };
-    auto filter_simple = [&](Overlap& o) {
-        if (opts_.filter0.Valid(o)) {
-            total ++;
-            // TODO not filtering
-            // const auto& rinfo_a = read_infos_[o.a_.id];
-            // const auto& rinfo_b = read_infos_[o.b_.id];
-
-            // if (!rinfo_a.CheckIdentity(o) && !rinfo_b.CheckIdentity(o)) {
-            //     return false;
-            // }
-            
-            return true;
-        } else {
-            return false;
-        }
-    };
-
-    if (rd_store_.Size() > 0) {    // read names have been loaded
-        ol_store_.LoadFast(fname, "", (size_t)opts_.thread_size, filter_simple);
-    } else {
-        ol_store_.Load(fname, "", (size_t)opts_.thread_size, filter_simple);
+    if (opts_.dump >= 2) {
+        DumpOverlaps(OutputPath("load.paf"));
     }
-
-    LOG(INFO)("Overlap size: %zd / %zd", ol_store_.Size(), total.load());
-}
-
-void AsmDataset::ScanOverlapsToSelectParams(const std::string &fname) {
-
-    std::mutex mutex;
-
-    size_t block_size = 50000;
-    struct WorkArea{
-        StatReadInfo sri;
-        void Clear() { sri.Clear(); }
-    };
-    
-    std::list<std::shared_ptr<WorkArea>> works;  // for each thread. Vector may cause memory reallocating, so list is used.
-
-    auto alloc_work = [&]() -> std::shared_ptr<WorkArea> {
-        std::lock_guard<std::mutex> lock(mutex);
-        works.push_back(std::shared_ptr<WorkArea>(new WorkArea()));
-
-        return works.back();
-    };
-
-    auto combine = [&](std::shared_ptr<WorkArea> work) {
-        std::lock_guard<std::mutex> lock(mutex);
-        sread_info_.Merge(work->sri);
-    };
-
-    auto scan_overlap = [&](Overlap& o) {
-        auto thread_local work = alloc_work();
-        if (opts_.filter0.Valid(o)) {
-            work->sri.Add(o);
-        }
-        if (work->sri.Size() >= block_size) {
-            combine(work);
-        }
-        return false;   // not load to memory
-    };
-
-    OverlapStore ol(rd_store_.GetStringPool());
-    if (rd_store_.GetIdRange()[1] > 0) {    // read names have been loaded
-        ol.LoadFast(fname, "", (size_t)opts_.thread_size, scan_overlap);
-    } else {
-        ol.Load(fname, "", (size_t)opts_.thread_size, scan_overlap);
-    }
-
-    for (auto & w : works) {
-        combine(w);
-    }
-    
-    auto work_func = [&](const std::vector<int>& input) {
-        for (auto i : input) {
-            read_infos_[i].Stat(i, opts_);
-        }
-    };
-
-
-    MultiThreadRun((size_t)opts_.thread_size, read_infos_, SplitMapKeys<std::unordered_map<int, fsa::ReadStatInfo>>, work_func);   
 }
 
 
@@ -553,294 +426,6 @@ void AsmDataset::FilterCoverage() {
 }
 
 
-void AsmDataset::FilterConsistency() {
-    LOG(INFO)("Check consistency");
-
-    auto work_func = [this](const std::vector<int> &input) {
-        std::array<std::unordered_set<const Overlap*>, 2> output;  // best, ignored
-        for (auto id : input) {
-            if (IsReserved(id)) {
-                auto &g = groups_[id];
-                CalcConsistency(id, g, output[0], output[1]); 
-            }
-        }
-        
-        return output;
-    }; 
-    
-    auto comb_func = [this](const std::vector<std::array<std::unordered_set<const Overlap*>, 2>> &sub_outputs) {
-        std::array<std::unordered_set<const Overlap*>, 2> output;
-
-        for (const auto& i : sub_outputs) {
-            output[0].insert(i[0].begin(), i[0].end());
-            output[1].insert(i[1].begin(), i[1].end());
-        }
-        return output;
-    };
-
-    auto output = MultiThreadRun(opts_.thread_size, groups_,
-        SplitMapKeys<decltype(groups_)>, 
-        work_func, 
-        comb_func);
-
-    for (const auto &o : output[1]) {
-        SetOlReason(*o, OlReason::Consistency(0));
-    }
-    
-    
-    for (size_t i=0; i < ol_store_.Size(); ++i) {
-        const auto &o = ol_store_.Get(i);
-        if (IsReserved(o) && output[0].find(&o) == output[0].end()) {
-            SetOlReason(o, OlReason::Consistency1(0));
-        }
-    }
-    
-}
-
-void Debug_PrintCluster(const std::vector<std::set<int>>& clusters) {
-
-    for (const auto &i : clusters) {
-        printf("type : ");
-        for (auto ii : i) {
-            printf("%d ", ii);
-        }
-        printf("\n");
-    }
-}
-
-void AsmDataset::CalcConsistency(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &best, std::unordered_set<const Overlap*> &ignored) {
-    std::vector<const Overlap*> left_ols;
-    std::vector<const Overlap*> right_ols;
-
-    long min_extension = 100;
-
-    
-    for (auto o : group) {
-        if (IsReserved(*o.second)) {
-            auto &a = o.second->GetRead(id);
-            auto &b = o.second->GetOtherRead(id);
-
-            if (a.start == 0 && ((a.strand == b.strand && b.start > min_extension) || (a.strand != b.strand && b.len-b.end > min_extension))) {
-                left_ols.push_back(o.second);
-
-            } else if (a.end == a.len && ((a.strand != b.strand && b.start > min_extension) || (a.strand == b.strand && b.len-b.end > min_extension))) {
-                right_ols.push_back(o.second);
-            } else {
-                best.insert(o.second);
-            }
-        }
-    }
-
-    auto left_graph = CalcConsistencyGraph(id, left_ols);
-    auto left_clusters = left_graph.Cluster();
-    auto right_graph = CalcConsistencyGraph(id, right_ols);
-    auto right_clusters = right_graph.Cluster();
-
-
-    auto max_aligned_length = [id](const std::set<int>& s, const std::vector<const Overlap*>& ols) {
-        int a = 0;
-        for (auto i : s) {
-            auto& r = ols[i]->GetRead(id);
-            if (r.end -r.start > a) {
-                a = r.end - r.start;
-            }
-        }
-        return a;
-    };
-
-    std::sort(left_clusters.begin(), left_clusters.end(), [max_aligned_length, &left_ols](const std::set<int>& a, const std::set<int>& b){
-        
-        //return max_aligned_length(a, left_ols) > max_aligned_length(b, left_ols);
-        return a.size() > b.size();
-    });
-    
-    std::sort(right_clusters.begin(), right_clusters.end(), [max_aligned_length, &right_ols](const std::set<int>& a, const std::set<int>& b){
-        //return max_aligned_length(a, right_ols) > max_aligned_length(b, right_ols);
-        return a.size() > b.size();
-    });
-
-    if ( opts_.debug_name == rd_store_.QueryNameById(id)) {
-        printf("Left\n");
-        Debug_PrintGraph(opts_.debug_name, left_graph, left_clusters, left_ols);
-        printf("Right\n");
-        Debug_PrintGraph(opts_.debug_name, right_graph, right_clusters, right_ols);
-    }
-
-    SelectBestExtends(id, left_graph, left_clusters, left_ols, best, ignored);
-    SelectBestExtends(id, right_graph, right_clusters, right_ols, best, ignored);
-}
-
-void AsmDataset::SelectBestExtends(Seq::Id id, const MatrixGraph& graph, const std::vector<std::set<int>>& clusters, const std::vector<const Overlap*>& ols,
-                                      std::unordered_set<const Overlap*> &best, std::unordered_set<const Overlap*> &ignored) {
-    int cov = read_infos_[id].coverage[1];
-
-    int accu = 0;
-    bool pass = false;
-    for (const auto &clu : clusters) {
-        
-    
-
-        // 每一个cluster选择最小的集合
-        auto ibest= *clu.begin();
-        auto o = ols[ibest];
-        auto &b = o->a_.id != id ? o->a_  : o->b_;
-        int c = read_infos_[b.id].coverage[1];
-        if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-            printf("l cov: %d, %d, %d\n", cov, c, accu );
-        }
-        if (!pass && (clu.size() >= 1 || clusters.size() == 1) && (accu == 0 || accu + c< cov*1.5) && clu.size() >= clusters[0].size() / 3) {
-
-            accu += c;
-            if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                printf("+ cov: %d, %d, %d\n", cov, c, accu );
-            }
-
-            for (auto i : clu) {
-                if (graph.Degree(i) > graph.Degree(ibest)) {
-                    ibest = i;
-                }
-                //if (ols[i]->AlignedLength() > o->AlignedLength()) {
-                //    o = ols[i];
-                //}
-            }
-            best.insert(ols[ibest]);
-
-            for (auto i : clu) {
-                if (graph.Degree(i) >= clu.size() / 3){//graph.Degree(ibest) ) {   
-                    best.insert(ols[i]);
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                            printf("+ best: %s %s\n", rd_store_.QueryNameById(ols[i]->a_.id).c_str(), rd_store_.QueryNameById(ols[i]->b_.id).c_str());
-                    }
-                } else if (graph.Degree(i)  < graph.Degree(ibest) / 3) {
-                    
-                    ignored.insert(ols[i]);
-                    
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                            printf("+ ignore0: %s %s\n", rd_store_.QueryNameById(ols[i]->a_.id).c_str(), rd_store_.QueryNameById(ols[i]->b_.id).c_str());
-                    }
-                }
-
-            }
-            
-
-        } else {
-            
-            if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                printf("+ ignore: %zd\n", clu.size() );
-                
-                for (auto i : clu) {
-                    printf("+ ignore: %s %s\n", rd_store_.QueryNameById(ols[i]->a_.id).c_str(), rd_store_.QueryNameById(ols[i]->b_.id).c_str());
-                }
-            }
-            for (auto i : clu) {
-                ignored.insert(ols[i]);
-            }
-            pass = true;
-        }
-    }
-
-}
-
-void AsmDataset::Debug_PrintGraph(const std::string &name, const MatrixGraph& graph, const std::vector<std::set<int>>& clusters, const std::vector<const Overlap*>& ols) {
-    
-    printf("debug name %s %zd\n", name.c_str(), ols.size());
-    graph.Print();
-    Debug_PrintCluster(clusters);
-
-    for (auto o : ols) {
-        printf("%s\n", OverlapStore::ToPafLine(*o, StringPool::UnsafeNameId(rd_store_.GetStringPool())).c_str());
-    }
-}
-
-int a = 0;
-MatrixGraph AsmDataset::CalcConsistencyGraph(int id, const std::vector<const Overlap*> ols) {
-    double rate = opts_.max_offset_rate;
-
-    MatrixGraph graph(ols.size());
-    for (size_t i=0; i<ols.size(); ++i) {
-        const Overlap* o0_ab = ols[i];
-        auto &a0 = o0_ab->a_.id == id ? o0_ab->a_  : o0_ab->b_;
-        auto &b0 = o0_ab->a_.id != id ? o0_ab->a_  : o0_ab->b_;
-
-        for (size_t j=i+1; j<ols.size(); ++j) {
-            const Overlap* o1_ac = ols[j];
-            auto &a1 = o1_ac->a_.id == id ? o1_ac->a_  : o1_ac->b_;
-            auto &c1 = o1_ac->a_.id != id ? o1_ac->a_  : o1_ac->b_;
-
-            assert((a0.start == 0 && a1.start == 0) || (a0.end == a0.len && a1.end == a1.len));
-            auto it1 = groups_.find(b0.id);
-
-            if (it1 != groups_.end()) {
-                auto it2 = it1->second.find(c1.id);
-                if (it2 != it1->second.end() && IsReserved(*it2->second)) {
-                    const Overlap* o2_bc = it2->second;
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                        a = 1;
-                    }
-                    if (Overlap::IsConsistent(*o0_ab, *o1_ac, *o2_bc, 2000)) {
-                        graph.AddEdge(i, j, 1);
-                    }
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                        a = 0;
-                    }
-                    
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                        printf("ccc %d %d %s, %s\n", Overlap::IsConsistent(*o0_ab, *o1_ac, *o2_bc, (int)b0.len*rate) ,(int)(b0.len*rate), 
-                            rd_store_.QueryNameById(o0_ab->GetOtherRead(id).id).c_str(),
-                            rd_store_.QueryNameById(o1_ac->GetOtherRead(id).id).c_str());
-                    }
-                } else {
-                    
-                    if (opts_.debug_name == rd_store_.QueryNameById(id)) {
-                        printf("ccc x %s, %s\n",  
-                            rd_store_.QueryNameById(o0_ab->GetOtherRead(id).id).c_str(),
-                            rd_store_.QueryNameById(o1_ac->GetOtherRead(id).id).c_str());
-                    }
-                }
-            }
-        }
-    }
-    return graph;
-}
-
-
-// void AsmDataset::FilterBestn() {
-//     LOG(INFO)("Select Best n overlaps");
-
-//     auto work_func = [&](const std::vector<int> &input) {
-        
-//         std::unordered_set<const Overlap*> output;
-//         for (auto &i : input) {
-//             auto iter = read_infos_.find(i);
-//             assert(iter != read_infos_.end());
-//             if (iter->second.filtered.IsOk()) {
-//                 auto g = groups_.find(i);
-//                 assert(g != groups_.end());
-//                 auto k = FindBestN(*g);
-
-//                 output.insert(k.begin(), k.end());
-//             }
-            
-//         }
-//         return output;
-//     };
-
-
-//     auto keep = MultiThreadRun(opts_.thread_size, groups_, 
-//         SplitMapKeys<decltype(groups_)>, 
-//         work_func, 
-//         MoveCombineMapOrSet<std::unordered_set<const Overlap*>>);
-
-//     for (size_t i=0; i < ol_store_.Size(); ++i) {
-//         const auto &o = ol_store_.Get(i);
-//         if (IsReserved(o) && keep.find(&o) == keep.end()) {
-//             SetOlReason(o, OlReason::BestN());
-//         }
-
-//     }
-
-// }
-
 double AsmDataset::GetOverlapQuality(const Overlap &ol) {
     const auto &rd_store = rd_store_;
 
@@ -857,6 +442,15 @@ double AsmDataset::GetOverlapQuality(const Overlap &ol) {
     } else {
         return 0.0;
     }
+}
+
+void AsmDataset::GroupOverlaps() {
+    LOG(INFO)("Group overlaps");
+    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<Seq::Id>());  // TODO
+}
+
+void AsmDataset::FilterDuplicate() {
+
 }
 
 void AsmDataset::GroupAndFilterDuplicate() {
@@ -941,116 +535,7 @@ void AsmDataset::GroupAndFilterDuplicate() {
 
     Check_Group();
 }
-
-void AsmDataset::CheckOverlapEnd() {
-    LOG(INFO)("Check overlap overhang");
-
-    using FilterData = std::pair<std::unordered_set<const Overlap*>,  std::unordered_set<int>>;
-
-
-    auto work_func = [&](const std::vector<int>& input) {
-        FilterData filtered;
-
-        for (auto i : input) {
-            CheckOverlapEnd(i, groups_[i], filtered.first, filtered.second);
-        }
-        return filtered;
-    };
-
-    auto combine_func = [](const std::vector<FilterData>& data) {
-        FilterData filtered;
-        for (auto d : data) {
-            filtered.first.insert(d.first.begin(), d.first.end());
-            filtered.second.insert(d.second.begin(), d.second.end());
-
-        }
-        return filtered;
-    };
-
-    auto filtered = MultiThreadRun(opts_.thread_size, groups_, 
-        SplitMapKeys<decltype(groups_)>, 
-        work_func, 
-        combine_func);   
-
-    printf("CheckOverlapEnd %zd, %zd\n", filtered.first.size(), filtered.second.size());
-
-    for (auto o : filtered.first) {
-        SetOlReason(*o, OlReason::Consistency(1));
-    }
-}
-
-void AsmDataset::CheckOverlapEnd(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored, std::unordered_set<int>& ignReads) {
-
-    struct Item {
-        const Overlap* o;
-        int endlen;
-    };
-
-    std::vector<Item> left, right;
-    for (auto g : group) {
-        const Overlap& o = *g.second;
-
-        if (IsReserved(o)) {
-            auto & tr = o.GetRead(id);
-            auto ti =  o.a_.id == id ? 0 : 1;
-            
-            auto oh = o.Overhang2();
-            if ((oh[ti] & 1) != 0 || tr.start == 0) {
-                left.push_back({&o, tr.start});
-            } else if ((oh[ti] & 2) != 0) {
-                right.push_back({&o, tr.len-tr.end});
-            }
-        }
-    }
-
-    auto verifyEnd = [&](int id, std::vector<Item>& endlist, std::unordered_set<const Overlap*> &ignored, std::unordered_set<int>& ignReads, int end) {
-        std::sort(endlist.begin(), endlist.end(), [](const Item &a, const Item &b) { return a.endlen < b.endlen; });
-
-        const auto& rinfo = read_infos_[id];
-        int threshold = end == 0 ? rinfo.overhang_l_threshold : rinfo.overhang_r_threshold;
-
-        auto start = std::find_if(endlist.begin(), endlist.end(), [threshold](const Item& a) { return a.endlen > threshold; });
-
-        for (auto i = start; i != endlist.end(); ++i) {
-
-            const Overlap& o = *i->o;
-
-            bool verified = false;
-            for (auto j=endlist.begin(); j<start && !verified; ++j) {
-                const Overlap& oab = o;
-                const Overlap& oac = *j->o;
-
-                // Seq::Id ia = id;
-                Seq::Id ib = oab.GetOtherRead(id).id;
-                Seq::Id ic = oac.GetOtherRead(id).id;
-
-                auto citer = groups_[ib].find(ic);
-                if (citer != groups_[ib].end() && IsReserved(*citer->second)) {
-                    const Overlap &obc = *citer->second;
-
-                    if (Overlap::IsConsistent(oab, oac, obc, opts_.filter0.max_overhang)) {
-                        auto rb = oab.GetOtherRead(id);
-                        int verify_len = (oab.SameDirect() ^ (end != 0)) ? rb.start - obc.GetRead(ib).start : rb.len-rb.end - (obc.GetRead(ib).len - obc.GetRead(ib).end) ;
-                        if (i->endlen - verify_len <= threshold) {
-                            verified = true;
-                        }
-                    }
-
-                }
-            }
-
-            if (!verified) {
-                ignored.insert(i->o);
-            }
-        }
-    };
-
-
-    verifyEnd(id, left, ignored, ignReads, 0);
-    verifyEnd(id, right, ignored, ignReads, 1);
-
-}
-                    
+        
 // Modify the ends and remove overhangs
 void AsmDataset::ExtendOverlapToEnd() {
     // LOG(INFO)("Extend Overlaps");
@@ -1461,45 +946,6 @@ std::array<int,3> AsmDataset::CalcCoverageThreshold() const {
 }
 
 
-// std::unordered_set<const Overlap*> AsmDataset::FindBestN(const std::pair<int, std::unordered_map<int, const Overlap*>> &g) const {
-//     std::unordered_set<const Overlap*> keep;
-//     std::vector<const Overlap*> left, right;
-//     for (auto &i : g.second) {
-//         const Overlap& o = *(i.second);
-
-//         if (IsReserved(o)) {
-//             auto loc = o.Location(i.first, 0);
-//             if (loc == Overlap::Loc::Left) {
-//                 left.push_back(&o);
-//             } else {
-//                 assert(loc == Overlap::Loc::Right);
-//                 right.push_back(&o);
-//             }
-            
-//         }
-//     }
-
-//     if (left.size() > (size_t)opts_.bestn) {
-//         std::sort(left.begin(), left.end(), [](const Overlap* a, const Overlap *b){ return BetterAlignedLength(*a, *b); });
-
-//         keep.insert(left.begin(), left.begin() + opts_.bestn);
-//     }
-//     else {
-//         keep.insert(left.begin(), left.end());
-//     }
-//     if (right.size() > (size_t)opts_.bestn) {
-//         std::sort(right.begin(), right.end(), [](const Overlap* a, const Overlap *b) { return BetterAlignedLength(*a, *b);} );
-
-//         keep.insert(right.begin(), right.begin() + opts_.bestn);
-
-//     }
-//     else {
-//         keep.insert(right.begin(), right.end());
-//     }
-
-//     return keep;
-// }
-
 bool AsmDataset::IsContained(const Overlap& o, std::array<int, 2> &rel) {
     auto loc = o.Location(0);
     if (loc == Overlap::Loc::Contained || loc == Overlap::Loc::Containing || loc == Overlap::Loc::Equal) {
@@ -1780,7 +1226,7 @@ void AsmDataset::Dump() const {
     LOG(INFO)("Dump infos");
     
     DumpReadInfos(OutputPath("readinfos"), read_infos_); 
-    DumpOverlaps(OutputPath("filter.m4a"));
+    DumpOverlaps(OutputPath("filter.paf"));
     DumpFilteredOverlaps(OutputPath("filtered_overlaps.txt"));
 
 }
@@ -1841,36 +1287,6 @@ void AsmDataset::DumpFilteredOverlaps(const std::string &fname) const {
     } else {
         LOG(ERROR)("Failed to open file: %s", fname.c_str());
     }
-
-    // if (of != nullptr) {
-    //     for (size_t i=0; i < ol_store_.Size(); ++i) {
-    //         const auto &o = ol_store_.Get(i);
-    //         OlReason rs = GetOlReason(o);
-    //         switch(rs.type) {    
-    //         case OlReason::RS_FILTERED_READ:
-    //             gzprintf(of, "%s %s %s %s %d\n", rd_store_.QueryNameById(o.a_.id).c_str(), rd_store_.QueryNameById(o.b_.id).c_str(), 
-    //                 rs.ToString(), rd_store_.QueryNameById(rs.sub[0]).c_str(), rs.sub[1]);
-    //             break;
-
-    //         case OlReason::RS_SIMPLE:
-    //         case OlReason::RS_DUPLICATE:
-    //         case OlReason::RS_LOCAL:
-    //         case OlReason::RS_CONSISTENCY:
-    //         case OlReason::RS_CONSISTENCY1:
-    //         case OlReason::RS_CONTIG:
-    //         case OlReason::RS_UNKNOWN:
-    //             gzprintf(of, "%s %s %s %d %d\n", rd_store_.QueryNameById(o.a_.id).c_str(), rd_store_.QueryNameById(o.b_.id).c_str(), 
-    //                 rs.ToString(), rs.sub[0], rs.sub[1]);
-    //             break;
-    //         case OlReason::RS_OK:
-    //         default:
-    //             break;
-    //         }
-    //     }
-    //     gzclose(of);
-    // } else {
-    //     LOG(ERROR)("Fail to open filterd reads file %s", fname.c_str());
-    // }
 }
 
 void AsmDataset::DumpReadInfos(const std::string &fname, const std::unordered_map<int, ReadStatInfo> &readInfos) const {

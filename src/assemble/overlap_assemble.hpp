@@ -43,10 +43,7 @@ public:
 
     std::vector<std::vector<Seq::Tile>> StringEdgesToTiles(const std::list<BaseEdge*> &path);
 
-
     void ClassifyContigs();
-
-
 
 };
 

@@ -45,15 +45,8 @@ void OverlapAssemble::CheckArguments() {
 void OverlapAssemble::Running() {
     // if read_file is provided, overlap-loading step can be accelerated
 
-    if (!opts_.skip_purge) {
-        dataset_.Load();
-
-        dataset_.Purge();
-
-    } else {
-        dataset_.LoadPurged();
-
-    }
+    dataset_.Load();
+    dataset_.Purge();
 
     CreateStringGraph();
 

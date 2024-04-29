@@ -247,8 +247,6 @@ bool Overlap::IsConsistent(const Overlap &ab, const Overlap &ac, const Overlap &
     std::array<int,2> dst0 = Overlap::Mapping<2>(ab.GetRead(aid), ab.GetRead(bid), src);
 
     std::array<int,2> dst1 = Overlap::Mapping<2>(ac.GetRead(aid), ac.GetRead(cid), Overlap::Mapping<2>(bc.GetRead(cid), bc.GetRead(bid), src));
-    extern int a;
-    if (a) printf("iii %d %d %d -- (%d %d) (%d %d)\n", ab.GetRead(aid).len, ab.GetRead(bid).len, ac.GetRead(cid).len, dst0[0], dst0[1], dst1[0], dst1[1]);
     return std::abs(dst0[0]-dst1[0]) <= err && std::abs(dst0[1]-dst1[1]) <= err;
 }
 
