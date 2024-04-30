@@ -124,6 +124,7 @@ void AsmDataset::FilterLowQuality() {
 
 void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored) {
     const int WIN_SIZE = 4000;      // param: 
+    const int MIN_COV = 30;         // param;
 
     auto& rinfo = read_infos_[id];
     const size_t win_count = (rinfo.len + WIN_SIZE / 2) / WIN_SIZE;
@@ -173,11 +174,11 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
 
     std::vector<double> identity_threshold(winidents.size());
     std::transform(winidents.begin(), winidents.end(), identity_threshold.begin(), [this, id](std::vector<double>& ident) {
-        if (ident.size() > 0) {
+        if (ident.size() >= MIN_COV) {
             std::sort(ident.begin(), ident.end(), [](double a, double b) { return a > b; });
 
             double median, mad;
-            ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+std::min<size_t>(30, ident.size())),  median, mad);
+            ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+MIN_COV),  median, mad);
             if (rd_store_.QueryNameById(id) == opts_.debug_name) {
                 LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
                 for (size_t i = 0; i <ident.size(); ++i) {
@@ -186,32 +187,25 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
             }
             return std::max(opts_.filter0.min_identity, median-6*1.4826*mad);
 
+
         } else {
             return opts_.filter0.min_identity;
         }
     });
 
-    double overhang_l_threshold = 0;
-    double overhang_r_threshold = 0;
-    
-    if (lohs.size() > 0) {
-        double median, mad;
-        ComputeMedianAbsoluteDeviation(lohs, median, mad);
-        overhang_l_threshold = std::min<double>(median + 6*1.4826*mad, opts_.filter0.max_overhang);
-    } else {
-        overhang_l_threshold = opts_.filter0.max_overhang;
-    }
-
-    if (rohs.size() > 0) {
-        double median, mad;
-        ComputeMedianAbsoluteDeviation(rohs, median, mad);
-        overhang_l_threshold = std::min<double>(median + 6*1.4826*mad, opts_.filter0.max_overhang);
-    } else {
-        overhang_l_threshold = opts_.filter0.max_overhang;
-    }
-
-    rinfo.overhang_l_threshold = overhang_l_threshold;
-    rinfo.overhang_r_threshold = overhang_r_threshold;
+    auto calc_oh_threshold = [this](std::vector<double>& ohs) -> double {
+        if (ohs.size() > MIN_COV) {
+            double median, mad;
+            std::sort(ohs.begin(), ohs.end());
+            ComputeMedianAbsoluteDeviation(std::vector<double>(ohs.begin(), ohs.begin()+MIN_COV), median, mad);
+            return std::min<double>(median + 6*1.4826*mad, opts_.filter0.max_overhang);
+        } else {
+            return opts_.filter0.max_overhang;
+        }
+    };
+    rinfo.overhang_l_threshold = calc_oh_threshold(lohs);
+    rinfo.overhang_r_threshold = calc_oh_threshold(rohs);
+    rinfo.identity_threshold = identity_threshold;
 
     auto area_threshold = [win_size](const std::vector<double>& idents, int start, int end) {
  
@@ -1299,7 +1293,11 @@ void AsmDataset::DumpReadInfos(const std::string &fname, const std::unordered_ma
                    << " " << ri.overhang_l_threshold << " " << ri.overhang_r_threshold << " " 
                    <<  ri.minmax_coverage[0] << " " << ri.minmax_coverage[1] << " " <<  ri.coverage[0] << "," << ri.coverage[1] << "," << ri.coverage[2] << " "
                    << ri.filtered.ToString() << " " << (ri.filtered.type == RdReason::RS_CONTAINED ? rd_store_.QueryNameById(ri.filtered.sub[0]) : "0") << " "
-                   << ri.cliff[0] << " " << ri.cliff[1] << "\n";
+                   << ri.cliff[0] << " " << ri.cliff[1];
+            for (const auto &i : ri.identity_threshold) {
+                writer << " " << i;
+            } 
+            writer << "\n";
         }
     } else {
         LOG(ERROR)("Fail to open ReadInfos file %s", fname.c_str());
