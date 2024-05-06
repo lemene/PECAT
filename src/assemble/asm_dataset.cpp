@@ -92,36 +92,27 @@ double AsmDataset::CalcLocalOverhangThreshold(std::vector<std::array<double,2>> 
     return overhang_threshold;
 }
 
-
 void AsmDataset::FilterLowQuality() {
     LOG(INFO)("Filter low-quality overlaps");
-    auto work_func = [&](const std::vector<int>& input) {
-        std::unordered_set<const Overlap*> filtered;
-        for (auto i : input) {
-            FilterLowQuality(i, groups_[i], filtered);
+
+    std::mutex mutex;
+    auto combine_func = [this, &mutex](std::unordered_set<const Overlap*> &flt) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto o : flt) {
+            SetOlReason(*o, OlReason::Simple());
         }
-        return filtered;
     };
 
-    auto combine_func = [](const std::vector<std::unordered_set<const Overlap*>>& data) {
-        std::unordered_set<const Overlap*> filtered;
-        for (auto d : data) {
-            filtered.insert(d.begin(), d.end());
-
+    std::atomic<size_t> index {0};
+    auto work_func = [this, &index, combine_func](size_t tid) {
+        std::unordered_set<const Overlap*> flt;
+        for (size_t i = index.fetch_add(1); i < rd_store_.Size(); i = index.fetch_add(1)) {
+            FilterLowQuality(i, groups_[i], flt);
         }
-        return filtered;
+        combine_func(flt);
     };
 
-    auto filtered = MultiThreadRun(opts_.thread_size, groups_, 
-        SplitMapKeys<decltype(groups_)>, 
-        work_func, 
-        combine_func);   
-
-
-    LOG(INFO)("Filtered low-quality overlaps: %zd", filtered.size());
-    for (auto o : filtered) {
-        SetOlReason(*o, OlReason::Simple());
-    }
+    MultiThreadRun(opts_.thread_size, work_func);
 }
 
 void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored) {
@@ -180,7 +171,7 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
             std::sort(ident.begin(), ident.end(), [](double a, double b) { return a > b; });
 
             double median, mad;
-            ComputeMedianAbsoluteDeviation(std::vector<double>(ident.begin(), ident.begin()+MIN_COV),  median, mad);
+            ComputeMedianAbsoluteDeviation(ident,  median, mad);
             if (rd_store_.QueryNameById(id) == opts_.debug_name) {
                 LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
                 for (size_t i = 0; i <ident.size(); ++i) {
@@ -199,7 +190,7 @@ void AsmDataset::FilterLowQuality(int id, const std::unordered_map<int, const Ov
         if (ohs.size() > MIN_COV) {
             double median, mad;
             std::sort(ohs.begin(), ohs.end());
-            ComputeMedianAbsoluteDeviation(std::vector<double>(ohs.begin(), ohs.begin()+MIN_COV), median, mad);
+            ComputeMedianAbsoluteDeviation(ohs, median, mad);
             return std::min<double>(median + 6*1.4826*mad, opts_.filter0.max_overhang);
         } else {
             return opts_.filter0.max_overhang;
@@ -534,24 +525,23 @@ void AsmDataset::GroupAndFilterDuplicate() {
         
 // Modify the ends and remove overhangs
 void AsmDataset::ExtendOverlapToEnd() {
-    // LOG(INFO)("Extend Overlaps");
-    MultiThreadRun(opts_.thread_size, 
-        [this]() {
-            return SplitRange(opts_.thread_size, (size_t)0, ol_store_.Size());
-        }, 
-        [this](const std::array<size_t, 2> &range) {
-            for (size_t i=range[0]; i<range[1]; ++i) {
-                const Overlap& o = ol_store_.Get(i);
-                if (IsReserved(o) || GetOlReason(o).type == OlReason::RS_DUPLICATE) {
-                    auto oh = o.Overhang();
-                    int th = std::max(oh[0], oh[1]);
-                    if (th > 0) {
-                        ModifyEnd(o, th);
-                    }
+    LOG(INFO)("Extend Overlaps to ends");
+
+    std::atomic<size_t> index { 0 };
+    auto work_func = [this, &index](size_t tid) {
+        for (size_t i = index.fetch_add(1); i <  ol_store_.Size(); i = index.fetch_add(1)) {
+            const Overlap& o = ol_store_.Get(i);
+            if (IsReserved(o) || GetOlReason(o).type == OlReason::RS_DUPLICATE) {
+                auto oh = o.Overhang();
+                int th = std::max(oh[0], oh[1]);
+                if (th > 0) {
+                    ModifyEnd(o, th);
                 }
             }
         }
-    );
+    };
+
+    MultiThreadRun(opts_.thread_size, work_func);
 }
 
 std::array<int, 3> AsmDataset::AnalyzeCoverage(int id, const std::unordered_map<int, const Overlap*>& group) {

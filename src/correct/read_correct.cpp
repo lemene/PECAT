@@ -3,7 +3,6 @@
 #include <iostream>
 #include <atomic>
 #include <ctime>
-#include <random>
 #include "./utils/logger.hpp"
 #include "../utility.hpp"
 
@@ -21,7 +20,6 @@ ArgumentParser ReadCorrect::GetArgumentParser() {
 
 void ReadCorrect::Running() {
     dataset_.Load();
-
     Correct();
 }
 
@@ -32,21 +30,23 @@ void ReadCorrect::Correct() {
     
     std::ofstream of_cread(opts_.cread_fname_);
     std::ofstream of_infos(opts_.infos_fname_);
-    const bool save_infos = of_infos.is_open();
     const size_t flush_block = 20*1024*1024;
+    StatInfo stat_info;
 
     std::atomic<size_t> index {0};
     ProgressM progress(5000, dataset_.read_ids_.size());
 
-    auto save_oss = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores) {
+    auto save_oss = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, StatInfo &si) {
         std::lock_guard<std::mutex> lock(mutex);
         of_cread << oss_cread.str();              
         oss_cread.str("");
 
-        if (save_infos) {
+        if (of_infos.is_open()) {
             of_infos << oss_scores.str();
-            oss_scores.str("");
         }
+        oss_scores.str("");
+        stat_info.Merge(si);
+        si.Clear();
     };
 
     struct Dispatcher { virtual Seq::Id Get() = 0; };
@@ -63,7 +63,6 @@ void ReadCorrect::Correct() {
         std::atomic<size_t> &index;
         ProgressM& progress;
     };
-
     struct GroupDispatcher : public Dispatcher {
         GroupDispatcher(const ReadCorrect& o, ReadCorrect::Worker &w, std::atomic<size_t> &idx, ProgressM &pg)
          : owner(o), worker(w), index(idx), progress(pg)  {}
@@ -101,12 +100,11 @@ void ReadCorrect::Correct() {
 
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
-        bool uc = opts_.use_cache;
         for (auto tid=dispatcher->Get(); tid != Seq::NID; tid = dispatcher->Get()) {
-            if (worker.Correct(tid, uc)) {
+            if (worker.Correct(tid)) {
                 if ( worker.GetCorrected().size() > 0) {
                     SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
-                    if (save_infos) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
+                    if (of_infos.is_open()) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
                 } else {
                     LOG(WARNING)("Corrected Read(%s) is emtpy", dataset_.read_store_.QueryNameById(tid).c_str());
                 }
@@ -114,14 +112,13 @@ void ReadCorrect::Correct() {
             worker.Clear();
             
             if (oss_cread.tellp() > (int)flush_block) {
-                save_oss(oss_cread, oss_scores);
+                save_oss(oss_cread, oss_scores, worker.stat_info);
             }
         }
 
         if (oss_cread.tellp() > 0) {
-            save_oss(oss_cread, oss_scores);
+            save_oss(oss_cread, oss_scores, worker.stat_info);
         }
-        CollectWorkerInfo(worker, mutex);
     };
 
  
@@ -132,7 +129,7 @@ void ReadCorrect::Correct() {
         LOG(INFO)("Failed to open file: %s", opts_.rread_fname_.c_str());
     }
 
-    Report();
+    stat_info.Report();
 }
 
 
@@ -183,12 +180,13 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r) {
     return false;
 }
 
-bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Alignment& al) {
+bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& al) {
     const auto& tread = o->GetRead(id);
     const auto& qread = o->GetOtherRead(id);
 
+    stat_info.total++;
     DEBUG_printf("start align %s %s\n", owner_.dataset_.read_store_.QueryNameById(qread.id).c_str(), owner_.dataset_.read_store_.QueryNameById(tread.id).c_str());
-    if (owner_.opts_.use_cache && uc) {
+    if (owner_.opts_.use_cache) {
         if (!cache_.GetAlignment(qread.id, tread.id, o->SameDirect(), al)) {
             std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
             auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
@@ -196,6 +194,7 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, bool uc, Al
             return r;
 
         } else {
+            stat_info.cache++;
             return al.Valid();
         }
     } else {
@@ -290,8 +289,8 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
     assert(al.local_distances.size() == thresholds.size());
 
     for (size_t i = 0; i < thresholds.size(); ++i) {
+        DEBUG_printf("ckck CMP(%zd) %d < %d\n", i, al.local_distances[i] , thresholds[i]);
         if (thresholds[i] >= 0 && al.local_distances[i] >= 0) {
-            DEBUG_printf("ckck CMP %d %d\n", al.local_distances[i] , thresholds[i]);
             if (al.local_distances[i] > thresholds[i]) {
                 return false;
             }
@@ -301,7 +300,7 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 }
 
 
-bool ReadCorrect::Worker::Correct(int id, bool uc) {
+bool ReadCorrect::Worker::Correct(int id) {
     auto group = owner_.dataset_.grouper_.Get(id);
     if (group.Empty()) return false;
 
@@ -339,10 +338,12 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
             auto ol = group.Get(i, j);
             Alignment al_local(tread.id, qread.id);
         
-            auto r_local = GetAlignment(id, ol, uc, al_local);
-            DEBUG_printf("alignment: r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f\n", r_local,
+            auto r_local = GetAlignment(id, ol, al_local);
+            DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
+                owner_.dataset_.QueryStringById(qread.id).c_str(), owner_.dataset_.QueryStringById(tread.id).c_str(),
+                r_local,
                al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
-               al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity());
+               al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
 
             if (r_local && !ExactFilter(al_local)) {
                 if (best_identity < al_local.Identity()) {
@@ -355,13 +356,10 @@ bool ReadCorrect::Worker::Correct(int id, bool uc) {
         }
 
         if (r && !ExactFilter(al)) { 
-            stat_info.aligns[0]++;
+            stat_info.succ++;
             first_als.push_back(al);
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
-
-        } else {
-            stat_info.aligns[1]++;
-        }
+        } 
 
         if (owner_.opts_.cands_opts_.IsEndCondition(coverage)) break;
         

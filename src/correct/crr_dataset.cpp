@@ -1,7 +1,8 @@
 #include "crr_dataset.hpp"
 
-#include "crr_options.hpp"
+#include <random>
 
+#include "crr_options.hpp"
 #include "align/tool_aligner.hpp"
 
 namespace fsa {
@@ -64,7 +65,7 @@ void CrrDataset::LoadReads() {
 
 
 void CrrDataset::GroupReadIds() {
-    const int CLU_SIZE = 1000;
+    const int CLU_SIZE = 100;
     std::unordered_map<Seq::Id, bool> done;
 
     for (auto i : read_ids_) {

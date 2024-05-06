@@ -26,10 +26,21 @@ protected:
     // 
     struct StatInfo {
         void Merge(const StatInfo si) {
-            aligns[0] += si.aligns[0];
-            aligns[1] += si.aligns[1];
+            total += si.total;
+            cache += si.cache;
+            succ += si.succ;
         }
-        std::array<int, 4> aligns {{0,0,0,0}}; // 统计执行详细比对的测试 all, succ, fails
+        void Clear() {
+            total = 0;
+            cache = 0;
+            succ = 0;
+        }
+        void Report() const {
+            LOG(INFO)("alignment %d %d %d", total, cache, succ);
+        }
+        int total { 0 };
+        int cache { 0 };
+        int succ { 0 };
     };
 
     class Worker {
@@ -41,12 +52,12 @@ protected:
             aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };
         ~Worker() {  }
-        bool Correct(int id, bool uc=true);
+        bool Correct(int id);
         void CalculateWeight(Seq::Id tid,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>> & cands, double opt_ohwt);
         bool IsCoverageEnough(const std::vector<int> &cov);
         bool ExactFilter(const Alignment& r);
         bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);
-        bool GetAlignment(Seq::Id id, const Overlap* o, bool uc, Alignment &al);
+        bool GetAlignment(Seq::Id id, const Overlap* o, Alignment &al);
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(); }
         void ClearCache() { return cache_.Clear(); }
         void ResetCache(const std::vector<Seq::Id> &ids, size_t size) { return cache_.Reset(ids, size); }
@@ -66,22 +77,8 @@ protected:
     friend class Worker;
 
 protected:
-    void CollectWorkerInfo(const Worker &w) {
-        stat_info_.Merge(w.stat_info);
-    }
-    void CollectWorkerInfo(const Worker &w, std::mutex& m) { 
-        std::lock_guard<std::mutex> lock(m); 
-        CollectWorkerInfo(w);
-    }
-    void Report() const {
-        LOG(INFO)("alignment %d %d", stat_info_.aligns[0], stat_info_.aligns[1]);
-    }
-protected:
     CrrOptions opts_;
     CrrDataset dataset_ { opts_ };
-
-    StatInfo stat_info_;
-
 };
 
 } // namespace fsa {

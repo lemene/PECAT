@@ -906,7 +906,7 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
         }
     }
     std::unordered_set<size_t> removed;
-    VerifyBranchConsistent(cands);
+//    VerifyBranchConsistent(cands);
     VerifyImportantBranchesByDensity(cands);
 }
 
@@ -1916,7 +1916,6 @@ std::array<size_t, 3> AlignmentGraph::QueryInfos::GetWindowSize(const std::array
         return a + b.tend - b.tstart;
     }) / scores_.size();
 
-    
     step_size = std::max<size_t>(step_size/2, 10000);
     size_t count = (range[1] - range[0] + step_size / 2) / step_size;
 
