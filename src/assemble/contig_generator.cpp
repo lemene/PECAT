@@ -787,12 +787,15 @@ std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class 
 
     auto dump_score = [&]() {
         DUMPER["asm"]("print scores\n");
+        std::ostringstream oss;
         for (size_t i = 0; i < acontigs.size()*2; ++i) {
             for (size_t j = 0; j < acontigs.size()*2; ++j) {
-                DUMPER["asm"]("%zd, ", scores[i*acontigs.size()*2+j]);
+                oss << scores[i*acontigs.size()*2+j] << ", ";
             }
-            DUMPER["asm"]("\n");
+            oss << "\n";
         }
+        DUMPER["asm"]("%s", oss.str());
+
     };
     dump_score();
 

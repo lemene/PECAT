@@ -207,7 +207,6 @@ public:
     std::vector<int> ExtendRight(const Loc& right, size_t n, const MyBitSet& seqs);
     std::vector<ImportantBranch> CollectImportantBranches();
     void VerifyImportantBranches1(std::vector<ImportantBranch>& cands);
-    void VerifyImportantBranchesByVariants(std::vector<ImportantBranch>& cands);
     bool VerifiyImportantBranch(const std::vector<ImportantBranch>& cands, size_t start, size_t end);
     void VerifyImportantBranchesByDensity(std::vector<ImportantBranch> &cands);
     void VerifyImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, std::unordered_set<size_t>& removed);

@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <atomic>
 
 #include "argument_parser.hpp"
 #include "logger.hpp"
@@ -95,6 +96,45 @@ protected:
     Program* curr_ {nullptr};
     std::vector<Program*> progs_;
 };
+
+class Progress {
+public:
+    Progress(size_t interval, size_t total = 0, const std::string& msg = "Done")
+     : total_(total), interval_(interval), msg_(msg) { }
+
+    void Forward(size_t n) {
+        curr_ += n;
+        if (curr_ >= marker_ + interval_) {
+            LOG(INFO)("%s: %zd / %zd", msg_.c_str(), curr_, total_);
+            marker_ = curr_;
+        }
+    }
+protected:
+    size_t total_ { 0 };
+    size_t curr_ { 0 };
+    size_t marker_ { 0 };
+    size_t interval_ { 10000 };
+    std::string msg_ { "Done" };
+};
+
+class ProgressM {
+public:
+    ProgressM(size_t interval, size_t total = 0, const std::string& msg = "Done")
+     : total_(total), interval_(interval), msg_(msg) { }
+
+    void Forward(size_t n) {
+        size_t old = curr_.fetch_add(n);
+        if (old / interval_ < (old+n) / interval_) {
+            LOG(INFO)("%s: %zd / %zd", msg_.c_str(), old+n, total_);
+        }
+    }
+protected:
+    size_t total_ { 0 };
+    std::atomic<size_t> curr_ {0};
+    size_t interval_ { 10000 };
+    std::string msg_ { "Done" };
+};
+
 
 } // namespace fsa {
 

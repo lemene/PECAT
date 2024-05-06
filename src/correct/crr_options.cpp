@@ -39,6 +39,16 @@ void CrrOptions::SetArguments(ArgumentParser &ap) {
 }
 
 void CrrOptions::CheckArguments() {
+    
+    filter0_.From(filter0_opts_);
+    filter1_.From(filter1_opts_);
+    
+    filter0_opts_ = filter0_.ToString();
+    filter1_opts_ = filter1_.ToString();
+
+    cands_opts_.From(cands_opts_str_);          // 合并用户设置
+    cands_opts_str_ = cands_opts_.ToString();   // 输出所有参数
+    if (debug) SetDebug();
 }
 
 

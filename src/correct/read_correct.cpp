@@ -19,77 +19,10 @@ ArgumentParser ReadCorrect::GetArgumentParser() {
     return ap;
 }
 
-void ReadCorrect::CheckArguments() {
-    opts_.filter0_.From(opts_.filter0_opts_);
-    opts_.filter1_.From(opts_.filter1_opts_);
-    
-    opts_.filter0_opts_ = opts_.filter0_.ToString();
-    opts_.filter1_opts_ = opts_.filter1_.ToString();
-
-    opts_.cands_opts_.From(opts_.cands_opts_str_);          // 合并用户设置
-    opts_.cands_opts_str_ = opts_.cands_opts_.ToString();   // 输出所有参数
-    if (opts_.debug) SetDebug();
-}
-
 void ReadCorrect::Running() {
-    LoadReadIds();
+    dataset_.Load();
 
-    LoadOverlaps(opts_.overlap_fname_);
-    LoadReads();
-
-    dataset_.grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(dataset_.read_ids_.begin(), dataset_.read_ids_.end()));
-
-    if (opts_.use_cache) GroupReadIds();
-
-    EstimateParameters();
     Correct();
-}
-
-void ReadCorrect::LoadReads() {
-
-    std::unordered_set<Seq::Id> ids;
-    for (size_t i = 0; i < dataset_.ol_store_.Size(); ++i) {
-        const Overlap& o = dataset_.ol_store_.Get(i);
-        ids.insert(o.a_.id);
-        ids.insert(o.b_.id);
-    }
-    dataset_.read_store_.Load(opts_.rread_fname_, "", false, ids);
-    
-    if (dataset_.read_ids_.empty()) {
-        dataset_.read_ids_.assign(ids.begin(), ids.end());
-    }
-}
-
-void ReadCorrect::LoadOverlaps(const std::string &fname) {
-    std::unordered_set<Seq::Id> ids(dataset_.read_ids_.begin(), dataset_.read_ids_.end());
-    
-    dataset_.ol_store_.Load(fname, "", (size_t)opts_.thread_size, [this, &ids](Overlap &o) {
-        bool rel = ids.empty() || ids.find(o.a_.id) != ids.end() || ids.find(o.b_.id) != ids.end();
-        return rel && opts_.filter0_.Valid(o);
-    });
-
-    LOG(INFO)("Load %zd overlaps from file %s", dataset_.ol_store_.Size(), fname.c_str());
-
-    dataset_.Load(dataset_.ol_store_.GetStringPool());
-}
-
-
-
-void ReadCorrect::LoadReadIds() {
-    // read_store_.Load(rread_fname_, "", false);
-    std::unordered_set<Seq::Id> ids;    // Remove duplicate names
-    if (!opts_.read_name_.empty()) {
-        ids.insert(dataset_.string_pool_.GetIdByStringUnsafe(opts_.read_name_));
-    } else if (!opts_.read_name_fname_.empty()) {
-        std::ifstream file(opts_.read_name_fname_);
-        std::string line;
-        while (std::getline(file, line)) {
-            ids.insert(dataset_.string_pool_.GetIdByStringUnsafe(line));
-        }
-    } else {
-        // correct all reads in read file
-    }
-    dataset_.read_ids_.assign(ids.begin(), ids.end());
 }
 
 void ReadCorrect::Correct() {
@@ -102,7 +35,8 @@ void ReadCorrect::Correct() {
     const bool save_infos = of_infos.is_open();
     const size_t flush_block = 20*1024*1024;
 
-    Progress progress(*this);
+    std::atomic<size_t> index {0};
+    ProgressM progress(5000, dataset_.read_ids_.size());
 
     auto save_oss = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -115,47 +49,60 @@ void ReadCorrect::Correct() {
         }
     };
 
-    struct Dispatcher { virtual Seq::Id Get(bool &uc) = 0; };
+    struct Dispatcher { virtual Seq::Id Get() = 0; };
     struct SimpleDispatcher : public Dispatcher {
-        SimpleDispatcher(Progress &p) : progress(p) {}
-        Seq::Id Get(bool &uc) { uc = false; return progress.Get(); }
-        Progress &progress;
+        SimpleDispatcher(const ReadCorrect& o, std::atomic<size_t> &idx, ProgressM &pg)
+         : owner(o), index(idx), progress(pg) {}
+        Seq::Id Get() {
+            auto curr = index.fetch_add(1);
+            progress.Forward(1);
+            return curr < owner.dataset_.read_ids_.size() ? owner.dataset_.read_ids_[curr] : Seq::NID; 
+        }
+        
+        const ReadCorrect& owner;
+        std::atomic<size_t> &index;
+        ProgressM& progress;
     };
 
     struct GroupDispatcher : public Dispatcher {
-        GroupDispatcher(Progress &p, ReadCorrect::Worker &w) : progress(p), worker(w), ids(10000){}
+        GroupDispatcher(const ReadCorrect& o, ReadCorrect::Worker &w, std::atomic<size_t> &idx, ProgressM &pg)
+         : owner(o), worker(w), index(idx), progress(pg)  {}
 
-        Seq::Id Get(bool &uc) {
-            uc = true; 
-            if (index < size) {
-                return ids[index++];
-            } else {
-                index = 0;
-                size = progress.Get(ids);
-                worker.ResetCache(ids, size);
-                return index < size ? ids[index++] : -1;
+        Seq::Id Get() {
+            if (cluster == nullptr || curr >= cluster->size()) {
+                auto clu_index = index.fetch_add(1);
+                if (clu_index < owner.dataset_.clu_ids_.size()) {
+                    cluster = &owner.dataset_.clu_ids_[clu_index];
+                    worker.ResetCache(*cluster, cluster->size());
+                } else {
+                    cluster = nullptr;
+                }
+                curr = 0;
             }
+            progress.Forward(1);
+
+            return cluster != nullptr ? (*cluster)[curr++] : Seq::NID;
         }
 
-        Progress &progress;
+        const ReadCorrect& owner;
         ReadCorrect::Worker &worker;
-
-        std::vector<Seq::Id> ids;
-        size_t index { 0 };
-        size_t size { 0 };
+        const std::vector<Seq::Id>* cluster { nullptr };
+        size_t curr { 0 };
+        std::atomic<size_t> &index;
+        ProgressM &progress;
 
     };
 
     auto work_func = [&](size_t i) {
         Worker worker(*this);
         std::unique_ptr<Dispatcher> dispatcher(opts_.use_cache ? 
-            (Dispatcher*)new GroupDispatcher(progress, worker) : 
-            (Dispatcher*)new SimpleDispatcher(progress));
+            (Dispatcher*)new GroupDispatcher(*this, worker, index, progress) : 
+            (Dispatcher*)new SimpleDispatcher(*this, index, progress));
 
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
-        bool uc = false;
-        for (auto tid=dispatcher->Get(uc); tid != Seq::NID; tid = dispatcher->Get(uc)) {
+        bool uc = opts_.use_cache;
+        for (auto tid=dispatcher->Get(); tid != Seq::NID; tid = dispatcher->Get()) {
             if (worker.Correct(tid, uc)) {
                 if ( worker.GetCorrected().size() > 0) {
                     SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
@@ -190,120 +137,8 @@ void ReadCorrect::Correct() {
 
 
 void ReadCorrect::SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t,2> &range) {
-    
     os << ">" << dataset_.read_store_.QueryNameById(tid) << " range=" << range[0] << "-" << range[1] << "\n" 
        <<  cread << "\n";
-    
-}
-
-void ReadCorrect::GroupReadIds() {
-    std::unordered_map<Seq::Id, bool> done;
-    std::unordered_map<Seq::Id, int> lens;
-
-    for (auto i : dataset_.read_ids_) {
-        done[i] = false;
-        lens[i] = dataset_.read_store_.GetSeqLength(i);
-    }
-
-    std::sort(dataset_.read_ids_.begin(), dataset_.read_ids_.end(), [&lens](int a, int b) {return lens[a] > lens[b]; });
-
-    dataset_.group_ticks.push_back(0);
-
-    for (auto i : dataset_.read_ids_) {
-        if (!done[i]) {
-            size_t s = dataset_.grouped_ids_.size();
-            dataset_.grouped_ids_.push_back(i);
-            done[i] = true;
-
-            while (s < dataset_.grouped_ids_.size()) {
-                auto gp = dataset_.grouper_.Get(dataset_.grouped_ids_[s]);
-                if (!gp.Empty()) {
-                    for (size_t igp = 0; igp < gp.Size(); ++igp) {
-                        auto o = gp.Get(igp, 0);
-                        auto d = done.find(o->GetOtherRead(gp.id).id); 
-                        if (d != done.end() && !d->second) {
-                            dataset_.grouped_ids_.push_back(o->GetOtherRead(gp.id).id);
-                            d->second = true;
-                        }
-                    }
-                }
-                s++;
-                if (dataset_.grouped_ids_.size() >= dataset_.group_ticks.back() + dataset_.group_size) {
-                    break;
-                }
-            }
-            if (dataset_.grouped_ids_.size() >= dataset_.group_ticks.back() + dataset_.group_size / 2) {
-                dataset_.group_ticks.push_back(dataset_.grouped_ids_.size());
-            }
-        }
-    }
-
-    if (dataset_.grouped_ids_.size() > dataset_.group_ticks.back()) {
-        dataset_.group_ticks.push_back(dataset_.grouped_ids_.size());
-    }
-
-    for (auto t : dataset_.group_ticks) {
-        LOG(INFO)("TICK: %zd", t);
-    }
-
-}
-
-void ReadCorrect::EstimateParameters() {
-
-    size_t count = std::min<size_t>(10, dataset_.read_ids_.size());
-
-    std::unordered_set<int> tests;
-
-    std::default_random_engine e;
-    std::uniform_int_distribution<int> u(0, dataset_.read_ids_.size()-1);
-    e.seed(time(0));
-    
-    while (tests.size() < count) {
-        tests.insert(dataset_.read_ids_[u(e)]);
-    }
-
-    auto aligner = ToolAligner::Create("edlib");
-
-    double max_idt = 0.0;
-    
-    for (auto id : tests) {
-        auto group = dataset_.grouper_.Get(id);
-        if (group.Empty()) continue;
-
-        for (size_t i = 0; i < group.Size() && i < 10; ++i) {
-            auto o = group.Get(i, 0);
-            const auto& tread = o->GetRead(id);
-            const auto& qread = o->GetOtherRead(id);
-            std::vector<uint8_t> tseq = dataset_.read_store_.GetSeq(tread.id).ToUInt8(tread.start, tread.end, false);
-            std::vector<uint8_t> qseq = dataset_.read_store_.GetSeq(qread.id).ToUInt8(qread.start, qread.end, !o->SameDirect());
-            Alignment al;
-            auto r = aligner->Align((const char*)&qseq[0], qseq.size(), (const char*)&tseq[0], tseq.size(), {0, qseq.size()}, {0, tseq.size()}, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-            if (r && al.AlignSize() > al.TargetSize() / 2) {
-                if (al.Identity() > max_idt) {
-                    max_idt = al.Identity();
-                }
-
-            }
-        }
-    }
-
-    double min_idt = 0.0, min_lc_idt = 0.0;
-    if (max_idt >= 0.99) {
-        min_idt = 95;
-        min_lc_idt = 90;
-    } else if (max_idt >= 0.95) {
-        min_idt = 90;
-        min_lc_idt = 80;
-    } else if (max_idt >= 0.85) {
-        min_idt = 75;
-        min_lc_idt = 65;
-    } else {
-        min_idt = 60;
-        min_lc_idt = 50;
-    }
-    opts_.min_identity_ = opts_.min_identity_ < 0 ? min_idt : opts_.min_identity_;
-    opts_.min_local_identity_ = opts_.min_local_identity_ < 0 ? min_lc_idt : opts_.min_local_identity_;
-    LOG(INFO)("Estimate parameters(%0.02f): min_identity = %f min_local_identity = %f", max_idt, opts_.min_identity_, opts_.min_local_identity_);
 }
 
 bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_t,2> &trange) {

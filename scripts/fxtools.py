@@ -907,9 +907,11 @@ def fx_eval_select(argv):
     parser.add_argument("binfos", type=str)
     parser.add_argument("select", type=str)
     parser.add_argument("--weight", type=str, default="0.2:0.8")
-    parser.add_argument("--detail", action="store_true")
+    parser.add_argument("--detail", type=str)
     try:
         args = parser.parse_args(argv)
+
+        results = {}
 
         logger.info("Loading bin infos from %s" % args.binfos)
         bininfos = {}
@@ -925,13 +927,19 @@ def fx_eval_select(argv):
         TP, FP, FN, TN = 0, 0, 0, 0
         SEL = 0
         
+        fdetail = open(args.detail, "w")
         import glob
-        
+        prev = "-1"
+        prev_count = [TP, FP, FN, TN]
         for fsel in glob.glob(args.select):
             logger.info("Load infos: %s" % fsel)
             for line in open(fsel):
                 its = line.split()
                 a, b, score, select = int(its[0]), int(its[1]), float(its[2]), int(its[3])
+                if its[0] != prev:
+                    fdetail.write("%s %d %d %d %d\n" % (prev, TP-prev_count[0], FP-prev_count[1], FN-prev_count[2], TN-prev_count[3]))
+                    prev_count = [TP, FP, FN, TN]
+                    prev = its[0]
 
                 j = judge(a, b)
                 pair[1+j] += 1
@@ -942,13 +950,13 @@ def fx_eval_select(argv):
                 if select == 1 and j == 1:
                     TP += 1
                 elif select == 1 and j == -1:
-                    if args.detail: print("FP %s %s" % (a,b))
                     FP += 1
                 elif select == 0 and j == 1:
-                    if args.detail: print("FN %s %s" % (a,b))
                     FN += 1
                 elif select == 0 and j == -1:
                     TN += 1
+
+        fdetail.write("%s %d %d %d %d\n" % (prev, TP-prev_count[0], FP-prev_count[1], FN-prev_count[2], TN-prev_count[3]))
 
         SUM = sum(pair)
         
@@ -975,6 +983,7 @@ def fx_eval_select(argv):
         traceback.print_exc()
         print("-----------------")
         parser.print_usage()
+
 
 
 def fx_n50(argv):

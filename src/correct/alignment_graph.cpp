@@ -23,9 +23,7 @@ DnaSerialTable2 AlignmentGraph::Base2Num;
 AlignmentGraph::AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds) 
  : sopts_(opts), dataset_(ds) {
 
-    VerifyImportantBranches0 = dataset_.variants == nullptr ? 
-        &AlignmentGraph::VerifyImportantBranches1 : 
-        &AlignmentGraph::VerifyImportantBranchesByVariants;
+    VerifyImportantBranches0 = &AlignmentGraph::VerifyImportantBranches1;
 }
 
 void AlignmentGraph::SetParameter(const std::string &name, const std::string &opts) {
@@ -912,24 +910,6 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
     VerifyImportantBranchesByDensity(cands);
 }
 
-void AlignmentGraph::VerifyImportantBranchesByVariants(std::vector<ImportantBranch>& cands) {
-
-    const int N = 3;
-    std::unordered_set<int> vars;
-    auto stdvars = dataset_.variants->QuerySnps(tid_);
-    for (auto s : stdvars) {
-        for (int i = s - N; i < s + N + 1; ++i) {
-            vars.insert(i);
-        }
-    }
-
-    for (size_t i = 0; i < cands.size(); ++i) {
-        if (vars.find(cands[i].c) == vars.end()) {
-            cands[i].valid = false;
-        }
-    }
-}
-
 void PrintBases(const std::string& msg, const std::vector<int> &bs) {
     DEBUG_printf("%s(%zd): ", msg.c_str(), bs.size());
     for (auto b : bs) {
@@ -1047,7 +1027,7 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
     }
     PrintBases("target", local);
     
-    if (HasHomopolymer(4, local, N-3, N+tend-tstart+3)) {
+    if (HasHomopolymer(5, local, N-3, N+tend-tstart+3)) {
         return false;
     }
 
@@ -1147,7 +1127,7 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
         std::vector<int> s(head.begin(), head.end());
         s.insert(s.end(), body.begin(), body.end());
         s.insert(s.end(), tail.begin(), tail.end());
-        return HasHomopolymer(4, s, 0, s.size());
+        return HasHomopolymer(5, s, 0, s.size());
     };
     if (has_homo(brl0, branch0, brr0) || has_homo(brl1, branch1, brr1)) return false;
 

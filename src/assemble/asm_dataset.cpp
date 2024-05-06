@@ -18,9 +18,11 @@ void AsmDataset::Load() {
 
 void AsmDataset::Purge() {
     
+    GroupOverlaps();
+    
     GroupAndFilterDuplicate();
 
-    FilterLowQuality();
+    //FilterLowQuality();
 
     ExtendOverlapToEnd();
 
@@ -324,12 +326,12 @@ void AsmDataset::FilterContained() {
         assert(iter != read_infos_.end());
         iter->second.filtered = RdReason::Contained(containing);
     };
+    
     auto work_func = [&](size_t tid) {
         for (size_t i = index.fetch_add(1); i < ol_store_.Size(); i = index.fetch_add(1)) {
             const Overlap& o = ol_store_.Get(i);
 
             if (IsReserved(o)) {
-                //auto loc = o.Location(opts_.filter0.max_overhang);
                 auto loc = o.Location(0);
                 if (loc == Overlap::Loc::Equal) {
                     set_contained(std::max(o.a_.id, o.b_.id), std::min(o.a_.id, o.b_.id));

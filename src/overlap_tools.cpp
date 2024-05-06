@@ -166,10 +166,10 @@ void Program_Filter::Running() {
 
     std::mutex mutex_combine;
     std::mutex mutex_generate;
-    std::array<long long, 2> done = {0,0};
     int block_size = 1000;
+    Progress progress(500000);
 
-    auto generate = [&mutex_generate, &ifile, &ifnames, &ifile_index, &done](std::vector<std::string> &lines) {
+    auto generate = [&mutex_generate, &ifile, &ifnames, &ifile_index, &progress](std::vector<std::string> &lines) {
         std::lock_guard<std::mutex> lock(mutex_generate);
 
         auto size = ifile == nullptr ? 0 : ifile->GetLines(lines);
@@ -186,11 +186,7 @@ void Program_Filter::Running() {
             }
         }
 
-        done[0] += size;
-        if (done[0] >= done[1]) {
-             LOG(INFO)("Done %lld", done[1]);
-             done[1] += 500000 ;
-        }
+        progress.Forward(size);
         return size;
     };
 

@@ -17,20 +17,11 @@ public:
     ReadCorrect();
     virtual ArgumentParser GetArgumentParser();
     virtual void Running();
-    virtual void CheckArguments();
+    virtual void CheckArguments() { opts_.CheckArguments(); }
 
 protected:
-
-    void LoadReads();
-    void LoadOverlaps(const std::string &fname);
-    void LoadReadIds();
     void Correct();
     void SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t, 2> &range);
-    
-
-    void GroupReadIds();
-    void EstimateParameters();
-
 
     // 
     struct StatInfo {
@@ -73,40 +64,6 @@ protected:
         AlignmentCache cache_;
     };   
     friend class Worker;
-
-    struct Progress {
-        Progress(ReadCorrect& rc) : owner(rc) {}
-        Seq::Id Get() {
-            auto curr = index.fetch_add(1);
-            if (curr % log_block_size == 0) {
-             LOG(INFO)("done %zd, all %zd %zd", curr, owner.dataset_.read_ids_.size(), GetMemoryUsage());
-            }
-            return curr < owner.dataset_.read_ids_.size() ? owner.dataset_.read_ids_[curr] : Seq::NID;
-        }
-        
-        size_t Get(std::vector<Seq::Id> &ids) {
-            auto curr = index.fetch_add(1);
-            if (curr < owner.dataset_.group_ticks.size()-1) {
-                if (owner.dataset_.group_ticks[curr] - last_log >= log_block_size) {
-                    last_log = owner.dataset_.group_ticks[curr];
-                    LOG(INFO)("done %zd/%zd %zd", owner.dataset_.group_ticks[curr], owner.dataset_.grouped_ids_.size(), GetMemoryUsage());
-                }
-                assert(owner.dataset_.group_ticks[curr+1]-owner.dataset_.group_ticks[curr] <= ids.size());
-                for (size_t i=owner.dataset_.group_ticks[curr]; i<owner.dataset_.group_ticks[curr+1]; ++i) {
-                    ids[i-owner.dataset_.group_ticks[curr]] = owner.dataset_.grouped_ids_[i];
-                }
-                return owner.dataset_.group_ticks[curr+1] - owner.dataset_.group_ticks[curr];
-            } else {
-                return (size_t)0;
-            }
-        };
-
-        std::atomic<size_t> index {0};
-        const ReadCorrect& owner;
-        const size_t log_block_size { 5000 };
-        size_t last_log { 0 };  
-    };
-    friend class Progress;
 
 protected:
     void CollectWorkerInfo(const Worker &w) {
