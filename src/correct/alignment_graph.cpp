@@ -15,15 +15,13 @@
 #include "../read_store.hpp"
 #include "crr_dataset.hpp"
 #include "crr_options.hpp"
-namespace fsa {
 
+namespace fsa {
 
 DnaSerialTable2 AlignmentGraph::Base2Num;
 
 AlignmentGraph::AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds) 
  : sopts_(opts), dataset_(ds) {
-
-    VerifyImportantBranches0 = &AlignmentGraph::VerifyImportantBranches1;
 }
 
 void AlignmentGraph::SetParameter(const std::string &name, const std::string &opts) {
@@ -328,7 +326,7 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
     
     while (loc.col >= 0 ) {
         if (curr_node->best_link != nullptr && loc != seg.begin) {
-            DEBUG_printf("col: (%zd,%zd,%zd) %zd, %zd, %zd\n", loc.col, loc.row, loc.base, 
+            DEBUG_printf("col: (%zd,%zd,%zd) %zd  %zd  %zd\n", loc.col, loc.row, loc.base, 
                 cols[loc.col].coverage, sopts_.min_coverage, curr_node->best_link->count);
             if (state == 0) {
                 if (valid(curr_node, loc)) {
@@ -751,11 +749,11 @@ void AlignmentGraph::ComputeSimilarity4() {
     assert(cols.size() > 0 );
 
     auto cands = CollectImportantBranches();
-    DEBUG_printf("candidate location: %zd\n", cands.size());
+    DEBUG_printf("branches: %zd\n", cands.size());
 
-    (this->*VerifyImportantBranches0)(cands);
+    VerifyImportantBranches1(cands);
 
-    auto find_link = [](const std::array<ImportantBranch::LinkCol,2>& links, size_t id) -> const Link*{
+    auto find_link = [](const std::array<ImportantBranch::LinkCol,2>& links, size_t id) -> const Link* {
         for (size_t i=0; i<links.size(); ++i) {
             if (links[i].l->seqs[id]) { return links[i].l; }
         }
@@ -839,11 +837,10 @@ auto AlignmentGraph::CollectImportantBranches() -> std::vector<ImportantBranch> 
             });
 
             int branch_threshold = opts_.BranchThreshold(cols[i].coverage);
-            DEBUG_printf("cand: %zd, th=%d, cov=%d, count=%d  %d,%d\n", i, branch_threshold, cols[i].coverage, link_count,  links[0]->count, links[1]->count);
+            DEBUG_printf("check_branch: %zd, th=%d, cov=%d, count=%d  %d,%d\n", i, branch_threshold, cols[i].coverage, link_count,  links[0]->count, links[1]->count);
             if (links[1]->count >= (size_t)branch_threshold) {
                 cands.push_back(ImportantBranch());
                 
-                //printf("position0: %zd\n", i);
                 cands.back().c = i;
                 cands.back().links[0].l = links[0];
                 cands.back().links[1].l = links[1];
@@ -871,43 +868,43 @@ auto AlignmentGraph::CollectImportantBranches() -> std::vector<ImportantBranch> 
 //     \    /       |
 //      ->->        |
 void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cands) {
-    std::unordered_set<size_t> verified;
+    // Merge adjacent branches
+    std::vector<std::array<size_t, 2>> segs;
+    for (size_t start = 0, end = 1; start < cands.size(); start = end, end = start+1) {
 
-    size_t start = 0;
-    while (start < cands.size()) {
-        // find consecutive locations
-        size_t end = start+1;
         for (; end < cands.size(); ++end) {
             if (cands[end-1].links[0].l->prev.col + 2 < cands[end].links[0].l->prev.col) {
                 break;
             }
         }
+        segs.push_back({start, end});
+    } 
+    DEBUG_printf("merged_branch_size: %zd\n", segs.size());
 
-        DEBUG_printf("Verify range(0) %zd-%zd(%zd)\n", cands[start].c, cands[end-1].c, end-start);
-        bool check_ok = !sopts_.skip_branch_check ? VerifiyImportantBranch(cands, start, end) : true;
-        DEBUG_printf("Verify range(1) %zd-%zd(%zd) %d\n", cands[start].c, cands[end-1].c, end-start, check_ok);
-        if (check_ok) {
+    std::unordered_set<size_t> verified;
+    for (const auto& sg : segs) {
+        size_t start = sg[0];
+        size_t end = sg[1];
+        bool rz = true;//VerifiyImportantBranch(cands, start, end);
+        DEBUG_printf("check_merged_branchs %zd-%zd(%zd) result=%d\n", cands[start].c, cands[end-1].c, end-start, rz);
+        if (rz) {
             assert(end > start);
-            
-            DEBUG_printf("AddPosition: %zd %zd %zd\n", start, end-1, (start+end-1) / 2);
             verified.insert(start);
             verified.insert(end-1);
             verified.insert((start+end-1) / 2);
-            //for (size_t i = start ; i < end; ++i) {
-            //    verified.insert(i);
-            //}
         }
-        start = end;
     }
-    
+
     for (size_t i = 0; i < cands.size(); ++i) {
         if (verified.find(i) == verified.end()) {
             cands[i].valid = false;
         }
     }
-    std::unordered_set<size_t> removed;
-//    VerifyBranchConsistent(cands);
-    VerifyImportantBranchesByDensity(cands);
+
+    VerifyConsistent(cands);
+    //VerifyBranchConsistent(cands);
+
+    //VerifyImportantBranchesByDensity(cands);
 }
 
 void PrintBases(const std::string& msg, const std::vector<int> &bs) {
@@ -1297,7 +1294,6 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
             links[2] = (brs[i].links[1].l->seqs & brs[j].links[0].l->seqs).count();
             links[3] = (brs[i].links[1].l->seqs & brs[j].links[1].l->seqs).count();
 
-
             DEBUG_printf("consistent (%zd, %zd) %zd,%zd,%zd,%zd\n", brs[i].c, brs[j].c, links[0], links[1], links[2], links[3]);
 
             auto& ss = scores[i*brs.size() + j];
@@ -1348,6 +1344,61 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
     //std::for_each(restored.begin(), restored.end(), [&brs](size_t i) { brs[i].valid = true;});
     for (auto i : restored) {
         brs[i].valid = true;
+    }
+}
+
+void AlignmentGraph::VerifyConsistent(std::vector<ImportantBranch>& brs) {
+
+    const int MIN_COUNT = 10;
+    const int MIN_INV = 10;
+    const double MAX_CONSIST = 0.85;
+    const double MIN_CONSIST = 0.75;
+    const double MIN_CONSIST_COUNT = 2;
+    const double MIN_CONSIST_RATE = 0.1;
+
+    // calcuate consistent sorce between each branch pair.
+    std::vector<std::array<uint16_t, 2>> scores(brs.size()*brs.size(), {0, 0});
+    std::vector<std::array<uint16_t,2>>  v_count(brs.size(), {0, 0});
+
+    for (size_t i = 0; i < brs.size(); ++i) {
+        if (!brs[i].valid) continue;
+
+        for (size_t j = 0; j < i; ++j) {
+            if (!brs[j].valid) continue;
+
+            std::array<uint16_t, 4> links = {0, 0, 0, 0};
+            links[0] = (brs[i].links[0].l->seqs & brs[j].links[0].l->seqs).count();
+            links[1] = (brs[i].links[0].l->seqs & brs[j].links[1].l->seqs).count();
+            links[2] = (brs[i].links[1].l->seqs & brs[j].links[0].l->seqs).count();
+            links[3] = (brs[i].links[1].l->seqs & brs[j].links[1].l->seqs).count();
+
+            DEBUG_printf("calc_br_cons (%zd, %zd) %zd,%zd,%zd,%zd\n", brs[i].c, brs[j].c, links[0], links[1], links[2], links[3]);
+
+            auto& ss = scores[i*brs.size() + j];
+            ss[0] = links[0] + links[1] + links[2] + links[3];
+            ss[1] = std::max(links[0] + links[3], links[1] + links[2]);
+
+            if (brs[i].c < brs[j].c + MIN_INV && brs[i].c + MIN_INV > brs[j].c) continue;
+            if (ss[0] < MIN_COUNT) continue;
+            v_count[i][0] ++;
+            v_count[j][0] ++;
+
+            if (ss[1]*1.0 / ss[0] >= MAX_CONSIST) {
+                v_count[i][1] ++;
+                v_count[j][1] ++;
+            }
+        } 
+    }
+
+
+    for (size_t i = 0; i < brs.size(); ++i) {
+        if (!brs[i].valid) continue;
+
+        bool rz = v_count[i][1] < std::max<uint16_t>(MIN_CONSIST_COUNT, v_count[i][0]*MIN_CONSIST_RATE);
+        DEBUG_printf("check_br_cons (%zd) %zd, %zd %d\n", brs[i].c, v_count[i][0], v_count[i][1], rz);
+        if (rz) {
+            brs[i].valid = false;
+        } 
     }
 }
 

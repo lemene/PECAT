@@ -196,8 +196,8 @@ public:
     struct ImportantBranch {
         size_t c;   // column
         struct LinkCol{
-            const Link* l;
-            uint8_t     r;    // 0-5
+            const Link* l;      // left
+            uint8_t     r;      // right (0-5)
         } ;
         std::array<LinkCol,2> links;
         bool valid { true };
@@ -212,6 +212,7 @@ public:
     void VerifyImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, std::unordered_set<size_t>& removed);
     void ReactivateImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, const std::unordered_set<size_t>& removed);
     void VerifyBranchConsistent(std::vector<ImportantBranch>& brs);
+    void VerifyConsistent(std::vector<ImportantBranch>& brs);
     void VerifyBranchConsistent(std::vector<ImportantBranch>& brs, const std::vector<std::array<uint16_t, 2>>& scores, double th, std::unordered_set<size_t>& removed);
 
     
@@ -249,7 +250,6 @@ protected:
     std::string sequence_;
     std::string quality_;
     double (AlignmentGraph::*LinkScore)(size_t, size_t, const Link&) { nullptr };
-    void (AlignmentGraph::*VerifyImportantBranches0)(std::vector<ImportantBranch>& cands) { nullptr };
     QueryInfos query_infos_;
 };
 
