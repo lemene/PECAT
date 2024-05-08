@@ -885,7 +885,7 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
     for (const auto& sg : segs) {
         size_t start = sg[0];
         size_t end = sg[1];
-        bool rz = true;//VerifiyImportantBranch(cands, start, end);
+        bool rz = VerifiyImportantBranch(cands, start, end);
         DEBUG_printf("check_merged_branchs %zd-%zd(%zd) result=%d\n", cands[start].c, cands[end-1].c, end-start, rz);
         if (rz) {
             assert(end > start);
@@ -907,7 +907,7 @@ void AlignmentGraph::VerifyImportantBranches1(std::vector<ImportantBranch>& cand
     //VerifyImportantBranchesByDensity(cands);
 }
 
-void PrintBases(const std::string& msg, const std::vector<int> &bs) {
+void DEBUG_PrintBases(const std::string& msg, const std::vector<int> &bs) {
     DEBUG_printf("%s(%zd): ", msg.c_str(), bs.size());
     for (auto b : bs) {
         DEBUG_printf("%c", "ACGT-"[b]);
@@ -928,7 +928,54 @@ bool HasHomopolymer(size_t n, const std::vector<int>& bs, size_t start, size_t e
     return count >= n;
 }
 
-std::vector<int> AlignmentGraph::ExtendLeft(const Loc& start, size_t len, const MyBitSet& seqs) {
+
+bool HasHomopolymer(size_t n, const std::vector<int>& head, const std::vector<int>& body, const std::vector<int> &tail) {
+    std::vector<int> s(head.begin(), head.end());
+    s.insert(s.end(), body.begin(), body.end());
+    s.insert(s.end(), tail.begin(), tail.end());
+    return HasHomopolymer(n, s, 0, s.size());
+}
+
+std::vector<int> AlignmentGraph::GetBranch(const Link* link, const Loc& right, size_t left, Loc& end) {
+    std::vector<int> branch;
+    if (right.base < 4) branch.push_back(right.base);
+    Loc head = link->prev;
+    const auto& stream = link->seqs;
+    while (head.col > (int)left || (head.col == (int)left && head.row > 0)) {
+        DEBUG_printf("pass extend running: %d, %d, %d\n", head.col, head.row, head.base);
+        auto n = Get(head);
+        if (n == nullptr) break;
+        if (head.base < 4) branch.push_back(head.base);
+
+
+        size_t th = opts_.BranchThreshold(cols[head.col].coverage);
+        Link* mx = nullptr;
+        for (auto &l : n->links) {
+            //if (l.count >= th) {
+                DEBUG_printf("pass extend count: %zd, %zd %zd, %f\n", l.count, th, (l.seqs & stream).count(), th*0.8);
+                if ((l.seqs & stream).count() >= th*0.6) {
+                    mx = &l;
+                    break;
+                }
+            //}
+        }
+        if (mx == nullptr) break;
+        head = mx->prev;  
+    }
+
+    if (head.col == (int)left && head.row == 0) {
+        if (head.base < 4) branch.push_back(head.base);
+        end = head;
+    } else {
+        DEBUG_printf("pass extend failed: %d == %zd, %d == 0, %d < 4\n", head.col, left, head.row, head.base);
+        branch.clear();
+    }
+    std::reverse(branch.begin(), branch.end());
+    return branch;
+}
+
+
+std::vector<int> AlignmentGraph::GetBranchLeft(const Loc& start, size_t len, const MyBitSet& seqs) {
     std::vector<int> ext;
 
     Loc curr = start;
@@ -956,7 +1003,7 @@ std::vector<int> AlignmentGraph::ExtendLeft(const Loc& start, size_t len, const 
     return ext;
 }
 
-std::vector<int> AlignmentGraph::ExtendRight(const Loc &start, size_t len, const MyBitSet& seqs) {
+std::vector<int> AlignmentGraph::GetBranchRight(const Loc &start, size_t len, const MyBitSet& seqs) {
     std::vector<int> ext;
 
     Loc curr = start;
@@ -1013,83 +1060,40 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
     const int N = 5;
     size_t tstart = cands[start].c;
     size_t tend =  cands[end-1].c + 1;
-    DEBUG_printf("Verange: %zd %zd - %zd %zd\n", tstart, tend, range_[0], range_[1]);
+
+    // too close to ends
     if (tstart < range_[0] + N || tend >= range_[1] - N) {
         return false;
     }
 
+    // get target bases
     std::vector<int> local(2*N + tend - tstart);
     for (size_t i = 0; i < 2*N + tend - tstart; ++i) {
         local[i] = (*target_)[tstart-N + i];
     }
-    PrintBases("target", local);
+    DEBUG_PrintBases("target", local);
     
     if (HasHomopolymer(5, local, N-3, N+tend-tstart+3)) {
         return false;
     }
 
     DEBUG_printf("pass homo\n");
-    // 终点合并
-    // if (!(cands[end-1].links[0].l->prev != cands[end-1].links[1].l->prev && cands[end-1].links[0].r == cands[end-1].links[1].r && cands[end-1].links[0].r != 4)) {
-    //     return false;
-    // }
-    // DEBUG_printf("pass end\n");
-
-    auto extend_left = [this](const Link* link, const Loc& right, size_t left, Loc& end) {
-        std::vector<int> branch;
-        if (right.base < 4) branch.push_back(right.base);
-        Loc head = link->prev;
-        const auto& stream = link->seqs;
-        while (head.col > (int)left || (head.col == (int)left && head.row > 0)) {
-            DEBUG_printf("pass extend running: %d, %d, %d\n", head.col, head.row, head.base);
-            auto n = Get(head);
-            if (n == nullptr) break;
-            if (head.base < 4) branch.push_back(head.base);
-
-
-            size_t th = opts_.BranchThreshold(cols[head.col].coverage);
-            Link* mx = nullptr;
-            for (auto &l : n->links) {
-                //if (l.count >= th) {
-                    DEBUG_printf("pass extend count: %zd, %zd %zd, %f\n", l.count, th, (l.seqs & stream).count(), th*0.8);
-                    if ((l.seqs & stream).count() >= th*0.6) {
-                        mx = &l;
-                        break;
-                    }
-                //}
-            }
-            if (mx == nullptr) break;
-            head = mx->prev;  
-        }
-
-        if (head.col == (int)left && head.row == 0) {
-            if (head.base < 4) branch.push_back(head.base);
-            end = head;
-        } else {
-            DEBUG_printf("pass extend failed: %d == %zd, %d == 0, %d < 4\n", head.col, left, head.row, head.base);
-            branch.clear();
-        }
-        std::reverse(branch.begin(), branch.end());
-        return branch;
-    };
 
     Loc left0;
-    auto branch0 = extend_left(cands[end-1].links[0].l, Loc(cands[end-1].c, 0, cands[end-1].links[0].r), cands[start].c-1, left0);
+    auto branch0 = GetBranch(cands[end-1].links[0].l, Loc(cands[end-1].c, 0, cands[end-1].links[0].r), cands[start].c-1, left0);
+    DEBUG_PrintBases("branch_0", branch0);
     if (branch0.size() == 0) return false;
-    PrintBases("branch0", branch0);
 
     Loc left1;
-    auto branch1 = extend_left(cands[end-1].links[1].l, Loc(cands[end-1].c, 0, cands[end-1].links[1].r), cands[start].c-1, left1);
+    auto branch1 = GetBranch(cands[end-1].links[1].l, Loc(cands[end-1].c, 0, cands[end-1].links[1].r), cands[start].c-1, left1);
+    DEBUG_PrintBases("branch_1", branch1);
     if (branch1.size() == 0) return false;
-    PrintBases("branch1", branch1);
-    
-    DEBUG_printf("pass extend\n");
 
-    auto brl0 = ExtendLeft(left0, 3, cands[start].links[0].l->seqs);
-    auto brl1 = ExtendLeft(left1, 3, cands[start].links[1].l->seqs);
-    PrintBases("brl0", brl0);
-    PrintBases("brl1", brl1);
-    if (brl0.size() < 3 || brl1.size() < 3) return false;
+    auto br_left_0 = GetBranchLeft(left0, 3, cands[start].links[0].l->seqs);
+    auto br_left_1 = GetBranchLeft(left1, 3, cands[start].links[1].l->seqs);
+    DEBUG_PrintBases("br_left_0", br_left_0);
+    DEBUG_PrintBases("br_left_1", br_left_1);
+    if (br_left_0.size() < 3 || br_left_1.size() < 3) return false;
 
     auto find_matched = [](const std::vector<int>& a, const std::vector<int>& b) -> std::array<size_t,2> {
         assert(a.size() == 3 && b.size() == 3);
@@ -1106,42 +1110,32 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
             return {a.size(), b.size()};
         }
     };
-    auto ibrl = find_matched(brl0, brl1);
-    if (ibrl[0] == brl0.size() || ibrl[1] == brl1.size() ) return false;
+    auto ibrl = find_matched(br_left_0, br_left_1);
+    if (ibrl[0] == br_left_0.size() || ibrl[1] == br_left_1.size() ) return false;
     
-    auto brr0 = ExtendRight({(int)cands[end-1].c, 0, cands[end-1].links[0].r}, 3, cands[end-1].links[0].l->seqs);
-    PrintBases("brr0", brr0);
-    auto brr1 = ExtendRight({(int)cands[end-1].c, 0, cands[end-1].links[1].r}, 3, cands[end-1].links[1].l->seqs);
-    PrintBases("brr1", brr1);
-    if (brr0.size() < 3 || brr1.size() < 3) return false;
+    auto br_right_0 = GetBranchRight({(int)cands[end-1].c, 0, cands[end-1].links[0].r}, 3, cands[end-1].links[0].l->seqs);
+    DEBUG_PrintBases("br_right_0", br_right_0);
+    auto br_right_1 = GetBranchRight({(int)cands[end-1].c, 0, cands[end-1].links[1].r}, 3, cands[end-1].links[1].l->seqs);
+    DEBUG_PrintBases("br_right_1", br_right_1);
+    if (br_right_0.size() < 3 || br_right_1.size() < 3) return false;
 
-    auto ibrr = find_matched(brr0, brr1);
-    if (ibrr[0] == brr0.size() || ibrr[1] == brr1.size() ) return false;
+    auto ibrr = find_matched(br_right_0, br_right_1);
+    if (ibrr[0] == br_right_0.size() || ibrr[1] == br_right_1.size() ) return false;
     
     DEBUG_printf("pass find_matched: %zd,%zd   %zd,%zd\n", ibrl[0], ibrl[1], ibrr[0], ibrr[1]);
 
-    auto has_homo = [](const std::vector<int>& head, const std::vector<int>& body, const std::vector<int> &tail) {
-        std::vector<int> s(head.begin(), head.end());
-        s.insert(s.end(), body.begin(), body.end());
-        s.insert(s.end(), tail.begin(), tail.end());
-        return HasHomopolymer(5, s, 0, s.size());
-    };
-    if (has_homo(brl0, branch0, brr0) || has_homo(brl1, branch1, brr1)) return false;
+    if (HasHomopolymer(5, br_left_0, branch0, br_right_0) || HasHomopolymer(5, br_left_1, branch1, br_right_1)) return false;
 
-    DEBUG_printf("pass has_homo\n");
-
-    std::vector<int> bubble0(brl0.begin()+ibrl[0], brl0.end());
+    std::vector<int> bubble0(br_left_0.begin()+ibrl[0], br_left_0.end());
     bubble0.insert(bubble0.end(), branch0.begin(), branch0.end());
-    bubble0.insert(bubble0.end(), brr0.begin(), brr0.begin()+ibrr[0]+2);
+    bubble0.insert(bubble0.end(), br_right_0.begin(), br_right_0.begin()+ibrr[0]+2);
     
-    std::vector<int> bubble1(brl1.begin()+ibrl[1], brl1.end());
+    std::vector<int> bubble1(br_left_1.begin()+ibrl[1], br_left_1.end());
     bubble1.insert(bubble1.end(), branch1.begin(), branch1.end());
-    bubble1.insert(bubble1.end(), brr1.begin(), brr1.begin()+ibrr[1]+2);
-    PrintBases("bubble0", bubble0);
-    PrintBases("bubble1", bubble1);
-    // //assert(branch0.size() >= 2 && branch1.size() >= 2);
-    // if (branch0.size() < 2 && branch1.size() < 2) return false;
-    // if (branch0.front() != branch1.front() || branch0.back() != branch1.back())  return false;
+    bubble1.insert(bubble1.end(), br_right_1.begin(), br_right_1.begin()+ibrr[1]+2);
+    DEBUG_PrintBases("bubble0", bubble0);
+    DEBUG_PrintBases("bubble1", bubble1);
+    
     auto has_insert = [](const std::vector<int> &branch0, const std::vector<int> &branch1) {
         size_t ihead = 0;
         for (; ihead <= std::min<size_t>(branch0.size(), branch1.size()); ++ihead) {
@@ -1155,8 +1149,8 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
         DEBUG_printf("head-tail %zd, %zd\n", ihead, itail);
         if (ihead + itail >= std::min<size_t>(branch0.size(), branch1.size())) return true;
 
-        PrintBases("mid0", std::vector<int>(branch0.begin()+ihead, branch0.end()-itail));
-        PrintBases("mid1", std::vector<int>(branch1.begin()+ihead, branch1.end()-itail));
+        DEBUG_PrintBases("mid0", std::vector<int>(branch0.begin()+ihead, branch0.end()-itail));
+        DEBUG_PrintBases("mid1", std::vector<int>(branch1.begin()+ihead, branch1.end()-itail));
         if (branch0.size() <= branch1.size()) {
             auto s = std::search(branch1.begin()+ihead, branch1.end()-itail, branch0.begin()+ihead, branch0.end()-itail);
             if (s != branch1.end()-itail) return true;
@@ -1170,19 +1164,6 @@ bool AlignmentGraph::VerifiyImportantBranch(const std::vector<ImportantBranch>& 
     if (has_insert(bubble0, bubble1) && bubble0.size() <= bubble1.size() + 1 && bubble0.size() +1 >= bubble1.size())  return false;
     
     DEBUG_printf("pass has_insert\n");
-    return true;
-  
-    DEBUG_printf("pass insert0\n");
-    if (branch0.size() <= branch1.size()) {
-        auto s = std::search(branch1.begin(), branch1.end(), branch0.begin(), branch0.end());
-        if (s != branch1.end()) return false;
-    } else {
-        auto s = std::search(branch0.begin(), branch0.end(), branch1.begin(), branch1.end());
-        if (s != branch0.end()) return false;
-    }
-    if (branch0.size() == 2 || branch1.size() == 2) return false;
-
-    DEBUG_printf("pass insert\n");
     return true;
 }
 

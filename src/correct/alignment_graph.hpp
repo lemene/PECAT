@@ -203,8 +203,9 @@ public:
         bool valid { true };
     };
 
-    std::vector<int> ExtendLeft(const Loc& start, size_t n, const MyBitSet& seqs);
-    std::vector<int> ExtendRight(const Loc& right, size_t n, const MyBitSet& seqs);
+    std::vector<int> GetBranch(const Link* link, const Loc& right, size_t left, Loc& end);
+    std::vector<int> GetBranchLeft(const Loc& start, size_t n, const MyBitSet& seqs);
+    std::vector<int> GetBranchRight(const Loc& right, size_t n, const MyBitSet& seqs);
     std::vector<ImportantBranch> CollectImportantBranches();
     void VerifyImportantBranches1(std::vector<ImportantBranch>& cands);
     bool VerifiyImportantBranch(const std::vector<ImportantBranch>& cands, size_t start, size_t end);
