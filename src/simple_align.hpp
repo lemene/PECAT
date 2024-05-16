@@ -1,6 +1,6 @@
-#ifndef FSA_ALIGN_SIMPLE_ALIGN_HPP
-#define FSA_ALIGN_SIMPLE_ALIGN_HPP
+#pragma once
 
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -94,4 +94,3 @@ public:
 
 } // namespace fsa {
 
-#endif // FSA_ALIGN_SIMPLE_ALIGN_HPP

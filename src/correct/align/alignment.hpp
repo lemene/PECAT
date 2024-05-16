@@ -1,6 +1,6 @@
-#ifndef FSA_CORRECT_ALIGNMENT_HPP
-#define FSA_CORRECT_ALIGNMENT_HPP
+#pragma once
 
+#include <array>
 #include "../../sequence.hpp"
 
 namespace fsa {
@@ -48,5 +48,3 @@ public:
 };
 
 } // namespace fsa {
-
-#endif // FSA_CORRECT_ALIGNMENT_HPP
