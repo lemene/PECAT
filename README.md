@@ -34,14 +34,15 @@ After building, all the executable files can be found in `PECAT/build/bin`. We c
 
 ### zlib not found
 ```Shell
-wget -c http://www.zlib.net/zlib-1.2.13.tar.gz
-tar -xzf zlib-1.2.13.tar.gz
-cd zlib-1.2.13
+ZLIB=zlib-1.3.1
+wget -c http://www.zlib.net/$ZLIB.tar.gz
+tar -xzf $ZLIB.tar.gz
+cd $ZLIB
 ./configure && make
 cd ..
-export C_INCLUDE_PATH=`pwd`/zlib-1.2.13:$C_INCLUDE_PATH
-export CPLUS_INCLUDE_PATH=`pwd`/zlib-1.2.13:$CPLUS_INCLUDE_PATH
-export LIBRARY_PATH=`pwd`/zlib-1.2.13:$LIBRARY_PATH
+export C_INCLUDE_PATH=`pwd`/$ZLIB:$C_INCLUDE_PATH
+export CPLUS_INCLUDE_PATH=`pwd`/$ZLIB:$CPLUS_INCLUDE_PATH
+export LIBRARY_PATH=`pwd`/$ZLIB:$LIBRARY_PATH
 make
 ```
 
