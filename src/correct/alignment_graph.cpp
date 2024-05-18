@@ -1331,7 +1331,7 @@ void AlignmentGraph::VerifyBranchConsistent(std::vector<ImportantBranch>& brs) {
 void AlignmentGraph::VerifyConsistent(std::vector<ImportantBranch>& brs) {
 
     const int MIN_COUNT = 10;
-    const int MIN_INV = 10;
+    const int MIN_INV = 30;
     const double MAX_CONSIST = 0.85;
     const double MIN_CONSIST = 0.75;
     const double MIN_CONSIST_COUNT = 2;
