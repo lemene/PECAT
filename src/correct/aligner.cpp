@@ -39,13 +39,9 @@ void Aligner::SetTarget(const DnaSeq& tseq, const std::array<size_t, 2> trange) 
 
 }
 void Aligner::SetParameter(const std::string& name, double v) {
-    if (name == "min_identity") {
-        min_identity_ = v;
-    } else if (name == "min_local_identity") {
-        min_local_identity_ = v;
-    } else {
-        LOG(ERROR)("Not support parameter: %s", name.c_str());
-    }
+
+    LOG(ERROR)("Not support parameter: %s", name.c_str());
+    
 }
 
 void Aligner::SetParameter(const std::string &name, const std::string &v) {
@@ -72,27 +68,6 @@ void Aligner::SetAligner(const std::string& opts) {
         LOG(ERROR)("Not support parameter: aligner=%s", opts.c_str());
 
     }
-}
-
-std::array<double,2> Aligner::ComputeIdentity(const std::string& alq, const std::string& alt, size_t window_size) {
-    assert(alq.size() == alt.size() && window_size <= alq.size());
-
-    std::vector<int> score(alq.size(), 0);
-    for (size_t i=0; i < alq.size(); ++i) {
-        if (alq[i] != alt[i]) {
-            score[i] = 1;
-        }
-    }
-    
-    std::vector<int> local_identity(alq.size() - window_size + 1, 0);
-            
-    local_identity[0] = std::accumulate(score.begin(), score.begin()+window_size, 0);
-    for (size_t i=1; i<local_identity.size(); ++i) {
-        local_identity[i] = local_identity[i-1] - score[i-1] + score[i+window_size-1];
-    }
-
-    return {100.0 - std::accumulate(score.begin(), score.end(), 0)*1.0 / alq.size() * 100, 
-        100 - *std::max_element(local_identity.begin(), local_identity.end()) * 1.0 / window_size * 100};
 }
 
 bool Aligner::CheckAlignedString(const std::string &q, const std::string &t) {
@@ -171,29 +146,13 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
     auto r = worker->Align((const char*)&qseq[0], qseq.size(),
                        (const char*)&tseq[0], tseq.size(), {(size_t)qs, (size_t)qe}, {(size_t)ts, (size_t)te}, al); 
     if (r) {
-        
-        bool valid = false;
         DEBUG_printf("q:%s\nt:%s\n", query.ToString()->c_str(), target_->ToString()->c_str());
         DEBUG_printf("alq: %s\nalt: %s\n", al.aligned_query.c_str(), al.aligned_target.c_str());
-        DEBUG_printf("global idents: %f > %f\n", al.Identity(), min_identity_);
-        
-        if (al.Identity() >= min_identity_ ) {
-            valid = al.TrimEnds();
-            if (valid && min_local_identity_ > 0 && al.aligned_query.size() >= 1.5*local_window_size_) {
-                auto idents = ComputeIdentity(al.aligned_query,  al.aligned_target, local_window_size_);
-                valid = idents[1] >= min_local_identity_;
-                
-                DEBUG_printf("local idents: %f > %f\n", idents[1], min_local_identity_);
-            }
-    
-        }
-        if (!valid) {
+        if (!al.TrimEnds()) {
             al.target_start = 0;
             al.target_end = 0;
             al.query_start = 0;
             al.query_end = 0;
-        } else {
-            al.ComputeLocalDistance(local_window_size_);
         }
     }
     

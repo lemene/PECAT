@@ -35,7 +35,6 @@ public:
 
     static void AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const char* query, const char* target, std::string& aligned_query, std::string& aligned_target);
 
-    static std::array<double,2> ComputeIdentity(const std::string& alq, const std::string& alt, size_t window_size);
     static bool CheckAlignedString(const std::string &q, const std::string &t);
 
 protected:
@@ -44,9 +43,6 @@ protected:
     const DnaSeq* target_;
     std::vector<uint8_t> target_0123_;
     std::array<size_t, 2> trange_ {{0, 0}};
-    double min_identity_ { 70 };
-    double min_local_identity_ { 50 };
-    double local_window_size_ { 5000 };
 
     std::shared_ptr<ToolAligner> worker;
 };

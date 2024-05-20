@@ -86,8 +86,6 @@ protected:
     class Worker {
     public:
         Worker(ContigCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
-            aligner_.SetParameter("min_identity", owner.min_identity_);  
-            aligner_.SetParameter("min_local_identity", owner.min_local_identity_);
             aligner_.SetParameter("aligner", owner_.aligner_);
         };
         ~Worker() {  }

@@ -254,6 +254,24 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& 
 }
 
 std::vector<int> CalculateLocalDistanceThreshold(const std::vector<Alignment>& als, size_t cov, double identity) {
+
+    std::vector<size_t> positions;
+    for (auto &al : als ) {
+        if (al.MaxLocalIdentity_100(1000) <= 98) {
+            positions.push_back(al.MaxLocalDistancePosition());
+        }
+    }
+    
+    for (auto al : als ) {
+        printf("pppp: %zd %0.02f\n", al.MaxLocalDistancePosition(), al.MaxLocalIdentity_100(1000));
+    }
+
+    std::sort(positions.begin(), positions.end());
+
+    for (auto p : positions) {
+        printf("pppp %zd, \n", p);
+    }
+
     assert(als.size() > 0);
     size_t n = als[0].local_distances.size();
     std::vector<int> thresholds(n, -1);
@@ -345,13 +363,17 @@ bool ReadCorrect::Worker::Correct(int id) {
                al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
                al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
 
-            if (r_local && !ExactFilter(al_local)) {
-                if (best_identity < al_local.Identity()) {
-                    best_identity = al_local.Identity();
-                    r = r_local;
-                    al = al_local;
+            if (r_local && !ExactFilter(al_local) && al_local.Identity() >= owner_.opts_.min_identity_) {
+                al_local.ComputeDistance(owner_.opts_.local_window_size_);
+                if (al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_) >= owner_.opts_.min_local_identity_) {
+                    if (best_identity < al_local.Identity()) {
+                        best_identity = al_local.Identity();
+                        r = r_local;
+                        al = al_local;
+                    }
+                    if (j >= 3) break;
                 }
-                if (j >= 3) break;
+
             }
         }
 
@@ -373,7 +395,7 @@ bool ReadCorrect::Worker::Correct(int id) {
     ////////
 
     if (owner_.opts_.check_local_identity_) {
-        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 40, owner_.opts_.min_identity_);
+        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 10, owner_.opts_.min_identity_);
         
         std::vector<Alignment> first_als1;
         for (size_t i = 0; i < first_als.size(); ++i) {

@@ -245,51 +245,26 @@ bool Alignment::TrimEnds(size_t checklen, int stub) {
     }
 }
 
-void Alignment::ComputeLocalDistance(size_t local_window_size) {
-    const size_t STD_WIN_SIZE = local_window_size;
-    size_t n = (TargetSize() + STD_WIN_SIZE - 1) / STD_WIN_SIZE;
-    size_t winsize = (TargetSize() + n - 1) / n;
+void Alignment::ComputeDistance(size_t win_size) {
 
-    local_distances.assign(n, -1);
-    size_t it = target_start;
-    size_t iq = query_start;
-    for (size_t i = 0; i < aligned_target.size(); ++i) {
-        auto pair = GetAlign(i);
-        if (pair[0] != pair[1]) {
-            local_distances[it / winsize] ++;
-        }
-        if (pair[0] != '-') iq ++;
-        if (pair[1] != '-') it ++;
-        //printf("%zd < %zd, %zd, %zd, - %zd\n", it,  TargetSize(), it / winsize, n, winsize); 
-        assert(it <= TargetSize());
-        assert(it / winsize <= n);
-    }
-
-    if (target_start % winsize != 0) local_distances[target_start / winsize] = -1;
-    if (it % winsize != 0) local_distances[it / winsize] = -1;
-}
-
-std::array<double,2> Alignment::MinLocalIdentity(size_t winsize) {
-    const std::string& alq = aligned_query; const std::string& alt = aligned_target;
-    
-    assert(alq.size() == alt.size() && winsize <= alq.size());
-
-    std::vector<int> score(alq.size(), 0);
-    for (size_t i=0; i < alq.size(); ++i) {
-        if (alq[i] != alt[i]) {
+    std::vector<uint8_t> score(aligned_query.size(), 0);
+    for (size_t i=0; i < aligned_query.size(); ++i) {
+        if (aligned_query[i] != aligned_target[i]) {
             score[i] = 1;
         }
     }
-    
-    std::vector<int> local_identity(alq.size() - winsize + 1, 0);
+
+    local_distances.assign(score.size() - win_size + 1, 0);
             
-    local_identity[0] = std::accumulate(score.begin(), score.begin()+winsize, 0);
-    for (size_t i=1; i<local_identity.size(); ++i) {
-        local_identity[i] = local_identity[i-1] - score[i-1] + score[i+winsize-1];
+    local_distances[0] = std::accumulate(score.begin(), score.begin()+win_size, 0);
+    for (size_t i=1; i<local_distances.size(); ++i) {
+        local_distances[i] = local_distances[i-1] - score[i-1] + score[i+win_size-1];
     }
 
-    return {100.0 - std::accumulate(score.begin(), score.end(), 0)*1.0 / alq.size() * 100, 
-        100 - *std::max_element(local_identity.begin(), local_identity.end()) * 1.0 / winsize * 100};
+    double d = 100.0 - std::accumulate(score.begin(), score.end(), 0)*1.0 / aligned_query.size() * 100;
+
+    max_local_distance_position = std::max_element(local_distances.begin(), local_distances.end()) - local_distances.begin();
+
 }
 
 double Alignment::IdentityIgnoreHomo(size_t len) const {

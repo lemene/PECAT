@@ -1,5 +1,4 @@
-#ifndef FSA_CORRECT_ALIGNMENT_HPP
-#define FSA_CORRECT_ALIGNMENT_HPP
+#pragma once
 
 #include "../../sequence.hpp"
 
@@ -34,8 +33,10 @@ public:
     static void Rearrange1(std::string &alq, std::string &alt);
     bool TrimEnds(size_t checklen=2000, int stub=8);
     
-    void ComputeLocalDistance(size_t local_window_size);
-    std::array<double,2> MinLocalIdentity(size_t winsize);
+    void ComputeDistance(size_t win_size);
+    uint16_t MaxLocalDistance() const { return local_distances[max_local_distance_position]; }
+    size_t MaxLocalDistancePosition() const { return max_local_distance_position; }
+    double MaxLocalIdentity_100(size_t win_size) const { return 100.0 - (MaxLocalDistance() * 100.0 / win_size); }
 
     Seq::Id tid { Seq::NID };
     Seq::Id qid { Seq::NID };
@@ -47,11 +48,10 @@ public:
     std::string aligned_target;
     std::string aligned_query;
     std::vector<int16_t> local_distances;
+    size_t max_local_distance_position { 0 };
 
     const DnaSeq* target { nullptr };
     const DnaSeq* query { nullptr };
 };
 
 } // namespace fsa {
-
-#endif // FSA_CORRECT_ALIGNMENT_HPP

@@ -554,6 +554,7 @@ void Program_Accuracy::Running() {
         size_t dels { 0 };
         size_t hclip { 0 };
         double local_error {0.0};
+        double Accuracy() const { return match*1.0 / (len + dels - hclip); }
         void Print() const {
             printf("%zd, %zd, %zd, %zd, %zd, %zd, %zd\n", len, match, mismatch, clip, insert, dels, hclip);
         }
@@ -564,7 +565,7 @@ void Program_Accuracy::Running() {
     auto merge_info = [](std::unordered_map<Seq::Id, Info>& infos, Seq::Id id, const Info& inf) {
         auto iter = infos.find(id);
         if (iter != infos.end()) {
-            if (iter->second.match < inf.match) {
+            if (iter->second.Accuracy() < inf.Accuracy()) {
                 iter->second = inf;
             } 
         } else {

@@ -47,8 +47,6 @@ protected:
     public:
         Worker(ReadCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
             graph_.SetParameter("score", owner.opts_.score_);
-            aligner_.SetParameter("min_identity", owner.opts_.min_identity_);  
-            aligner_.SetParameter("min_local_identity", owner.opts_.min_local_identity_);
             aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };
         ~Worker() {  }

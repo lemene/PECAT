@@ -51,6 +51,7 @@ public:
     
     double min_identity_ { 60 };
     double min_local_identity_ { 50 };
+    int local_window_size_ { 1000 };
     bool check_local_identity_ { false };
 
     std::string overlap_fname_;
