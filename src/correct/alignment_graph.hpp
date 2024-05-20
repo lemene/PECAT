@@ -209,12 +209,7 @@ public:
     std::vector<ImportantBranch> CollectImportantBranches();
     void VerifyImportantBranches1(std::vector<ImportantBranch>& cands);
     bool VerifiyImportantBranch(const std::vector<ImportantBranch>& cands, size_t start, size_t end);
-    void VerifyImportantBranchesByDensity(std::vector<ImportantBranch> &cands);
-    void VerifyImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, std::unordered_set<size_t>& removed);
-    void ReactivateImportantSitesByConsistent(std::vector<ImportantBranch> &cands, double th, const std::unordered_set<size_t>& removed);
-    void VerifyBranchConsistent(std::vector<ImportantBranch>& brs);
     void VerifyConsistent(std::vector<ImportantBranch>& brs);
-    void VerifyBranchConsistent(std::vector<ImportantBranch>& brs, const std::vector<std::array<uint16_t, 2>>& scores, double th, std::unordered_set<size_t>& removed);
 
     
     std::vector<const Link*> CollectLinks(size_t i);
