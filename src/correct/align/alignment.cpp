@@ -247,9 +247,9 @@ bool Alignment::TrimEnds(size_t checklen, int stub) {
 
 void Alignment::ComputeDistance(size_t win_size) {
 
-    std::vector<uint8_t> score(aligned_query.size(), 0);
-    for (size_t i=0; i < aligned_query.size(); ++i) {
-        if (aligned_query[i] != aligned_target[i]) {
+    std::vector<uint8_t> score(aligned_target.size(), 0);
+    for (size_t i=0; i < aligned_target.size(); ++i) {
+        if (aligned_target[i] != aligned_query[i]) {
             score[i] = 1;
         }
     }
@@ -264,7 +264,43 @@ void Alignment::ComputeDistance(size_t win_size) {
     double d = 100.0 - std::accumulate(score.begin(), score.end(), 0)*1.0 / aligned_query.size() * 100;
 
     max_local_distance_position = std::max_element(local_distances.begin(), local_distances.end()) - local_distances.begin();
+    auto dels = std::count_if(aligned_target.begin(), aligned_target.begin() + max_local_distance_position, [](char c) { return c == '-'; });
+    max_local_distance_position -= dels;
+    //max_local_distance_position += target_start;
 
+}
+
+
+std::pair<bool, uint16_t> Alignment::MaxLocalDistance(size_t s, size_t e) const {
+
+    std::pair<bool, uint16_t> r = std::make_pair(false, 0);
+
+    auto find_aligned_position = [this](size_t s) {
+        size_t tpos = target_start;
+        for (size_t i = 0; i < aligned_target.size(); ++i) {
+            if (aligned_target[i] != '-') {
+                tpos ++;
+                if (tpos == s) {
+                    return i;
+                }
+            }
+        }
+        return aligned_target.size();
+    };
+
+    if (e >= target_start && s < target_start + local_distances.size()) {     
+        size_t si = s < target_start ? 0 : s - target_start;
+        size_t ei = e < target_start + local_distances.size() ? e - target_start : local_distances.size();
+
+        r.first = s >= target_start && e < target_start + local_distances.size();
+        assert(si >= 0);
+        assert(ei >= si);
+        assert(ei <= local_distances.size());
+
+        r.second = *std::max_element(local_distances.begin()+si, local_distances.begin()+ei);
+    }
+
+    return r;
 }
 
 double Alignment::IdentityIgnoreHomo(size_t len) const {

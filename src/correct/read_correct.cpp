@@ -363,8 +363,10 @@ bool ReadCorrect::Worker::Correct(int id) {
                al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
                al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
 
+            DEBUG_printf("al_global_ident %.02f <= %.02f\n", al_local.Identity(), owner_.opts_.min_identity_);
             if (r_local && !ExactFilter(al_local) && al_local.Identity() >= owner_.opts_.min_identity_) {
                 al_local.ComputeDistance(owner_.opts_.local_window_size_);
+                DEBUG_printf("al_local_ident %.02f <= %.02f\n", al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_), owner_.opts_.min_local_identity_);
                 if (al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_) >= owner_.opts_.min_local_identity_) {
                     if (best_identity < al_local.Identity()) {
                         best_identity = al_local.Identity();
@@ -395,16 +397,17 @@ bool ReadCorrect::Worker::Correct(int id) {
     ////////
 
     if (owner_.opts_.check_local_identity_) {
-        auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 10, owner_.opts_.min_identity_);
+        std::vector<Alignment> first_als1 = CheckLocalDistance0(first_als);
+        //auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 10, owner_.opts_.min_identity_);
         
-        std::vector<Alignment> first_als1;
-        for (size_t i = 0; i < first_als.size(); ++i) {
-            DEBUG_printf("ckck qid=%s check\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
-            if (CheckLocalDistance(first_als[i], local_thresholds)) {
-                first_als1.push_back(first_als[i]);
-                DEBUG_printf("ckck qid=%s pass\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
-            }
-        }
+        // std::vector<Alignment> first_als1;
+        // for (size_t i = 0; i < first_als.size(); ++i) {
+        //     DEBUG_printf("ckck qid=%s check\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
+        //     if (CheckLocalDistance(first_als[i], local_thresholds)) {
+        //         first_als1.push_back(first_als[i]);
+        //         DEBUG_printf("ckck qid=%s pass\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
+        //     }
+        // }
         
         DEBUG_printf("ckck first_als size %zd\n", first_als.size());
         std::swap(first_als1, first_als);
@@ -434,6 +437,100 @@ bool ReadCorrect::Worker::Correct(int id) {
     }
     return false;
 }
+
+std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vector<Alignment>& als) {
+
+    std::vector<size_t> positions;
+    for (auto &al : als ) {
+        if (al.MaxLocalIdentity_100(1000) <= owner_.opts_.min_identity_) {
+            positions.push_back(al.MaxLocalDistancePosition());
+        }
+    }
+    
+    for (auto al : als ) {
+        printf("pppp: %zd %0.02f\n", al.MaxLocalDistancePosition(), al.MaxLocalIdentity_100(1000));
+    }
+
+    std::sort(positions.begin(), positions.end());
+
+    for (auto p : positions) {
+        printf("pppp %zd, \n", p);
+    }
+
+    std::sort(positions.begin(), positions.end()); // 按默认从小到大
+    auto groups = GroupPositions(positions);
+
+    std::unordered_set<size_t> removed;
+    for (const auto gp : groups) {
+        DEBUG_printf("al_local_group: %zd - %zd\n", gp[0], gp[1]);
+
+        std::vector<std::pair<bool, uint16_t>> distances;
+        std::vector<uint16_t> vdist;
+        for (auto &al : als) {
+            auto r = al.MaxLocalDistance(gp[0], gp[1]);
+            distances.push_back(r);
+            if (r.first) {
+                vdist.push_back(r.second);
+            }
+            DEBUG_printf("al_local_group_i: %d - %zd\n", r.first, r.second);
+        }
+
+        size_t threshold = 1000;
+        size_t cov = 20;
+        if (vdist.size() <= 10) {
+            auto m = ComputeMeanAbsoluteDeviation(vdist);
+            threshold = m[0] + 3*1.253*m[1];
+            DEBUG_printf("ckck mean th() = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
+        } else {
+            std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
+            std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
+            auto m = ComputeMedianAbsoluteDeviation(oks);
+            threshold = m[0] + 3*1.4826*m[1];
+            DEBUG_printf("ckck median th() = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+        }
+
+        for (size_t i = 0; i < distances.size(); ++i) {
+            if (distances[i].second > threshold) {
+                removed.insert(i);
+            }
+        }
+    }
+
+    std::vector<Alignment> new_als;
+    for (size_t i = 0; i < als.size(); ++i) {
+        if (removed.find(i) == removed.end()) {
+            new_als.push_back(als[i]);
+        }
+    }
+
+    return new_als;
+}
+
+std::vector<std::array<size_t, 2>> ReadCorrect::Worker::GroupPositions(const std::vector<size_t> &sorted_positions) {
+    std::vector<std::array<size_t, 2>> groups;
+    //assert(sorted_positions.size() >= 1);
+
+    std::array<int, 2> curr = {-1, -1 };
+    for (auto p : sorted_positions) {
+        if (curr[0] == -1) {
+            curr = {p, p};
+        } else {
+            if (p - curr[1] < owner_.opts_.local_window_size_/2 && p - curr[0] <= owner_.opts_.local_window_size_) {
+                curr[1] = p;
+            } else {
+                groups.push_back({curr[0], curr[1]});
+                curr = {p , p};
+            }
+
+        }
+    }
+    if (curr[0] != -1) {
+        groups.push_back({curr[0], curr[1]});
+        curr = {-1, -1};
+    }
+    return groups;
+}
+
 
 void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>>& cands, double opt_ohwt) {
     std::vector<double> cand_cov_wts (target.Size()+1);

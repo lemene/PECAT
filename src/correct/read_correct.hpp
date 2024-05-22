@@ -62,6 +62,8 @@ protected:
         const std::string GetCorrected() const { return graph_.GetSequence(); }
         const std::array<size_t, 2> & GetTrueRange() const { return graph_.GetTrueRange(); }
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rd) { graph_.SaveReadInfos(os, tid, rd); }
+        std::vector<Alignment> CheckLocalDistance0(const std::vector<Alignment>& als);
+        std::vector<std::array<size_t, 2>> GroupPositions(const std::vector<size_t> &sorted_positions);
    
         StatInfo stat_info;
     protected:

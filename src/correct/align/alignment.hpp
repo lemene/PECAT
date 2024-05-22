@@ -35,7 +35,8 @@ public:
     
     void ComputeDistance(size_t win_size);
     uint16_t MaxLocalDistance() const { return local_distances[max_local_distance_position]; }
-    size_t MaxLocalDistancePosition() const { return max_local_distance_position; }
+    std::pair<bool, uint16_t> MaxLocalDistance (size_t s, size_t e) const;
+    size_t MaxLocalDistancePosition() const { return max_local_distance_position + target_start; }
     double MaxLocalIdentity_100(size_t win_size) const { return 100.0 - (MaxLocalDistance() * 100.0 / win_size); }
 
     Seq::Id tid { Seq::NID };
@@ -47,6 +48,7 @@ public:
     size_t distance {0};
     std::string aligned_target;
     std::string aligned_query;
+
     std::vector<int16_t> local_distances;
     size_t max_local_distance_position { 0 };
 
