@@ -398,16 +398,6 @@ bool ReadCorrect::Worker::Correct(int id) {
 
     if (owner_.opts_.check_local_identity_) {
         std::vector<Alignment> first_als1 = CheckLocalDistance0(first_als);
-        //auto local_thresholds = CalculateLocalDistanceThreshold(first_als, 10, owner_.opts_.min_identity_);
-        
-        // std::vector<Alignment> first_als1;
-        // for (size_t i = 0; i < first_als.size(); ++i) {
-        //     DEBUG_printf("ckck qid=%s check\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
-        //     if (CheckLocalDistance(first_als[i], local_thresholds)) {
-        //         first_als1.push_back(first_als[i]);
-        //         DEBUG_printf("ckck qid=%s pass\n", owner_.dataset_.QueryStringById(first_als[i].qid).c_str());
-        //     }
-        // }
         
         DEBUG_printf("ckck first_als size %zd\n", first_als.size());
         std::swap(first_als1, first_als);
@@ -442,22 +432,14 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
 
     std::vector<size_t> positions;
     for (auto &al : als ) {
-        if (al.MaxLocalIdentity_100(1000) <= owner_.opts_.min_identity_) {
+        DEBUG_printf("pppp: %zd %0.02f\n", al.MaxLocalDistancePosition(), al.MaxLocalIdentity_100(1000));
+        if (al.MaxLocalIdentity_100(1000) <= 98){//owner_.opts_.min_identity_) {
             positions.push_back(al.MaxLocalDistancePosition());
         }
     }
     
-    for (auto al : als ) {
-        printf("pppp: %zd %0.02f\n", al.MaxLocalDistancePosition(), al.MaxLocalIdentity_100(1000));
-    }
-
     std::sort(positions.begin(), positions.end());
 
-    for (auto p : positions) {
-        printf("pppp %zd, \n", p);
-    }
-
-    std::sort(positions.begin(), positions.end()); // 按默认从小到大
     auto groups = GroupPositions(positions);
 
     std::unordered_set<size_t> removed;
@@ -475,27 +457,51 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
             DEBUG_printf("al_local_group_i: %d - %zd\n", r.first, r.second);
         }
 
+        size_t MIN_COV = 30;
         size_t threshold = 1000;
-        size_t cov = 20;
-        if (vdist.size() <= 10) {
-            auto m = ComputeMeanAbsoluteDeviation(vdist);
-            threshold = m[0] + 3*1.253*m[1];
-            DEBUG_printf("ckck mean th() = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
-        } else {
-            std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
-            std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
-            auto m = ComputeMedianAbsoluteDeviation(oks);
-            threshold = m[0] + 3*1.4826*m[1];
-            DEBUG_printf("ckck median th() = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+        if (vdist.size() > MIN_COV) {
+            std::sort(vdist.begin(), vdist.end());  // ascending
+            threshold = vdist[MIN_COV-1];
+
+            size_t sum = std::accumulate(vdist.begin(), vdist.begin()+MIN_COV, 0);
+
+            for (size_t i = MIN_COV; i < vdist.size(); ++i) {
+                size_t ave = sum / (i-1);
+                if (vdist[i] - vdist[i-1] < ave) {
+                    threshold = vdist[i];
+                } else {
+                    break;
+                }
+            }
+
         }
+        DEBUG_printf("al_local_th = %d, %zd\n", threshold,  vdist.size());
+        
+
+        // size_t threshold = 1000;
+        // size_t cov = 30;
+        // if (vdist.size() == 0) continue;
+        // if (vdist.size() <= 10) {
+        //     auto m = ComputeMeanAbsoluteDeviation(vdist);
+        //     threshold = m[0] + 6*1.253*m[1];
+        //     DEBUG_printf("al_local_th mean = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
+        // } else {
+        //     std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
+        //     std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
+        //     auto m = ComputeMedianAbsoluteDeviation(oks);
+        //     threshold = m[0] + 6*1.4826*m[1];
+        //     DEBUG_printf("al_local_th median = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+        // }
 
         for (size_t i = 0; i < distances.size(); ++i) {
-            if (distances[i].second > threshold) {
+            if (distances[i].second > std::max<size_t>(threshold, 10)) {
                 removed.insert(i);
             }
         }
+        DEBUG_printf("al_local_removed: %zd\n", removed.size());
     }
 
+    DEBUG_printf("al_local_removed: %zd\n", removed.size());
     std::vector<Alignment> new_als;
     for (size_t i = 0; i < als.size(); ++i) {
         if (removed.find(i) == removed.end()) {
