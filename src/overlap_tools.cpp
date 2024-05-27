@@ -554,6 +554,8 @@ void Program_Accuracy::Running() {
         size_t dels { 0 };
         size_t hclip { 0 };
         double local_error {0.0};
+        Seq::Id ref;
+        std::array<int,2> range;
         double Accuracy() const { return match*1.0 / (len + dels - hclip); }
         void Print() const {
             printf("%zd, %zd, %zd, %zd, %zd, %zd, %zd\n", len, match, mismatch, clip, insert, dels, hclip);
@@ -590,6 +592,8 @@ void Program_Accuracy::Running() {
             Info inf;
             inf.id = ol.a_.id;
             inf.len = ol.a_.len;
+            inf.ref = ol.b_.id;
+            inf.range = { ol.b_.start, ol.b_.end };
             if (ol.SameDirect()) {
                 inf.clip += std::min(ol.a_.start, ol.b_.start);
                 inf.clip += std::min(ol.a_.len - ol.a_.end, ol.b_.len - ol.b_.end);
@@ -670,7 +674,8 @@ void Program_Accuracy::Running() {
                 oss << ol_store.GetStringPool().QueryStringById(inf.id) << '\t' 
                     << inf.len << '\t' << inf.match << '\t' << inf.mismatch << '\t' 
                     << inf.clip  << '\t' << inf.insert  << '\t' << inf.dels  << '\t' 
-                    << inf.hclip << '\t' << inf.local_error << '\n';
+                    << inf.hclip << '\t' << inf.local_error << '\t' 
+                    << ol_store.GetReadName(inf.ref) << ':' << inf.range[0] << '-' << inf.range[1] << '\n';
                 writer.Flush(oss);
                 oss.str("");
             }
