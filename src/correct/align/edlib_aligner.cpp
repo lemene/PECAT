@@ -33,7 +33,6 @@ bool CheckAlign(const char* qseq, size_t qsize, const char* tseq, size_t tsize, 
     size_t qi = qstart;
     size_t ti = tstart;
     for (size_t i=0; i < alignment.size(); ++i) {
-        //printf("%zd:%c %zd:%c  %zd:%zd:%d \n", qi, "ACGT"[qseq[qi]] , ti, "ACGT"[tseq[ti]], alignment.size(), i, alignment[i] );
         if (alignment[i] == EDLIB_EDOP_MATCH) {
             assert(qseq[qi] == tseq[ti]);
             qi ++;
@@ -61,20 +60,54 @@ bool EdlibAligner::ExtendRight(const Seq &q, const Seq &t, size_t qstart, size_t
     result.tstart = tstart;
     result.tend = tstart;
 
-    DEBUG_printf("Start Extend Right: %zd -> %zd, %zd -> %zd\n", qstart, q.size, tstart, t.size);
-    int try_count = 1;
-    while (true) {
-        if (try_count % 2 == 1) {
+    if (q.size == 16994)
+    DEBUG_printf("edlib_ext_r: %zd -> %zd, %zd -> %zd\n", qstart, q.size, tstart, t.size);
 
-            size_t qbsize = std::min(block_size_, q.size - qindex);
-            size_t tbsize = std::min((size_t)(qbsize*1.5), t.size - tindex);
-            if (qbsize*1 > tbsize) {
-                qbsize = tbsize / 1;
+    size_t qleft = q.size - qindex;
+    size_t tleft = t.size - tindex;
+
+    while (qleft >= block_size_*1.5 && tleft >= block_size_*1.5) {
+        size_t qbsize = block_size_;
+        size_t tbsize = block_size_*1.5;
+
+        if (q.size == 16994) {
+            DEBUG_printf("edlib_forward0_s: q = %zd -> %zd, t = %zd -> %zd\n", qindex, qbsize, tindex, tbsize);
+        }
+        AlignResult bresult;
+        if (WrapEdlibPrefix(q, t, {qindex, qindex+qbsize}, {tindex, tindex+tbsize}, bresult)) {
+            CheckAndTrimRightEnd(bresult, match_count_, block_error_);
+
+            if (bresult.Valid()) {
+                assert(bresult.alstart == 0 && bresult.alend <= bresult.alignment.size());
+                result.alignment.insert(result.alignment.end(), bresult.alignment.begin()+bresult.alstart, bresult.alignment.begin()+bresult.alend);
+                result.distance += bresult.distance;
+                tindex = bresult.tend;
+                qindex = bresult.qend;
+                if (q.size == 16994) {
+                    DEBUG_printf("edlib_forward0_e: q = %zd, t = %zd distance=%d\n", qindex, tindex, bresult.distance);
+                }
+
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+
+        qleft = q.size - qindex;
+        tleft = t.size - tindex;
+    }
+
+    if (qleft < block_size_*1.5 || tleft < block_size_*1.5) {
+        if (qleft <= tleft) {
+            size_t qbsize = qleft;
+            size_t tbsize = std::min<size_t>(qleft*1.5, t.size-tindex);
+
+            
+            if (q.size == 16994) {
+                DEBUG_printf("edlib_forward1_s: q = %zd -> %zd, t = %zd -> %zd\n", qindex, qbsize, tindex, tbsize);
             }
 
-            DEBUG_printf("edlib tqsize: %zd %zd, %zd, %zd\n", qindex, tindex, qbsize, tbsize);
-
-            if (qbsize == 0 || tbsize == 0) break;
             AlignResult bresult;
             if (WrapEdlibPrefix(q, t, {qindex, qindex+qbsize}, {tindex, tindex+tbsize}, bresult)) {
                 CheckAndTrimRightEnd(bresult, match_count_, block_error_);
@@ -85,164 +118,71 @@ bool EdlibAligner::ExtendRight(const Seq &q, const Seq &t, size_t qstart, size_t
                     result.distance += bresult.distance;
                     tindex = bresult.tend;
                     qindex = bresult.qend;
-                } else {
-                    if (try_count >= 3) break;
-                    try_count ++;
-                }
-            } else {
-                break;
+                                    
+                    if (q.size == 16994) {
+                        DEBUG_printf("edlib_forward1_e: q = %zd, t = %zd distance=%d\n", qindex, tindex, bresult.distance);
+                    }
+                } 
             }
-
-            // auto r = edlibAlign(q.seq+qindex, qbsize, t.seq+tindex, tbsize,
-            //     edlibNewAlignConfig(-1, EDLIB_MODE_SHW, EDLIB_TASK_PATH, NULL, 0));
-            
-            // if (r.status == EDLIB_STATUS_OK) {
-            //     assert(r.numLocations >= 1);
-            //     assert(r.startLocations[0] == 0);
-
-            //     size_t qbend = qbsize - 1;
-            //     size_t tbend = r.endLocations[0];   // 不需要 -1
-
-            //     DEBUG_printf("edlib end %zd %zd %d\n", qbend, tbend, r.editDistance);
-            //     int distance = r.editDistance;
-            //     int match = 0; 
-            //     int alend = r.alignmentLength - 1;
-            //     for (; alend >= 0; --alend) {        
-            //         if (r.alignment[alend] == EDLIB_EDOP_MATCH) {
-            //             match += 1;
-            //             qbend --;
-            //             tbend --;
-            //         } else if (r.alignment[alend] == EDLIB_EDOP_INSERT) {
-            //             match = 0;
-            //             qbend --;
-            //             distance --; 
-            //         } else if (r.alignment[alend] == EDLIB_EDOP_DELETE) {
-            //             match = 0;
-            //             tbend --;
-            //             distance --;
-            //         } else {
-            //             assert(r.alignment[alend] == EDLIB_EDOP_MISMATCH);
-            //             match = 0;
-            //             qbend --;
-            //             tbend --;
-            //             distance --;
-            //         }
-
-            //         if (match >= match_count_ ) {
-            //             DEBUG_printf("edlib check distance %d %d %d %f\n", match, distance, tbend + 1 + match, distance*1.0/(tbend + 1 + match));
-            //         }
-
-            //         if (match >= match_count_ && distance*1.0/(tbend + 1 + match) <= block_error_) {
-            //             break;
-            //         }
-            //     }
-  
-            //     if (alend > 0 && match >= match_count_) {
-            //         result.alignment.insert(result.alignment.end(), r.alignment, r.alignment + alend +  match);
-            //         result.distance += distance;
-            //         tindex += tbend + 1 + match;
-            //         qindex += qbend + 1 + match;
-            //         DEBUG_printf("edlib distance: %d, %d %d, %f\n", distance, qbend + 1 + match, tbend + 1 + match, distance*1.0/(tbend + 1 + match));
-            //     } else {
-            //         if (try_count >= 3) break;
-            //         try_count ++;
-            //     }
-            // } else {
-            //     break;
-            // }
-            
         } else {
+            size_t qbsize = std::min<size_t>(tleft*1.5, q.size-qindex);
+            size_t tbsize = tleft;
 
-            size_t tbsize = std::min(block_size_, t.size - tindex);
-            size_t qbsize = std::min((size_t)(tbsize*1.5), q.size - qindex);
-            if (tbsize*1 > qbsize) {
-                tbsize = qbsize / 1;
+            if (q.size == 16994) {
+                DEBUG_printf("edlib_forward2_s: q = %zd -> %zd, t = %zd -> %zd\n", qindex, qbsize, tindex, tbsize);
+                DEBUG_printf("edlib_forward2_s:q:");
+                for (size_t i = qindex; i < qindex+qbsize; ++i) {
+                    DEBUG_printf("%c", "ACGT"[q.seq[i]]);
+
+                }
+                DEBUG_printf("\n");
+                DEBUG_printf("edlib_forward2_s:t:");
+                for (size_t i = tindex; i < tindex+tbsize; ++i) {
+                    DEBUG_printf("%c", "ACGT"[t.seq[i]]);
+
+                }
+                DEBUG_printf("\n");
             }
 
-            DEBUG_printf("edlib tqsize: %zd %zd, %zd, %zd\n", qindex, tindex, qbsize, tbsize);
+            AlignResult bresult;
+            if (WrapEdlibPrefix(t, q, {tindex, tindex+tbsize}, {qindex, qindex+qbsize}, bresult)) {
+            if (q.size == 16994) {
+                DEBUG_printf("edlib_forward2_s: bq %zd %zd, bt %zd %zd\n", bresult.tstart, bresult.tend, bresult.qstart, bresult.qend);
+            }
+                CheckAndTrimRightEnd(bresult, match_count_, block_error_);
 
-            if (qbsize == 0 || tbsize == 0) break;
+                if (bresult.Valid()) {
+                    assert(bresult.alstart == 0 && bresult.alend <= bresult.alignment.size());
 
-            auto r = edlibAlign(t.seq+tindex, tbsize, q.seq+qindex, qbsize, 
-                edlibNewAlignConfig(-1, EDLIB_MODE_SHW, EDLIB_TASK_PATH, NULL, 0));
-            
-            if (r.status == EDLIB_STATUS_OK) {
-                assert(r.numLocations >= 1);
-                assert(r.startLocations[0] == 0);
-
-                size_t tbend = tbsize - 1;
-                size_t qbend = r.endLocations[0];   // 不需要 -1
-
-                
-                DEBUG_printf("edlib end %zd %zd %d\n", qbend, tbend, r.editDistance);
-                int distance = r.editDistance;
-                int match = 0; 
-                int alend = r.alignmentLength - 1;
-                for (; alend >= 0; --alend) {        
-                    if (r.alignment[alend] == EDLIB_EDOP_MATCH) {
-                        match += 1;
-                        qbend --;
-                        tbend --;
-                    } else if (r.alignment[alend] == EDLIB_EDOP_INSERT) {
-                        match = 0;
-                        tbend --;
-                        distance --; 
-                    } else if (r.alignment[alend] == EDLIB_EDOP_DELETE) {
-                        match = 0;
-                        qbend --;
-                        distance --;
-                    } else {
-                        assert(r.alignment[alend] == EDLIB_EDOP_MISMATCH);
-                        match = 0;
-                        qbend --;
-                        tbend --;
-                        distance --;
-                    }
-
-                    // if (match >= match_count_ ) {
-                    //     DEBUG_printf("edlib check distance %d %d %d %f\n", match, distance, tbend + 1 + match, distance*1.0/(tbend + 1 + match));
-                    // }
-
-                    if ((size_t)match >= match_count_ && distance*1.0/(tbend + 1 + match) <= block_error_) {
-                        break;
-                    }
-                }
-                        
-
-                if (alend > 0 && (size_t) match >= match_count_) {
-                    for (int ii = 0; ii < alend+match; ++ii ) {
-                        if (r.alignment[ii] == EDLIB_EDOP_INSERT) {
-                            r.alignment[ii] = EDLIB_EDOP_DELETE;
-                        } else if (r.alignment[ii] == EDLIB_EDOP_DELETE) {
-                            r.alignment[ii] = EDLIB_EDOP_INSERT;
+                    for (size_t i = bresult.alstart; i < bresult.alend; ++i) {
+                        if (bresult.alignment[i] == EDLIB_EDOP_INSERT) {
+                            result.alignment.push_back(EDLIB_EDOP_DELETE);
+                        } else if (bresult.alignment[i] == EDLIB_EDOP_DELETE) {
+                            result.alignment.push_back(EDLIB_EDOP_INSERT);
+                        } else {
+                            result.alignment.push_back(bresult.alignment[i]);
                         }
                     }
-                    result.alignment.insert(result.alignment.end(), r.alignment, r.alignment + alend +  match);
-                    result.distance += distance;
-                    tindex += tbend + 1 + match;
-                    qindex += qbend + 1 + match;
-                    DEBUG_printf("edlib distance: %d, %d %d, %f\n", distance, qbend + 1 + match, tbend + 1 + match, distance*1.0/(tbend + 1 + match));
-                } else {
-                    if (try_count >= 3) break;
-                    try_count ++;
-                }
-            } else {
-                break;
-            }
-            
-            edlibFreeAlignResult(r);
-        }
-        result.qstart = qstart;
-        result.qend = qindex;
-        result.tstart = tstart;
-        result.tend = tindex;
 
+                    result.distance += bresult.distance;
+                    qindex = bresult.tend;
+                    tindex = bresult.qend;   
+
+                    if (q.size == 16994) {
+                        DEBUG_printf("edlib_forward2_e: q = %zd, t = %zd distance=%d\n", qindex, tindex, bresult.distance);
+                    }
+                } 
+            }
+        }
     }
+    result.qstart = qstart;
+    result.qend = qindex;
+    result.tstart = tstart;
+    result.tend = tindex;
     
-        result.alend = result.alignment.size();
-        result.alstart = 0;
-    DEBUG_printf("End Extend Right:  %zd, %d %d - %zd, %d %d - %d\n", q.size, result.qstart, result.qend, 
-        t.size, result.tstart, result.tend, result.distance);
+    result.alend = result.alignment.size();
+    result.alstart = 0;
+        
     CheckAlign(q.seq, q.size, t.seq, t.size, result.qstart, result.tstart, result.alignment);
     
     return true;
@@ -293,6 +233,7 @@ void EdlibAligner::CheckAndTrimRightEnd(AlignResult &result, size_t match_count,
     int tbend = result.tend - 1;
     int distance = result.distance;
     for (; alend >= (int)result.alstart; --alend) {        
+        DEBUG_printf("TRIMxxxx %d, %d\n", alend, result.alignment[alend]);
         if (result.alignment[alend] == EDLIB_EDOP_MATCH) {
             match += 1;
             qbend --;
@@ -359,6 +300,7 @@ bool EdlibAligner::WrapEdlibPrefix(const Seq &q, const Seq &t, std::array<size_t
     }
     edlibFreeAlignResult(r);
     
+    if (t.size == 16994)
     DEBUG_printf("WrapEdlibPrefix 1: %d - %d, %d - %d, %d\n", result.qstart, result.qend, result.tstart, result.tend, result.distance);
     return r.status == EDLIB_STATUS_OK;
 }

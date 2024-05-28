@@ -340,7 +340,7 @@ bool ReadCorrect::Worker::Correct(int id) {
     aligner_.SetTarget(target);
     std::vector<int> coverage(target.Size(), 0);
 
-    DEBUG_printf("total_cand_size=%zd\n", cands.size());
+    DEBUG_printf("al_cand_size=%zd\n", cands.size());
     std::vector<Alignment> first_als;
     while (heap_size > 0) {
         DEBUG_printf("done = %zd, heap_size = %zd, cands.size() = %zd wt=%.02f\n", cands.size()-heap_size, heap_size, cands.size(), std::get<1>(cands[0]));
@@ -432,14 +432,12 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
 
     std::vector<size_t> positions;
     for (auto &al : als ) {
-        DEBUG_printf("pppp: %zd %0.02f\n", al.MaxLocalDistancePosition(), al.MaxLocalIdentity_100(1000));
-        if (al.MaxLocalIdentity_100(1000) <= 98){//owner_.opts_.min_identity_) {
+        if (al.MaxLocalIdentity_100(1000) <= owner_.opts_.min_identity_) {
             positions.push_back(al.MaxLocalDistancePosition());
         }
     }
     
     std::sort(positions.begin(), positions.end());
-
     auto groups = GroupPositions(positions);
 
     std::unordered_set<size_t> removed;

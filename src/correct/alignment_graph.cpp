@@ -70,25 +70,25 @@ void AlignmentGraph::ParseScoreParamter(const std::string &opts) {
                     opts_.rate[1] = std::stod(sss[3]);
                 }
             } else if (kv[0] == "rd") {
-                reduction_ = std::stod(kv[1]);
+                opts_.reduction_ = std::stod(kv[1]);
             } else if (kv[0] == "bs") {
                 auto sss = SplitStringByChar(kv[1], ',');
                 if (sss.size() >= 1 && sss[0].size() > 0) {
-                    branch_score_[0] = std::stod(sss[0]);
+                    opts_.branch_score_[0] = std::stod(sss[0]);
                 }
                 if (sss.size() >= 2 && sss[1].size() > 0) {
-                    branch_score_[1] = std::stod(sss[1]);
+                    opts_.branch_score_[1] = std::stod(sss[1]);
                 }
                 if (sss.size() >= 3 && sss[2].size() > 0) {
-                    branch_score_[2] = std::stod(sss[2]);
+                    opts_.branch_score_[2] = std::stod(sss[2]);
                 }
             } else if (kv[0] == "msel") {
-                min_selected = std::stoi(kv[1]);
+                opts_.min_selected = std::stoi(kv[1]);
             } else if (kv[0] == "wr") {
                 auto ws = SplitStringByChar(kv[1], ',');
                 if (ws.size() != 2) LOG(ERROR)("paramter 'weight' format is 0.2,0.8");
-                weight_range_[0] = std::stod(ws[0]);
-                weight_range_[1] = std::stod(ws[1]);
+                opts_.weight_range_[0] = std::stod(ws[0]);
+                opts_.weight_range_[1] = std::stod(ws[1]);
             } else {
                 LOG(ERROR)("Not support parameter: score=...%s...", ss[i].c_str());
             }
@@ -247,7 +247,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
        // if (cols[col].queries[0]) cols[col].weight += 1;
         for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
             if (cols[col].queries[i+1] && query_infos_.selected_.count(i) > 0) {
-                cols[col].weight += query_infos_.scores_[i].WeightInGraph(score_range_, weight_range_);
+                cols[col].weight += query_infos_.scores_[i].WeightInGraph(score_range_, opts_.weight_range_);
                 cols[col].selected += 1;
             }
         }
@@ -292,7 +292,7 @@ void AlignmentGraph::Reconstruct(const std::vector<Segment>& segs) {
     std::vector<std::string> cns;
     for (const auto& seg : segs) {
         std::string s= ReconstructSimple(seg);
-        if (seg.type == 0 || seg.end.col - seg.begin.col > max_bubble_length_ ) {
+        if (seg.type == 0 || seg.end.col - seg.begin.col > opts_.max_bubble_length_ ) {
             cns.push_back(ReconstructSimple(seg));
         } else {
             cns.push_back(ReconstructComplex(seg));
@@ -810,8 +810,7 @@ void AlignmentGraph::ComputeSimilarity4() {
         }
     
     }
-
-    query_infos_.SelectReads3(min_selected, range_);
+    query_infos_.SelectReads3(opts_.min_selected, range_);
 }
    
 // structure for analyzing important location and branches
@@ -1217,120 +1216,6 @@ void AlignmentGraph::VerifyConsistent(std::vector<ImportantBranch>& brs) {
 }
 
 
-void AlignmentGraph::QueryInfos::SelectReads(int min_sel) {
-
-    // select queries for correction
-    std::vector<int> score_index(scores_.size());
-    for (size_t i = 0; i < score_index.size(); ++i) {
-        score_index[i] = i;
-    }
-    
-    std::sort(score_index.begin(), score_index.end(), [this](int a, int b) {
-        return scores_[a].Weight() > scores_[b].Weight();
-    });
-
-    auto threshold = FindScoreThreshold2();
-    DEBUG_printf("threshold %f\n", threshold);
-    
-    int count0 = 0;     
-    int count1 = 0;
-    int count2 = 0;
-    for (auto s : scores_) {
-        if (s.Weight() > threshold ) count0 ++;
-        else if (s.Weight() == threshold ) count1 ++;
-        else count2++;
-    }
-
-    selected_.clear();
-    int ccc = count0;   
-    size_t selsize = std::max(std::min<int>(ccc*1.0 + count1, (ccc+count1+count2)*3/2),   std::min(min_sel, ccc*2));
-    selsize = std::max<size_t>(min_sel, selsize);
-
-    for (size_t i=0; i<score_index.size(); ++i) {
-        selected_.insert(score_index[i]);
-        if (i >= selsize) break;
-    }
-}
-
-void AlignmentGraph::QueryInfos::SelectReads2(size_t min_sel, const std::array<size_t,2> &range) {
-
-    // select queries for correction
-    std::vector<double> score_left;
-    std::vector<double> score_right;
-    std::vector<double> score_all;
-
-    size_t mid = (range[0] + range[1]) / 2;
-    size_t len = (range[1] - range[0]) / 2;
-    size_t left_range = mid - len / 2;
-    size_t right_range = mid + len / 2;
-
-    size_t comm = 0;
-    for (const auto &s : scores_) {
-        auto m = (s.tstart + s.tend) / 2;
-        auto w = s.Weight();
-        int c = 0;
-        if (m <= mid || s.tstart <= left_range) {
-            score_left.push_back(w);
-            //printf("w-left: %f\n", w);
-            c++;
-        } 
-        if (m >= mid || s.tend >= right_range) {
-            score_right.push_back(w);
-            //printf("w-right: %f\n", w);
-            c++;
-        }
-        if (c == 2) comm ++;
-        score_all.push_back(w);
-        //printf("w-all: %f\n", w);
-    }
-
-    //printf("comm: %zd / %zd\n", comm, scores_.size());
-    double th_left = 2.0;
-    double th_right = 2.0;
-    if (comm < scores_.size() /2 ) {
-        th_left = std::max(0.0, FindScoreThreshold3(score_left)-0.000001);
-        th_right = std::max(0.0, FindScoreThreshold3(score_right)-0.000001);
-    } 
-    double th_all = std::max(0.0, FindScoreThreshold3(score_all));
-
-
-    //printf("th: %f %f %f\n", th_left, th_right, th_all);
-
-    //assert(selected_.size() == 0);
-    selected_.clear();
-    for (size_t i = 0; i < scores_.size(); ++i) {
-        const auto &s = scores_[i];
-        auto m = (s.tstart + s.tend) / 2;
-        auto w = s.Weight();
-        if ((m <= mid || s.tstart <= left_range) && w > th_left) {
-            selected_.insert(i);
-        } 
-        if ((m >= mid || s.tend >= right_range) && w > th_right) {
-            selected_.insert(i);
-        }
-        if (w >= th_all) {
-            selected_.insert(i);
-        }
-    }
-
-    if (selected_.size() < min_sel) {
-        std::vector<size_t> score_index(scores_.size());
-        for (size_t i=0; i<score_index.size(); ++i) {
-            score_index[i] = i;
-        }
-        
-        std::sort(score_index.begin(), score_index.end(), [this](int a, int b) {
-            return scores_[a].Weight() > scores_[b].Weight();
-        });
-
-        for (size_t i=0; i<score_index.size(); ++i) {
-            selected_.insert(score_index[i]);
-            if (selected_.size() >= min_sel) break;
-        }
-    }
-}
-
-
 void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<size_t,2> &range) {
 
     // select queries for correction
@@ -1431,194 +1316,6 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
             selected_.insert(score_index[i]);
             if (selected_.size() >= min_sel) break;
         }
-    }
-}
-
-double AlignmentGraph::QueryInfos::FindScoreThreshold() {
-
-    // parameters b w
-    const double b = 0.01;
-    const int w = 10;
-
-    int n = int(2 / b) + 1;
-    std::vector<int> hist(n, 0);
-
-    for (auto s : scores_) {
-        hist[int((s.Weight() + 1) / b)] += 1;
-    }
-
-    std::vector<int> smoothed(hist.size()-w+1, 0);
-    smoothed[0] = std::accumulate(hist.begin(), hist.begin()+w, 0);
-    for (size_t i=1; i + w <hist.size(); ++i) {
-        DEBUG_printf("hist: %zd %d\n", i, hist[i]);
-        smoothed[i] = smoothed[i-1] - hist[i-1] + hist[i-1+w];
-        DEBUG_printf("smooth: %zd %d\n", i, smoothed[i]);
-    }
-
-    std::vector<std::array<int, 3>> peaks;  // { left, right, peak}
-    std::vector<int> troughs;
-
-    int state = 0;
-    int ps = 0;
-    for (size_t i = 0 ; i < smoothed.size(); ++i) {
-        if (state == 0) {
-            if (smoothed[i] >= 6) {
-                ps = i;
-                state = 1;
-            }
-        } else if (state == 1) {
-            if (smoothed[i] < std::max<int>(smoothed[ps] * 0.8, 6)) {
-                int end = i - 1;
-                int start = ps;
-                for (int ii = ps; ii > 0; ii--) {
-                    if (smoothed[ii] >= smoothed[ps] * 0.8 && smoothed[ii] >= 6) {
-                        start = ii;
-                    } else {
-                        break;
-                    }
-                }
-                peaks.push_back({start, end, ps});
-                DEBUG_printf("pushpeak %d %d %d\n", start, end, ps);
-                state = 2;
-                ps = i;
-            } else {
-                if (smoothed[i] > smoothed[ps]) {
-                    ps = i;
-                }
-            }
-        } else if (state == 2) {        // find troughs
-            if (smoothed[i] * 0.8 > smoothed[ps] ) {
-                state = 0;
-            } else {
-                if (smoothed[i] < smoothed[ps]) {
-                    ps = i;
-                }
-            }
-        }
-    }
-
-    DEBUG_printf("peak: %zd\n", peaks.size());
-    
-
-    if (peaks.size() >= 2) {
-        const auto &last0 = peaks.back();
-        const auto &last1 = peaks[peaks.size()-2];
-
-        return (last1[1] + w - 1 + last0[0])/2 * b - 1;
-        
-        
-    } else if (peaks.size() == 1) {
-        const auto &last = peaks.back();
-        return (last[0] + last[1] + w - 1)/2 * b - 1;
-    } else {
-        return 0.0;
-    }
-}
-
-
-double AlignmentGraph::QueryInfos::FindScoreThreshold1() {
-
-    // select queries for correction
-    std::vector<size_t> score_index(scores_.size());
-    for (size_t i=0; i<score_index.size(); ++i) {
-        score_index[i] = i;
-    }
-
-    std::sort(score_index.begin(), score_index.end(), [this](int a, int b) {
-        return scores_[a].Weight() > scores_[b].Weight();
-    });
-
-    // TODO two parameters: ratio and minimum number used for calculating MAD 
-    size_t count = std::max<size_t>(std::min<size_t>(0, score_index.size()), score_index.size() / 4);
-    std::vector<double> data(count, 0);
-    for (size_t i=0; i < count; ++i) {
-        data[i] = scores_[score_index[i]].Weight();
-    }
-
-    double median = 0;
-    double mad = 0;
-    ComputeMedianAbsoluteDeviation(data, median, mad);
-
-    return median-3*1.4826*mad;
-}
-
-
-double AlignmentGraph::QueryInfos::FindScoreThreshold2() {
-
-    // parameters b w
-    const double b = 0.01;
-    const int w = 10;
-
-    int n = int(2 / b) + 1;
-    std::vector<int> hist(n, 0);
-
-    for (auto s : scores_) {
-        hist[int((s.Weight() + 1) / b)] += 1;
-    }
-
-    std::vector<int> smoothed(hist.size()-w+1, 0);
-    smoothed[0] = std::accumulate(hist.begin(), hist.begin()+w, 0);
-    for (size_t i=1; i + w <hist.size(); ++i) {
-        smoothed[i] = smoothed[i-1] - hist[i-1] + hist[i-1+w];
-    }
-
-    int state = 0;
-    int ps = 0;
-    int start = 0;
-    int end = 0;
-    int peak = 0;
-    int accu = std::accumulate(hist.end()-w+1, hist.end(), 0);
-    for (int i = smoothed.size() - 1 ; i > -1; --i) {
-        accu += hist[i];
-        if (state == 0) {
-            if (smoothed[i] >= 6) {
-                ps = i;
-                state = 1;
-                start = i;
-            }
-        } else if (state == 1) {
-            if (smoothed[i] < std::max<int>(smoothed[ps] * 0.8, 6) && std::abs(i-ps) > 3) {
-                DEBUG_printf("check peak %d %d %d\n", i, smoothed[i] , smoothed[ps]);
-                
-                peak = ps;
-                state = 2;
-                ps = i;
-            } else {
-                DEBUG_printf("check up %d %d %d\n", i, smoothed[i] , smoothed[ps]);
-                if (smoothed[i] > smoothed[ps]) {
-                    ps = i;
-                }
-            }
-        } else if (state == 2) {        // find troughs
-            DEBUG_printf("check low %d %d %d %d %zd\n", i, smoothed[i] , smoothed[ps], accu, scores_.size());
-            if (smoothed[i] * 0.8 > smoothed[ps] ) {
-                state = 0;
-                if (accu > std::max<int>(10, scores_.size() / 4)) break;    // TODO 可以设置更小的值，但需要检测峰之间的距离，并且取少量数据
-            } else {
-                if (smoothed[i] < smoothed[ps]) {
-                    ps = i;
-                }
-            }
-        }
-    }
-    
-    DEBUG_printf("troughs: %d, %d, %d, %d\n", start, end, ps, peak);
-    int all = std::accumulate(hist.begin(), hist.end(), 0);
-    int sel = std::accumulate(hist.begin()+ps, hist.end(), 0);
-    DEBUG_printf("troughs: %d %d, %d\n", accu, sel, all);
-    if (sel > all * 3 / 4) {
-        size_t accu = 0;
-        for (int i = hist.size() - 1; i > 0; --i) {
-            accu += hist[i];
-            if (accu > scores_.size() / 2) {
-                return i*b - 1;
-            }
-        }
-        return -1;
-
-        //return ((start + ps + w)/2 * b - 1)/2;
-    } else {
-        return (ps + w/2) * b - 1;
     }
 }
 
@@ -1759,10 +1456,9 @@ double mypow(double x, size_t n) { // GLIBC_2.29
 }
 
 double AlignmentGraph::LinkScoreCount(size_t col, size_t row, const Link& link) { 
-    //return link.count - cols[col].coverage*std::max(branch_score_*4/(4+row), 0.3); 
     
-    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
-    double compensate = std::max<double>(scale * cols[col].coverage, sopts_.min_coverage * branch_score_[0]);
+    double scale = std::max<double>(mypow(opts_.branch_score_[2], row)*opts_.branch_score_[0], opts_.branch_score_[1]);
+    double compensate = std::max<double>(scale * cols[col].coverage, sopts_.min_coverage * opts_.branch_score_[0]);
     return link.count - compensate;
 } 
 
@@ -1770,19 +1466,16 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
     double s = 0;
     for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
         if (link.seqs[i+1] && query_infos_.selected_.find(i) != query_infos_.selected_.end()) {
-            s += query_infos_.scores_[i].WeightInGraph(score_range_, weight_range_);
+            s += query_infos_.scores_[i].WeightInGraph(score_range_, opts_.weight_range_);
         }
     }
     if (link.seqs[0]) {
         s += 0.5; // TODO Target score 
     }
 
-    //double compensate = std::pow<double>(reduction_, row) * branch_score_;
-    //printf("score: %d %d %zd %f %f %f\n",row, col, cols[col].coverage, compensate, min_coverage_ * branch_score_ / cols[col].coverage, std::max(branch_score_*4/(4+row), 0.3));
-    //return s - std::max<double>(compensate*cols[col].weight, min_coverage_ * branch_score_ * cols[col].weight / cols[col].coverage );
 
-    double scale = std::max<double>(mypow(branch_score_[2], row)*branch_score_[0], branch_score_[1]);
-    double compensate = std::max<double>(scale * cols[col].weight, branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
+    double scale = std::max<double>(mypow(opts_.branch_score_[2], row)*opts_.branch_score_[0], opts_.branch_score_[1]);
+    double compensate = std::max<double>(scale * cols[col].weight, opts_.branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
     
     return s - compensate;
 }

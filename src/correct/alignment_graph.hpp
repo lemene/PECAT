@@ -86,17 +86,17 @@ public:
             int q_t_one { 0 };
             int q_t_two { 0 };
             double Weight() const {
-                return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
+                return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
             }
         };
         std::vector<BlockScore> block_scores;
 
         double Weight() const {
-            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
+            return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph() const {
-            return cross == 0 ? 0.0 : (q_t_one - q_t_two)*1.0 / std::max(10, cross) ;
+            return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph(const std::array<double, 2>& r, const std::array<double,2>& wr) const {
@@ -114,14 +114,9 @@ public:
             selected_.clear();
             windows.clear();
         }
-        void SelectReads(int minsel);
-        void SelectReads2(size_t minsel, const std::array<size_t,2> &range);
         void SelectReads3(size_t minsel, const std::array<size_t,2> &range);
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rs) const ;
 
-        double FindScoreThreshold();
-        double FindScoreThreshold1();
-        double FindScoreThreshold2();
         double FindScoreThreshold3(const std::vector<double>& score) const;
         size_t GetBlockSize() const;
         std::array<size_t, 3> GetWindowSize(const std::array<size_t, 2> &range) const;
@@ -144,11 +139,15 @@ public:
         int BranchThreshold(int cov);
         std::array<int, 2>      range {{10, 200}};
         std::array<float, 2>    rate {{0.4, 0.25}};
+
+        double reduction_ { 0.8 };
+        int min_selected { 7 };
+        int max_bubble_length_ { 100 };
+            
+        std::array<double, 2> weight_range_ { {0.4, 0.8 }};
+        std::array<double, 3> branch_score_ { {0.4, 0.3, 0.8} };
     };
 
-    struct BlockRange {
-
-    };
 
     AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds);
 
@@ -231,11 +230,6 @@ protected:
     std::array<size_t,2> range_;
     std::array<size_t,2> true_range_ {{0, 0}};
     std::array<double, 2> score_range_;
-    std::array<double, 2> weight_range_ { {0.4, 0.8 }};
-    std::array<double, 3> branch_score_ { {0.4, 0.3, 0.8} };
-    double reduction_ { 0.8 };
-    int min_selected { 20 };
-    int max_bubble_length_ { 100 };
     Options opts_;
 
     const CrrOptions &sopts_;
