@@ -1509,11 +1509,22 @@ void AlignmentGraph::SaveGraph(const std::string &fname, size_t s, size_t e) con
                 auto &b = r[ib];
             
                 for (auto l: b.links) {
-                    if (l.prev.col != -1)
+                    if (l.prev.col != -1) {
                         of << i << "_" << ir << "_" << "ACGT-"[ib] << ", "  
                            << l.prev.col << "_" << l.prev.row << "_" << "ACGT-"[l.prev.base] << "," 
-                           << l.count << "," 
-                           << l.seqs.to_string() << "\n";
+                           << l.count << "," ;
+
+                        if (l.seqs[0]) {
+                            of << dataset_.QueryStringById(tid_) ;
+                        }
+
+                        for (size_t i = 0; i < query_infos_.scores_.size(); ++i) {
+                            if (l.seqs[i+1]) {
+                                of << '-' << dataset_.QueryStringById(query_infos_.scores_[i].qid);
+                            }
+                        }
+                        of << '\n';
+                    }
                 }
             }
         }

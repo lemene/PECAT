@@ -77,7 +77,7 @@ bool Ksw2Aligner::Align(const char* qseq, size_t qsize, const char* tseq, size_t
     int gapo = 4;
     int gape = 2;
     int zdrop = 200;
-    int bw = int(500*1.5+1);
+    int bw = int(1000*1.5+1);
     int8_t mat[25] = {
         a, b, b, b, ambi,
         b, a, b, b, ambi,
@@ -93,20 +93,20 @@ bool Ksw2Aligner::Align(const char* qseq, size_t qsize, const char* tseq, size_t
     size_t qstart = qrange[0];
     size_t qend = qrange[1];
 
-    uint8_t  c[256];
-	memset(c, 4, 256);
-	c['A'] = c['a'] = 0; c['C'] = c['c'] = 1;
-	c['G'] = c['g'] = 2; c['T'] = c['t'] = 3; // build the encoding table
 
-    std::vector<uint8_t> qs(qend-qstart);
-    for (size_t i=0; i<qs.size(); ++i) {
-        qs[i] = qseq[i+qstart];
-    }
+    auto rs = ExtendRight((const uint8_t*)(qseq + qend), qsize - qend, (const uint8_t*)(tseq + tend), tsize - tend);
+    DEBUG_printf("ksw2: right %zd, %zd\n", rs[0], rs[1]);
 
-    std::vector<uint8_t> ts(tend-tstart);
-    for (size_t i=0; i<ts.size(); ++i) {
-        ts[i] = tseq[i+tstart];
-    }
+    qend += rs[0];
+    tend += rs[1];
+
+    rs = ExtendLeft((const uint8_t*)(qseq), qstart, (const uint8_t*)(tseq), tstart);
+    DEBUG_printf("ksw2: left %zd, %zd\n", rs[0], rs[1]);
+    qstart -= rs[0];
+    tstart -= rs[1];
+
+    const uint8_t* qs = (const uint8_t*)(qseq + qstart);
+    const uint8_t* ts = (const uint8_t*)(tseq + tstart);
 
     //  ksw_extz(0, qs, &qseq[0], ts, &tseq[0], 5, mat, gapo, gape, bw, zdrop, KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT|KSW_EZ_REV_CIGAR, &ez);
     ksw_extz(0, qend-qstart, &qs[0], tend-tstart, &ts[0], 5, mat, gapo, gape, bw, zdrop, 0, &ez);
@@ -133,62 +133,45 @@ bool Ksw2Aligner::Align(const char* qseq, size_t qsize, const char* tseq, size_t
 
 
 
-// std::array<int, 2> Aligner::ExtendAlignment(const uint8_t *t, int tlen, const uint8_t *q, int qlen) {
+std::array<int, 2> Ksw2Aligner::ExtendRight(const uint8_t *q, int qlen, const uint8_t *t, int tlen) {
     
-//     // parameter from minimap2
-//     int8_t a = 2;      // score of match
-//     int8_t b = -4;     // score of mismatch
-//     int8_t ambi = 1;
-//     int gapo = 4;
-//     int gape = 2;
-//     int zdrop = 200;
-//     int bw = int(500*1.5+1);
-//     int8_t mat[25] = {
-//         a, b, b, b, ambi,
-//         b, a, b, b, ambi,
-//         b, b, a, b, ambi,
-//         b, b, b, a, ambi, 
-//         ambi, ambi, ambi, ambi, ambi, 
-//     };
+    // parameter from minimap2
+    int8_t a = 2;      // score of match
+    int8_t b = -4;     // score of mismatch
+    int8_t ambi = 1;
+    int gapo = 4;
+    int gape = 2;
+    int zdrop = 200;
+    int bw = int(500*1.5+1);
+    int8_t mat[25] = {
+        a, b, b, b, ambi,
+        b, a, b, b, ambi,
+        b, b, a, b, ambi,
+        b, b, b, a, ambi, 
+        ambi, ambi, ambi, ambi, ambi, 
+    };
 
-//     ksw_extz_t ez;
-//     memset(&ez, 0, sizeof(ksw_extz_t));
-//     //  ksw_extz(0, qs, &qseq[0], ts, &tseq[0], 5, mat, gapo, gape, bw, zdrop, KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT|KSW_EZ_REV_CIGAR, &ez);
-//     ksw_extz(0, qlen, q, tlen, t, 5, mat, gapo, gape, bw, zdrop, KSW_EZ_EXTZ_ONLY, &ez);
-//     kfree(0, ez.cigar);
+    ksw_extz_t ez;
+    memset(&ez, 0, sizeof(ksw_extz_t));
+    //  ksw_extz(0, qs, &qseq[0], ts, &tseq[0], 5, mat, gapo, gape, bw, zdrop, KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT|KSW_EZ_REV_CIGAR, &ez);
+    ksw_extz(0, qlen, q, tlen, t, 5, mat, gapo, gape, bw, zdrop, KSW_EZ_EXTZ_ONLY|KSW_EZ_RIGHT, &ez);
+    kfree(0, ez.cigar);
         
-//     int qend = ez.reach_end ? qlen : (0 + ez.max_q + 1);
-//     int tend = ez.reach_end ? (0 + ez.mqe_t + 1) : (0 + ez.max_t + 1);
-//     return {tend, qend};
-// }
+    int qend = ez.reach_end ? qlen : (0 + ez.max_q + 1);
+    int tend = ez.reach_end ? (0 + ez.mqe_t + 1) : (0 + ez.max_t + 1);
+    return {qend, tend};
+}
 
-// void Aligner::ExtendLeft(uint8_t *t, int tlen, uint8_t *q, int qlen, int &tstart, int &qstart) {
-
-//         std::reverse(t, t+tstart);
-//         std::reverse(q, q+qstart);
-//         auto ends = Aligner::ExtendAlignment(t, tstart, q, qstart);
-//         std::reverse(t, t+tstart);
-//         std::reverse(q, q+qstart);
-
-//         tstart -= ends[0];
-//         qstart -= ends[1];
-// }
-
-// void Aligner::ExtendRight(const uint8_t *t, int tlen, const uint8_t *q, int qlen, int &tend, int &qend) {
+std::array<int, 2> Ksw2Aligner::ExtendLeft( const uint8_t *q, int qlen, const uint8_t *t, int tlen) {
     
-//     assert(tlen > tend && qlen > qend);
+    std::vector<uint8_t> vq(q, q+qlen);
+    std::reverse(vq.begin(), vq.end());
+    std::vector<uint8_t> vt(t, t+tlen);
+    std::reverse(vt.begin(), vt.end());
+    auto ends = ExtendRight(&vq[0], vq.size(), &vt[0], vt.size());
+    return ends;
+}
 
-//     auto tostr = [](const uint8_t *t, int tlen) {
-//         std::string str(tlen, '-');
-//         for (int i=0; i<tlen; ++i) {
-//             str[i] = "ACGT"[t[i]];
-//         }
-//         return str;
-//     };
-//     auto ends = ExtendAlignment(t+tend, tlen-tend, q+qend, qlen-qend);
-//     tend += ends[0];
-//     qend += ends[1];
-// }
 
 // Alignment Aligner::AlignEdlib1(const std::string &query, const std::array<int, 4> &range) {
 //     Alignment result(target_, query);

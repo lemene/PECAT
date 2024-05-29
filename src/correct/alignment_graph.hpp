@@ -145,7 +145,7 @@ public:
         int max_bubble_length_ { 100 };
             
         std::array<double, 2> weight_range_ { {0.4, 0.8 }};
-        std::array<double, 3> branch_score_ { {0.4, 0.3, 0.8} };
+        std::array<double, 3> branch_score_ { {0.5, 0.5, 0.8} };
     };
 
 
