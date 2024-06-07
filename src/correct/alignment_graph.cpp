@@ -1163,8 +1163,8 @@ void AlignmentGraph::VerifyConsistent(std::vector<ImportantBranch>& brs) {
 
     const int MIN_COUNT = 6;
     const int MIN_INV = 100;
-    const double MAX_CONSIST = 0.80;
-    const double MIN_CONSIST = 0.75;
+    const double MAX_CONSIST = 0.75;
+    const double MIN_CONSIST = 0.70;
     const double MIN_CONSIST_COUNT = 2;
     const double MIN_CONSIST_RATE = 0.1;
 

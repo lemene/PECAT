@@ -372,6 +372,7 @@ bool ReadCorrect::Worker::Correct(int id) {
                         best_identity = al_local.Identity();
                         r = r_local;
                         al = al_local;
+                        DEBUG_printf("ext d = %d\n", al.distance);
                     }
                     if (j >= 3) break;
                 }
@@ -418,7 +419,7 @@ bool ReadCorrect::Worker::Correct(int id) {
                aligned_.push_back(al);
             }
         }
-
+        DEBUG_printf("aligned_.size: %zd\n", aligned_.size());
         for (auto &al : aligned_) { al.Rearrange(); }
         graph_.Build(target, range, aligned_);
         graph_.Consensus();
@@ -455,45 +456,45 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
             DEBUG_printf("al_local_group_i: %d - %zd\n", r.first, r.second);
         }
 
-        size_t MIN_COV = 5;
-        size_t threshold = 10;
-        if (vdist.size() > MIN_COV) {
-            std::sort(vdist.begin(), vdist.end());  // ascending
+        // size_t MIN_COV = 5;
+        // size_t threshold = 10;
+        // if (vdist.size() > MIN_COV) {
+        //     std::sort(vdist.begin(), vdist.end());  // ascending
 
-            size_t sum = std::accumulate(vdist.begin(), vdist.begin()+MIN_COV, 0);
+        //     size_t sum = std::accumulate(vdist.begin(), vdist.begin()+MIN_COV, 0);
 
-            for (size_t i = MIN_COV; i < vdist.size(); ++i) {
-                size_t ave = sum / (i-1);
-                DEBUG_printf("al_local_th (%zd) %zd %zd %zd\n", i, ave, vdist[i], vdist[i-1]);
-                if (vdist[i] - vdist[i-1] < ave) {
-                    threshold = std::max<size_t>(threshold, vdist[i]);
-                    sum += vdist[i];
-                } else {
-                    if (i < 12) {
-                        threshold = vdist[std::min<size_t> (12, vdist.size()-1)];
-                    }
-                    break;
-                }
-            }
+        //     for (size_t i = MIN_COV; i < vdist.size(); ++i) {
+        //         size_t ave = sum / (i-1);
+        //         DEBUG_printf("al_local_th (%zd) %zd %zd %zd\n", i, ave, vdist[i], vdist[i-1]);
+        //         if (vdist[i] - vdist[i-1] < ave) {
+        //             threshold = std::max<size_t>(threshold, vdist[i]);
+        //             sum += vdist[i];
+        //         } else {
+        //             if (i < 12) {
+        //                 threshold = vdist[std::min<size_t> (12, vdist.size()-1)];
+        //             }
+        //             break;
+        //         }
+        //     }
 
-        }
-        DEBUG_printf("al_local_th = %d, %zd\n", threshold,  vdist.size());
+        // }
+        // DEBUG_printf("al_local_th = %d, %zd\n", threshold,  vdist.size());
         
 
-        // size_t threshold = 1000;
-        // size_t cov = 30;
-        // if (vdist.size() == 0) continue;
-        // if (vdist.size() <= 10) {
-        //     auto m = ComputeMeanAbsoluteDeviation(vdist);
-        //     threshold = m[0] + 6*1.253*m[1];
-        //     DEBUG_printf("al_local_th mean = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
-        // } else {
-        //     std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
-        //     std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
-        //     auto m = ComputeMedianAbsoluteDeviation(oks);
-        //     threshold = m[0] + 6*1.4826*m[1];
-        //     DEBUG_printf("al_local_th median = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
-        // }
+        size_t threshold = 1000;
+        size_t cov = 30;
+        if (vdist.size() == 0) continue;
+        if (vdist.size() <= 10) {
+            auto m = ComputeMeanAbsoluteDeviation(vdist);
+            threshold = m[0] + 6*1.253*m[1];
+            DEBUG_printf("al_local_th mean = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
+        } else {
+            std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
+            std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
+            auto m = ComputeMedianAbsoluteDeviation(oks);
+            threshold = m[0] + 6*1.4826*m[1];
+            DEBUG_printf("al_local_th median = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+        }
 
         for (size_t i = 0; i < distances.size(); ++i) {
             if (distances[i].second > std::max<size_t>(threshold, 10)) {

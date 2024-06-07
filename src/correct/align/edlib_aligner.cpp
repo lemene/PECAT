@@ -98,7 +98,7 @@ bool EdlibAligner::ExtendRight(const Seq &q, const Seq &t, size_t qstart, size_t
         tleft = t.size - tindex;
     }
 
-    if (qleft < block_size_*1.5 || tleft < block_size_*1.5) {
+    if (qleft < block_size_*2 || tleft < block_size_*2) {
         if (qleft <= tleft) {
             size_t qbsize = qleft;
             size_t tbsize = std::min<size_t>(qleft*1.5, t.size-tindex);
