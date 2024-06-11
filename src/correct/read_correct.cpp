@@ -455,34 +455,9 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
             }
             DEBUG_printf("al_local_group_i: %d - %zd\n", r.first, r.second);
         }
-
-        // size_t MIN_COV = 5;
-        // size_t threshold = 10;
-        // if (vdist.size() > MIN_COV) {
-        //     std::sort(vdist.begin(), vdist.end());  // ascending
-
-        //     size_t sum = std::accumulate(vdist.begin(), vdist.begin()+MIN_COV, 0);
-
-        //     for (size_t i = MIN_COV; i < vdist.size(); ++i) {
-        //         size_t ave = sum / (i-1);
-        //         DEBUG_printf("al_local_th (%zd) %zd %zd %zd\n", i, ave, vdist[i], vdist[i-1]);
-        //         if (vdist[i] - vdist[i-1] < ave) {
-        //             threshold = std::max<size_t>(threshold, vdist[i]);
-        //             sum += vdist[i];
-        //         } else {
-        //             if (i < 12) {
-        //                 threshold = vdist[std::min<size_t> (12, vdist.size()-1)];
-        //             }
-        //             break;
-        //         }
-        //     }
-
-        // }
-        // DEBUG_printf("al_local_th = %d, %zd\n", threshold,  vdist.size());
         
-
         size_t threshold = 1000;
-        size_t cov = 30;
+        size_t cov = 60;
         if (vdist.size() == 0) continue;
         if (vdist.size() <= 10) {
             auto m = ComputeMeanAbsoluteDeviation(vdist);

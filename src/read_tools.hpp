@@ -198,6 +198,7 @@ public:
         ap.AddPositionOption(ofname_, "ofname", "output file");
         ap.AddNamedOption(names_, "names", "read names, splitted by a comma");
         ap.AddNamedOption(names_fname_, "names_fname", "read names, splitted by a newline");
+        ap.AddNamedOption(complement_, "complement", "complement set of names");
 
         return ap;
     }
@@ -207,6 +208,7 @@ protected:
     std::string names_;
     std::string names_fname_;
     std::string ofname_;
+    bool complement_ { false };
 };
 
 
