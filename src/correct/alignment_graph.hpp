@@ -86,17 +86,17 @@ public:
             int q_t_one { 0 };
             int q_t_two { 0 };
             double Weight() const {
-                return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
+                return cross == 0 ? 0.0 : (q_t_one*1 - q_t_two)*1.0 / std::max(10, cross) ;
             }
         };
         std::vector<BlockScore> block_scores;
 
         double Weight() const {
-            return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
+            return cross == 0 ? 0.0 : (q_t_one*1 - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph() const {
-            return cross == 0 ? 0.0 : (0 - q_t_two)*1.0 / std::max(10, cross) ;
+            return cross == 0 ? 0.0 : (q_t_one*1 - q_t_two)*1.0 / std::max(10, cross) ;
         }
 
         double WeightInGraph(const std::array<double, 2>& r, const std::array<double,2>& wr) const {
