@@ -28,7 +28,7 @@ libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_sto
 			 assemble/read_variants.cpp assemble/string_node.cpp assemble/string_edge.cpp \
 			 assemble/asm_dataset.cpp assemble/asm_options.cpp assemble/stat_readinfo.cpp\
 			 ../thirdparty/edlib/edlib/src/edlib.cpp correct/aligner.cpp ./correct/dw.cpp  ./correct/diff.cpp  \
-			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp \
+			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp ./kmer/kmer.cpp\
 			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp ./utils/project_file.cpp\
 			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
 			 $(assemble_src)

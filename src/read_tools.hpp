@@ -165,6 +165,31 @@ protected:
 };
 
 
+class Program_Weight : public Program {
+public:
+    Program_Weight() {
+        name_ = "weight";
+        desc_ = "select sequences by kmer frequence";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddNamedOption(base_size_, "base_size", "total number of selected bases");
+        ap.AddNamedOption(min_length_, "min_length", "mininum length of reads");
+        ap.AddNamedOption(id2name_, "id2name", "if it is set, the names of sequences will be replaced with serial numbers");
+        ap.AddPositionOption(ifname_, "ifname", "input file");
+        ap.AddPositionOption(ofname_, "ofname", "output file");
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string ifname_;
+    std::string ofname_;
+    std::string kmer_freq_fname_;
+    int min_length_ { 0 }; 
+    long long base_size_ { 0 };
+    std::string id2name_;
+};
+
 class Program_Fasta2Fastq : public Program {
 public:
     Program_Fasta2Fastq() {

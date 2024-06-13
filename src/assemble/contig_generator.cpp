@@ -794,7 +794,7 @@ std::vector<size_t>  ContigGenerator::Contig::BubbleLinkCountsByHic(const class 
             }
             oss << "\n";
         }
-        DUMPER["asm"]("%s", oss.str());
+        DUMPER["asm"]("%s", oss.str().c_str());
 
     };
     dump_score();
