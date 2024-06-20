@@ -95,7 +95,7 @@ void KmerBin::Running() {
     LOG(INFO)("End classify reads");
 }
 
-KmerBin::KmerSet0 KmerBin::LoadKmers0(const std::string &fname) {
+auto KmerBin::LoadKmers0(const std::string &fname) -> KmerSet0 {
     KmerSet0 kmers;
     std::mutex mutex_gen;
     std::mutex mutex_comb;
@@ -138,7 +138,7 @@ KmerBin::KmerSet0 KmerBin::LoadKmers0(const std::string &fname) {
     return kmers;
 }
 
-KmerBin::KmerSet KmerBin::LoadKmers1(const std::string &fname) {
+auto KmerBin::LoadKmers1(const std::string &fname) -> KmerSet {
     KmerSet kmers;
 
     kmers.k = GetKmerLength(fname);
@@ -206,7 +206,7 @@ size_t KmerBin::CheckKmerSet(const KmerSet& patkmers, const KmerSet& matkmers, c
     return k;
 }
 
-KmerBin::KmerId KmerBin::KmerStringToId(const std::string& str) {
+auto KmerBin::KmerStringToId(const std::string& str) -> KmerId{
     static DnaSerialTable table;
     KmerId id = 0;
     for (auto c : str) {
@@ -229,39 +229,4 @@ size_t KmerBin::GetKmerLength(const std::string &fname) {
     return 0;
 }
 
-void KmerBin::KmerSet::BuildIndex() {
-    index.assign(1024, {kmers.size(),0});
-
-    for (size_t i = 0; i<kmers.size(); ++i) {
-        size_t idx = kmers[i].kmer >> (k*2 - 10);
-
-        if (index[idx][0] > i) {
-            index[idx][0] = i;
-        }
-
-        if (index[idx][1] < i+1) {
-            index[idx][1] = i+1;
-        }
-    }
-
-}
-
-bool KmerBin::KmerSet1::Find(KmerId kid) const {
-    auto se = index[kid >> (k*2 - 10)];
-    size_t s = se[0]; 
-    size_t e = se[1];
-    //printf("s e %zd %zd\n", s, e);
-
-    while (s < e) {
-        size_t m = (s+e) / 2;
-        if (kmers[m].kmer == kid) {
-            return true;
-        } else if (kmers[m].kmer < kid) {
-            s = m+1;
-        } else {
-            e = m;
-        }
-    }
-    return false;
-}
 } // namespace fsa
