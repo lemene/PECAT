@@ -493,7 +493,7 @@ void Program_Sub::Running() {
         }
     }
 
-    LOG(INFO)("subreads size: %zd", names.size());
+    LOG(INFO)("subreads size: %zd, %s", names.size(), (complement_?"complement":"") );
     FilterReadFile(ifname_, ofname_, "", [&names, this](SeqReader::Item& item) {
         return (!complement_ && names.find(item.head) != names.end()) ||
                 (complement_ && names.find(item.head) == names.end());

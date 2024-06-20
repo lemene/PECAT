@@ -6,6 +6,8 @@
 #include "assemble/read_variants.hpp"
 #include "correct/corrector.hpp"
 
+#include "mapping.hpp"
+
 namespace fsa {
 
 void Program_Filter::Running1() {
@@ -879,6 +881,14 @@ void Program_Accuracy2::Running() {
     }
     LOG(INFO)("Diff: %zd, %zd, %zd, %zd",  alldiff.mat, alldiff.mis, alldiff.ins, alldiff.del);
 
+}
+
+
+void Program_Test::Running() {
+    Mapping mapping;
+    mapping.Load(ifname_);
+    mapping.BuildIndex();
+    mapping.QueryOverlaps(rname_);
 }
 
 } // namespace fsa

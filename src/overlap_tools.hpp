@@ -170,6 +170,27 @@ protected:
     int thread_size_ { 4 };
 };
 
+class Program_Test : public Program {
+public:
+    Program_Test() {
+        name_ = "test";
+        desc_ = "for testing";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "ifname", "paf file");
+        ap.AddPositionOption(rname_, "rname", "read name");
+        ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string ifname_;
+    std::string rname_;
+    int thread_size_ { 4 };
+};
+
 class OverlapTools : public MultiProgram {
 public:
     OverlapTools() {
@@ -179,6 +200,7 @@ public:
         Add(new Program_Sub());
         Add(new Program_Accuracy());
         Add(new Program_Accuracy2());
+        Add(new Program_Test());
     }
 };
 
