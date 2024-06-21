@@ -13,6 +13,7 @@ void CrrOptions::SetArguments(ArgumentParser &ap) {
 
     ap.AddNamedOption(filter0_opts_, "filter0", "overlap filtering options using at loading step", "");
     ap.AddNamedOption(filter1_opts_, "filter1", "overlap filtering options using at loading step", "");
+    ap.AddNamedOption(rd_2_ref_fname_, "rd_2_ref", "alignments between reads and reference", "");
     
     ap.AddNamedOption(read_name_, "read_name", "read name for correcting");
     ap.AddNamedOption(read_name_fname_, "read_name_fname", "Set read name for correcting");

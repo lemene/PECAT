@@ -6,7 +6,7 @@
 #include "assemble/read_variants.hpp"
 #include "correct/corrector.hpp"
 
-#include "mapping.hpp"
+#include "overlap/mapping.hpp"
 
 namespace fsa {
 
@@ -885,8 +885,9 @@ void Program_Accuracy2::Running() {
 
 
 void Program_Test::Running() {
-    Mapping mapping;
-    mapping.Load(ifname_);
+    OverlapStore ol_store;
+    ol_store.Load(ifname_);
+    Mapping mapping(ol_store);
     mapping.BuildIndex();
     mapping.QueryOverlaps(rname_);
 }

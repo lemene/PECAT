@@ -5,7 +5,8 @@ BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
              $(BUILD_OBJ_DIR)/bridge $(BUILD_OBJ_DIR)/assemble $(BUILD_OBJ_DIR)/correct/align $(BUILD_OBJ_DIR)/kmer \
-			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph
+			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph \
+			 $(BUILD_OBJ_DIR)/overlap
 
 simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./assemble/simplify/bridge.cpp \
 	./assemble/simplify/transitive.cpp ./assemble/simplify/cross.cpp ./assemble/simplify/low_quality.cpp \
@@ -22,16 +23,18 @@ phase_src = ./phase/hic_read_infos.cpp
 
 assemble_src = ./assemble/contig_generator.cpp
 
+overlap_src = ./overlap/mapping.cpp
+
 libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_store.cpp sequence.cpp\
              utility.cpp file_io.cpp seq_io.cpp overlap_store.cpp graph.cpp sequence_store.cpp\
 			 assemble/overlap_assemble.cpp simple_align.cpp assemble/string_graph.cpp \
 			 assemble/read_variants.cpp assemble/string_node.cpp assemble/string_edge.cpp \
 			 assemble/asm_dataset.cpp assemble/asm_options.cpp assemble/stat_readinfo.cpp\
 			 ../thirdparty/edlib/edlib/src/edlib.cpp correct/aligner.cpp ./correct/dw.cpp  ./correct/diff.cpp  \
-			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp mapping.cpp ./kmer/kmer.cpp\
+			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp  ./kmer/kmer.cpp\
 			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp ./utils/project_file.cpp\
 			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
-			 $(assemble_src)
+			 $(assemble_src) $(overlap_src)
 
 libfsa_src += $(wildcard ./correct/align/*.cpp)
 

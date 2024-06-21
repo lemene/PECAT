@@ -1,5 +1,7 @@
 #include "read_tools.hpp"
 
+#include <random>
+
 #include "overlap_store.hpp"
 #include "read_store.hpp"
 #include "sequence_store.hpp"

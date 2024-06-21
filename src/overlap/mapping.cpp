@@ -3,11 +3,6 @@
 namespace fsa {
 
 
-void Mapping::Load(const std::string &fname) {
-    ol_store_.Load(fname);
-
-}
-
 void Mapping::BuildIndex() {
     assert(sorted_by_start_.size() == 0 && "Rebuild");
     LOG(INFO)("sort overlaps by start position");
@@ -92,6 +87,7 @@ void Mapping::BuildQueryIndex() {
             curr.second[1] = i+1;
         }
     }
+    assert(queries_.find(curr.first) == queries_.end());
     queries_.insert(curr);
 }
 
@@ -109,28 +105,51 @@ std::unordered_set<Seq::Id> Mapping::GetMappedReads() const {
 }
 
 void Mapping::QueryOverlaps(const std::string &name) {
-    auto qid = ol_store_.GetStringPool().QueryIdByString(name);
-    LOG(INFO)("QID = %d %zd", qid, queries_.size());
-    if (qid != StringPool::NID) {
-        auto range = queries_.find(qid);
-        if (range != queries_.end()) {
-            auto qt = sorted_by_start_[range->second[0]];
+    auto id = ol_store_.GetStringPool().QueryIdByString(name);
+    if (id != StringPool::NID) {
+        QueryOverlaps(id);
+    }
+}
 
-            LOG(INFO)("QT = %d %d %d", qt->b_.start, qt->b_.end, qt->a_.len);
-            for (size_t i = range->second[1]; i < sorted_by_start_.size(); ++i) {
-                auto qq = sorted_by_start_[i];
+std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) {
+    assert (id != StringPool::NID) ;
 
-                LOG(INFO)("QQ = %d %d %d", qq->b_.start, qq->b_.end, qq->a_.len);
-                if (qq->b_.end > qt->b_.start) {
-                    printf("%s: %s\n", ol_store_.GetStringPool().QueryStringById(qq->a_.id).c_str(), qq->ToM4Line().c_str());
+    std::vector<std::array<const Overlap*, 2>> ols;
+
+    auto tgt = queries_.find(id);
+    if (tgt != queries_.end()) {
+        
+        for (size_t i = tgt->second[0]; i < tgt->second[1]; ++i) {
+            auto range = query_ranges_[i];
+            const Overlap* tol = sorted_by_start_[i];
+
+            for (size_t ii = range[1]; ii < sorted_by_start_.size(); ++ii) {
+                auto qol = sorted_by_start_[ii];
+                const int offset = 3000;
+                if (qol->b_.end >= tol->b_.start + offset && qol->b_.start + offset <= tol->b_.end ) {
+                    ols.push_back({qol, tol});
                 }
 
-                if (qq->b_.start > qt->b_.end) {
+                if (qol->b_.start > tol->b_.end) {
                     break;
                 }
             }
         }
+
     }
+
+    
 }
 
+Overlap Mapping::Pair::ToOverlap() const {
+    Overlap ol;
+    ol.a_.id = query->a_.id;
+    ol.a_.len = query->a_.len;
+    o.a_.strand = query->SameDirect() == target->SameDirect() ? 0 : 1;
+    
+    ol.b_.id = target->a_.id;
+    ol.b_.len = target->a_.len;
+    ol.b_.strand = 0;
+    
+}
 } // namespace fsa

@@ -59,6 +59,7 @@ public:
     std::string cread_fname_;
     std::string graph_fname_ {""};
     std::string infos_fname_ {""}; 
+    std::string rd_2_ref_fname_ { "" };
 
     int thread_size { 4 };
     int min_coverage { 4 };

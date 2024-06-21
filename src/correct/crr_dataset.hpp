@@ -5,6 +5,7 @@
 #include "overlap_store.hpp"
 #include "read_store.hpp"
 #include "corrector.hpp"
+#include "overlap/mapping.hpp"
 
 namespace fsa {
 
@@ -21,6 +22,26 @@ public:
     
     std::unique_ptr<Dispatcher> GetDispatcher();
     std::vector<std::vector<Seq::Id>> GroupReadIds() const;
+
+    class OlGroup {
+    public:
+        OlGroup(Seq::Id i) : id(i) {}
+        OlGroup(const OverlapGrouper::Group& gp) : id (gp.id), ols(gp.ols), index(gp.index) {}
+
+        bool Empty() const { return ols.size() == 0; }
+        size_t Size() const { return index.size(); }
+        size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
+        const Overlap* Get(size_t i, size_t j) { return ols[index[i][0]+j]; }
+
+        void Sort(double opt_ohwt);
+        std::vector<double> GetWeight(double opt_ohwt);
+
+        Seq::Id id;
+        std::vector<const Overlap*> ols;
+        std::vector<std::array<size_t, 2>> index;
+    };
+    OlGroup Get(int id) const { return OlGroup(grouper_.Get(id)); }
+    OlGroup Get2(int id) const;
 protected:
     void LoadReadIds();
     void LoadOverlaps();
@@ -35,6 +56,7 @@ public:
     OverlapStore ol_store_{string_pool_ };
     
     OverlapGrouper grouper_ { ol_store_ };
+    Mapping mapping_ { ol_store_ };
     
     std::vector<Seq::Id> read_ids_;
 };

@@ -73,7 +73,7 @@ void ReadCorrect::Correct() {
             if (oss_cread.tellp() > (int)flush_block) {
                 save_oss(oss_cread, oss_scores, worker.stat_info);
             }
-            progress.Forward(1);
+            progress.Forward(ids.size());
         }
 
         if (oss_cread.tellp() > 0) {
@@ -279,7 +279,7 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 
 
 bool ReadCorrect::Worker::Correct(int id) {
-    auto group = owner_.dataset_.grouper_.Get(id);
+    auto group = owner_.dataset_.Get(id);
     if (group.Empty()) return false;
 
     const DnaSeq& target = owner_.dataset_.read_store_.GetSeq(id);
