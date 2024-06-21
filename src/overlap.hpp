@@ -71,6 +71,8 @@ public:
             return std::min(a_.start, b_.len-b_.end) + AlignedLength() + std::min(a_.len-a_.end, b_.start);
         }
     }
+    size_t TargetLength() const { return b_.len; }
+    size_t QueryLength()  const { return a_.len; }
 
     bool IsContaining(int err) const;
     bool IsContained(int err) const;

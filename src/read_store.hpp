@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <atomic>
 #include "./utils/logger.hpp"
 #include "sequence.hpp"
 #include "seq_io.hpp"
@@ -30,6 +31,49 @@ public:
     const std::string& QueryNameById(Seq::Id id) const { return string_pool_.QueryStringById(id); }
     void SaveIdToName(const std::string& fname) const { string_pool_.Save(fname); }
 
+    template<typename F>
+    void ForEach(F f, size_t thread_size=1) {
+        std::atomic<size_t> index { GetIdLow() };
+        auto work_func = [&](size_t tid) {
+            for (size_t i = index.fetch_add(1); i < GetIdUp(); i = index.fetch_add(1)) {
+                f(i, GetSeq(i));
+            }
+        };
+        MultiThreadRun(thread_size, work_func);
+    }
+    
+    template<typename C>
+    void Save(const std::string& fasta, const std::string& id2name="", C isok=[](Seq::Id id, const DnaSeq& seq) {return true; }, size_t thread_size=1) {  
+        if (!id2name.empty()) SaveIdToName(id2name);
+
+        std::mutex mutex;
+        GzFileWriter writer(fasta);
+        auto combine_func = [&mutex, &writer](std::ostringstream &oss) {
+            std::lock_guard<std::mutex> lock(mutex);
+            writer.Flush(oss);
+        };
+        
+        std::atomic<size_t> index { GetIdLow() };
+        auto work_func = [&](size_t tid) {
+            std::ostringstream oss;
+            for (size_t i = index.fetch_add(1); i < GetIdUp(); i = index.fetch_add(1)) {
+                if (isok(i, GetSeq(i))) {
+                    if (!id2name.empty()) {
+                        oss << ">" << i << "\n" << *(GetSeq(i).ToString()) << "\n";
+                    } else {
+                        oss << ">" << QueryNameById(i) << "\n" << *(GetSeq(i).ToString()) << "\n";
+                    }
+                }
+                if (oss.tellp() > 1000000) {
+                    combine_func(oss);
+                }
+            }
+            combine_func(oss);
+        };
+        
+        MultiThreadRun(thread_size, work_func);
+    }
+
     const DnaSeq& GetSeq(Seq::Id id) const { assert(size_t(id) >= offset_); return items_[id-offset_].seq;  }
     const DnaSeq& GetSeq(const std::string &name) { return GetSeq(QueryIdByName(name)); }
 
@@ -37,6 +81,8 @@ public:
     size_t GetSeqLength(Seq::Id id) const { return GetSeq(id).Size(); }
 
     std::array<size_t, 2> GetIdRange() const { return {offset_, offset_ + Size()}; }
+    size_t GetIdLow() const { return offset_; }
+    size_t GetIdUp() const { return offset_ + Size(); }
     size_t Size() const { return items_.size(); }
 
     void Load(const std::string &fname, const std::string &type="", bool all=true, const std::unordered_set<Seq::Id>& seqids=std::unordered_set<Seq::Id>());

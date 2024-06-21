@@ -901,7 +901,7 @@ void OverlapGrouper::BuildIndex(size_t thread_size, const std::unordered_set<int
     index_[gp_id_tgt].by_target[1] = sorted_.size();
 }
 
-auto OverlapGrouper::Get(int id) -> Group {
+OverlapGrouper::Group OverlapGrouper::Get(int id) const {
     Group group(id);
     auto &ols = group.ols;
     auto &index = group.index;

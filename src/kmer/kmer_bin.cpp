@@ -95,90 +95,32 @@ void KmerBin::Running() {
     LOG(INFO)("End classify reads");
 }
 
-auto KmerBin::LoadKmers0(const std::string &fname) -> KmerSet0 {
-    KmerSet0 kmers;
-    std::mutex mutex_gen;
-    std::mutex mutex_comb;
-
-    kmers.k = GetKmerLength(fname);
-
-    const size_t block_size = 1000;
-    GzFileReader reader(fname);
-    auto generate_func = [&mutex_gen, &reader](std::vector<std::string> &lines) {
-        std::lock_guard<std::mutex> lock(mutex_gen);
-        return reader.GetLines(lines);
-    };
-
-    auto combine_func = [&mutex_comb, &kmers](std::unordered_map<KmerId, int>& ks) {
-        std::lock_guard<std::mutex> lock(mutex_comb);
-        kmers.kmers.insert(ks.begin(), ks.end());
-        ks.clear();
-    };
-
-    auto work_func = [block_size, generate_func, combine_func, &reader, this](size_t id) {
-        std::vector<std::string> lines(block_size);
-        std::unordered_map<KmerId, int> ks;
-
-        size_t sz = generate_func(lines);
-        while (sz > 0) {
-            
-            for (size_t i=0; i<sz; ++i) {
-                auto items = SplitStringBySpace(lines[i]);
-                ks[KmerStringToId(items[0])] = std::stoi(items[1]);
-            }
-            
-            combine_func(ks);
-            sz = generate_func(lines);
-        }
-    };
-    
-    MultiThreadRun(std::min<size_t>(thread_size_, 3), work_func);
-
-    LOG(INFO)("Load %zd kmers(k=%zd) from %s", kmers.kmers.size(), kmers.k, fname.c_str());
-    return kmers;
-}
-
-auto KmerBin::LoadKmers1(const std::string &fname) -> KmerSet {
-    KmerSet kmers;
-
-    kmers.k = GetKmerLength(fname);
-
-    GzFileReader reader(fname);
-    std::string line;
-    while (reader.GetLine(line)) {
-        auto items = SplitStringBySpace(line);
-        kmers.kmers.push_back({KmerStringToId(items[0]),std::stoi(items[1])});
-    }
-
-    LOG(INFO)("Load %zd kmers(k=%zd) from %s", kmers.kmers.size(), kmers.k, fname.c_str());
-    std::sort(kmers.kmers.begin(), kmers.kmers.end(), [](const KmerItem& a, const KmerItem &b) { return a.kmer < b.kmer; });
-    LOG(INFO)("Sort %zd kmers(k=%zd) from %s", kmers.kmers.size(), kmers.k, fname.c_str());
-    kmers.BuildIndex();
-    return kmers;
-}
 
 std::array<size_t, 3> KmerBin::CountKmers(size_t k, const std::string& seq, 
         const KmerSet& patkmers, const KmerSet& matkmers,const KmerSet& offkmers) {
     
     std::array<size_t, 3> count {0, 0, 0};
-    for (size_t i=0; i+k <= seq.size(); ++i) {
-        std::string s(seq.begin()+i, seq.begin()+i+k);
-        std::for_each(s.begin(), s.end(), [](char &c) { c = ::toupper(c); });
-        std::string s_rc = Seq::ReverseComplement(s);
+    KmerCount kc (k);
+    auto kseq = kc.CountAll(DnaSeq(seq));
 
-        auto kid = KmerStringToId(s);
-        auto vkid = KmerStringToId(s_rc);
+    // meryl ACTG
+    for (size_t i = 0; i < kseq.size(); ++i) {
+        auto kid = kseq[i][0];
+        auto vkid = kseq[i][1];
+        auto kmin = std::min(kid, vkid);
+        if (patkmers.Find(kmin)) count[0] ++;
+        if (matkmers.Find(kmin)) count[1] ++;
+        if (offkmers.Find(kmin)) count[2] ++;
 
-
-        if (patkmers.Find(kid) || patkmers.Find(vkid)) count[0] ++;
-        if (matkmers.Find(kid) || matkmers.Find(vkid)) count[1] ++;
-        if (offkmers.Find(kid) || offkmers.Find(vkid)) count[2] ++;
-        if (thread_size_ == 1) {
-            if (patkmers.Find(kid)) printf("%zd 1, %s\n", i, s.c_str());
-            if (patkmers.Find(vkid)) printf("%zd 1, %s\n", i, s_rc.c_str());
-            if (matkmers.Find(kid)) printf("%zd -1, %s\n", i, s.c_str());
-            if (matkmers.Find(vkid)) printf("%zd -1, %s\n", i, s_rc.c_str());
-        }
+        // if (patkmers.Find(kid) || patkmers.Find(vkid)) count[0] ++;
+        // if (matkmers.Find(kid) || matkmers.Find(vkid)) count[1] ++;
+        // if (offkmers.Find(kid) || offkmers.Find(vkid)) count[2] ++;
+        // if (thread_size_ == 1) {
+        //     if (patkmers.Find(kid)) printf("%zd 1, %s\n", i, KmerId2String(kid, k).c_str());
+        //     if (patkmers.Find(vkid)) printf("%zd 1, %s\n", i, KmerId2String(vkid, k).c_str());
+        //     if (matkmers.Find(kid)) printf("%zd -1, %s\n", i, KmerId2String(kid, k).c_str());
+        //     if (matkmers.Find(vkid)) printf("%zd -1, %s\n", i, KmerId2String(vkid, k).c_str());
+        // }
     }
     return count;
 }
@@ -206,27 +148,5 @@ size_t KmerBin::CheckKmerSet(const KmerSet& patkmers, const KmerSet& matkmers, c
     return k;
 }
 
-auto KmerBin::KmerStringToId(const std::string& str) -> KmerId{
-    static DnaSerialTable table;
-    KmerId id = 0;
-    for (auto c : str) {
-        id = (id << 2) + table[c];
-    }
-    return id;    
-}
-
-size_t KmerBin::GetKmerLength(const std::string &fname) {
-    GzFileReader reader(fname);
-    if (reader.Valid()) {
-        auto line = reader.GetNoEmptyLine();
-        if (!line.empty()) {
-            auto items = SplitStringBySpace(line);
-            return items[0].size();
-
-        }
-
-    }
-    return 0;
-}
 
 } // namespace fsa

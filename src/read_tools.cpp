@@ -8,6 +8,8 @@
 
 #include "phase/hic_read_infos.hpp"
 
+#include "kmer/kmer.hpp"
+
 namespace fsa {
 
 inline std::string Format(const std::string& pattern, int d) {
@@ -417,17 +419,42 @@ void Program_SplitName::SaveOverlaps(const std::string &fn_ols, const std::strin
     MultiThreadRun(std::min<size_t>(8, thread_size_), work);
 }
 
+// void Program_Longest::Running() {
+//     int min_length = min_length_;
+//     if (base_size_ > 0) {
+//         std::vector<int> lengths;
+//         LoadReadFile(ifname_, "", [&lengths, this](const SeqReader::Item& item) {
+//             if (DnaSeq::Check(item.seq)) {
+//                 lengths.push_back((int)item.seq.size());
+//             } else {
+//                 LOG(WARNING)("Found bad base in %s", item.head.c_str());
+//             }
+//         });
+
+//         LOG(INFO)("length size = %zd", lengths.size());
+        
+//         FindLongestXHeap(lengths, base_size_);
+//         if (lengths[0] > min_length)  min_length = lengths[0];
+//     }
+
+//     LOG(INFO)("min_length = %zd", min_length);
+
+//     FilterReadFile(ifname_, ofname_, id2name_, [min_length, this](SeqReader::Item& item) {
+//         return (int)item.seq.size() >= min_length && DnaSeq::Check(item.seq);
+//     });
+// }
+
+
 void Program_Longest::Running() {
     int min_length = min_length_;
+
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
     if (base_size_ > 0) {
         std::vector<int> lengths;
-        LoadReadFile(ifname_, "", [&lengths, this](const SeqReader::Item& item) {
-            if (DnaSeq::Check(item.seq)) {
-                lengths.push_back((int)item.seq.size());
-            } else {
-                LOG(WARNING)("Found bad base in %s", item.head.c_str());
-            }
-        });
+        for (size_t i = rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
+            lengths.push_back(rd_store.GetSeqLength(i));
+        }
 
         LOG(INFO)("length size = %zd", lengths.size());
         
@@ -437,9 +464,9 @@ void Program_Longest::Running() {
 
     LOG(INFO)("min_length = %zd", min_length);
 
-    FilterReadFile(ifname_, ofname_, id2name_, [min_length, this](SeqReader::Item& item) {
-        return (int)item.seq.size() >= min_length && DnaSeq::Check(item.seq);
-    });
+    rd_store.Save(ofname_, id2name_, [min_length](Seq::Id id, const DnaSeq& seq) {
+        return seq.Size() >= min_length;
+    }, 8);
 }
 
 void Program_Random::Running() {
@@ -470,6 +497,77 @@ void Program_Random::Running() {
         if (r) accu += item.seq.size();
         return r;
     });
+
+}
+
+void Program_Weight::Running() {
+    assert(base_size_ > 0);
+    long long total = 0;
+
+    auto kmers = LoadKmers0(kmer_freq_fname_);
+
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
+    for (size_t i=rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
+        auto len = rd_store.GetSeqLength(i);
+        if (len >= min_length_) {
+            total += len;
+        }
+    }
+    
+    std::vector<double> weight (rd_store.Size());
+    double rate = base_size_ * 1.01 / total;    
+    LOG(INFO)("size = %lld, rate = %f", total, rate);
+
+    long long accu = 0;
+    KmerCount kc(kmers.k);
+
+    auto to_rate = [&kmers, &kc, this](const DnaSeq& seq) {
+
+
+        auto kseq = kc.CountAll(seq);
+        double sum = 0;
+        size_t count = 0;
+        for (const auto &k : kseq) {
+            auto cc = kmers.Count(std::min(k[0], k[1]));
+            if (cc > 0) {
+                count ++;
+                if (cc > coverage_) {
+                    sum += coverage_ * 1.0 / cc;
+                } else {
+                    sum += 1;
+                }
+            }
+        }
+    
+        return sum / count;
+    };
+    
+    std::atomic<long long>  total_weight { 0 };
+    std::atomic<long long>  total_length { 0 };
+    rd_store.ForEach([&weight, &rd_store, to_rate, &total_weight, &total_length](int id, const DnaSeq& seq) {
+        double wt = to_rate(seq);
+        weight[id - rd_store.GetIdLow()] = wt;
+        total_weight.fetch_add(int(wt*seq.Size()));
+        total_length.fetch_add(seq.Size());
+    }, thread_size_);
+
+    double wt_rate = total_weight.load() * 1.0 / total_length.load();
+    LOG(INFO)("READ: %lld, %lld, %0.3f", total_weight.fetch_add(0), total_length.fetch_add(0), total_weight.fetch_add(0) *1.0/ total_length.fetch_add(0));
+
+    std::default_random_engine e;
+    std::uniform_int_distribution<int> u(0, 100000);
+    e.seed(time(0));
+    rd_store.Save(ofname_, id2name_, [&](Seq::Id id, const DnaSeq& seq) {
+        auto random = [&e, &u]() -> double {
+            return u(e)*1.0/100000;
+        };
+
+        auto wt = weight[id - rd_store.GetIdLow()];
+        bool r = seq.Size() >= min_length_ && wt * (rate / wt_rate) >= random();
+        return r;
+
+    }, thread_size_);
 
 }
 

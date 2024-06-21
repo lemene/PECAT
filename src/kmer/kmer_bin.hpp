@@ -17,9 +17,6 @@ public:
     virtual ArgumentParser GetArgumentParser();
     virtual void Running();
 
-    KmerSet0 LoadKmers0(const std::string &fname);
-    KmerSet1 LoadKmers1(const std::string &fname);
-
     std::array<size_t,3> CountKmers(size_t k, const std::string& seq, 
         const KmerSet& patkmers, const KmerSet& matkmers,const KmerSet& offkmers);
 
@@ -27,8 +24,6 @@ public:
 
     size_t CheckKmerSet(const KmerSet& patkmers, const KmerSet& matkmers, const KmerSet& offkmers) const;
 
-    KmerId KmerStringToId(const std::string &str);
-    size_t GetKmerLength(const std::string &fname);
 protected:
     std::string paternal_;
     std::string maternal_;

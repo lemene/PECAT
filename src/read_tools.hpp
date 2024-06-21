@@ -175,7 +175,10 @@ public:
         ArgumentParser ap(Name(), Description(), "");
         ap.AddNamedOption(base_size_, "base_size", "total number of selected bases");
         ap.AddNamedOption(min_length_, "min_length", "mininum length of reads");
+        ap.AddNamedOption(kmer_freq_fname_, "kmer_freq", "kmer frequence");
+        ap.AddNamedOption(coverage_, "coverage", "kmer frequence");
         ap.AddNamedOption(id2name_, "id2name", "if it is set, the names of sequences will be replaced with serial numbers");
+        ap.AddNamedOption(thread_size_, "thread_size", "threads");
         ap.AddPositionOption(ifname_, "ifname", "input file");
         ap.AddPositionOption(ofname_, "ofname", "output file");
         return ap;
@@ -186,8 +189,10 @@ protected:
     std::string ofname_;
     std::string kmer_freq_fname_;
     int min_length_ { 0 }; 
+    int coverage_ { 30 };
     long long base_size_ { 0 };
     std::string id2name_;
+    int thread_size_ { 8 };
 };
 
 class Program_Fasta2Fastq : public Program {
@@ -268,6 +273,7 @@ public:
         Add(new Program_SplitName());
         Add(new Program_Longest());
         Add(new Program_Random());
+        Add(new Program_Weight());
         Add(new Program_Sub());
         Add(new Program_Test());
     }

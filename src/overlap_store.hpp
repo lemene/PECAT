@@ -474,7 +474,7 @@ public:
         std::vector<const Overlap*> ols;
         std::vector<std::array<size_t, 2>> index;
     };
-    Group Get(int id);
+    Group Get(int id) const;
 
     struct Index {
         std::array<int, 2> by_qurey; 

@@ -18,6 +18,11 @@ void CrrDataset::Load() {
     EstimateParameters();
 }
 
+std::unique_ptr<Dispatcher> CrrDataset::GetDispatcher() {
+    return std::unique_ptr<Dispatcher>(opts_.use_cache ? 
+        (Dispatcher*)new GroupDispatcher(*this) : 
+        (Dispatcher*)new SimpleDispatcher(*this));
+}
 
 void CrrDataset::LoadReadIds() {
     std::unordered_set<Seq::Id> ids;    // Remove duplicate names
@@ -64,33 +69,34 @@ void CrrDataset::LoadReads() {
 }
 
 
-void CrrDataset::GroupReadIds() {
-    const int CLU_SIZE = 100;
+std::vector<std::vector<Seq::Id>> CrrDataset::GroupReadIds() const {
+    
+    std::vector<std::vector<Seq::Id>> clu_ids_;
+    const float GOOD_ALIGNED_RATE = 0.6;
     std::unordered_map<Seq::Id, bool> done;
 
     for (auto i : read_ids_) {
         done[i] = false;
     }
 
-    std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
-        return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
-    });
+    // std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
+    //     return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
+    // });
 
     for (auto i : read_ids_) {
         if (done[i]) continue;
-
-        if (clu_ids_.size() == 0 || clu_ids_.back().size() >= CLU_SIZE) {
-            clu_ids_.push_back(std::vector<Seq::Id>());
-        }
-
+        
+        clu_ids_.push_back(std::vector<Seq::Id>());
         auto& curr = clu_ids_.back();
         curr.push_back(i);
         done[i] = true;
 
-        for (size_t idx = 0; idx < curr.size() && curr.size() <= CLU_SIZE; idx++) {
-            auto gp = grouper_.Get(curr[idx]);
-            for (size_t i = 0; i < gp.Size(); ++i) {
-                auto ol = gp.Get(i, 0);
+        auto gp = grouper_.Get(i);
+        for (size_t ii = 0; ii < gp.Size(); ++ii) {
+            auto ol = gp.Get(ii, 0);
+            if (ol->AlignedLength() >= GOOD_ALIGNED_RATE*ol->TargetLength() && 
+                ol->AlignedLength() >= GOOD_ALIGNED_RATE*ol->QueryLength()) {
+
                 auto d = done.find(ol->GetOtherRead(gp.id).id);
                 if (d != done.end() && !d->second) {
                     curr.push_back(d->first);
@@ -101,6 +107,7 @@ void CrrDataset::GroupReadIds() {
     }
 
     LOG(INFO)("Cluster reads: %zd", clu_ids_.size());
+    return clu_ids_;
 }
 
 void CrrDataset::EstimateParameters() {

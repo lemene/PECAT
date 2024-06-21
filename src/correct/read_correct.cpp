@@ -33,7 +33,6 @@ void ReadCorrect::Correct() {
     const size_t flush_block = 20*1024*1024;
     StatInfo stat_info;
 
-    std::atomic<size_t> index {0};
     ProgressM progress(5000, dataset_.read_ids_.size());
 
     auto save_oss = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, StatInfo &si) {
@@ -49,71 +48,32 @@ void ReadCorrect::Correct() {
         si.Clear();
     };
 
-    struct Dispatcher { virtual Seq::Id Get() = 0; };
-    struct SimpleDispatcher : public Dispatcher {
-        SimpleDispatcher(const ReadCorrect& o, std::atomic<size_t> &idx, ProgressM &pg)
-         : owner(o), index(idx), progress(pg) {}
-        Seq::Id Get() {
-            auto curr = index.fetch_add(1);
-            progress.Forward(1);
-            return curr < owner.dataset_.read_ids_.size() ? owner.dataset_.read_ids_[curr] : Seq::NID; 
-        }
-        
-        const ReadCorrect& owner;
-        std::atomic<size_t> &index;
-        ProgressM& progress;
-    };
-    struct GroupDispatcher : public Dispatcher {
-        GroupDispatcher(const ReadCorrect& o, ReadCorrect::Worker &w, std::atomic<size_t> &idx, ProgressM &pg)
-         : owner(o), worker(w), index(idx), progress(pg)  {}
-
-        Seq::Id Get() {
-            if (cluster == nullptr || curr >= cluster->size()) {
-                auto clu_index = index.fetch_add(1);
-                if (clu_index < owner.dataset_.clu_ids_.size()) {
-                    cluster = &owner.dataset_.clu_ids_[clu_index];
-                    worker.ResetCache(*cluster, cluster->size());
-                } else {
-                    cluster = nullptr;
-                }
-                curr = 0;
-            }
-            progress.Forward(1);
-
-            return cluster != nullptr ? (*cluster)[curr++] : Seq::NID;
-        }
-
-        const ReadCorrect& owner;
-        ReadCorrect::Worker &worker;
-        const std::vector<Seq::Id>* cluster { nullptr };
-        size_t curr { 0 };
-        std::atomic<size_t> &index;
-        ProgressM &progress;
-
-    };
+    auto dispatcher = dataset_.GetDispatcher();
 
     auto work_func = [&](size_t i) {
         Worker worker(*this);
-        std::unique_ptr<Dispatcher> dispatcher(opts_.use_cache ? 
-            (Dispatcher*)new GroupDispatcher(*this, worker, index, progress) : 
-            (Dispatcher*)new SimpleDispatcher(*this, index, progress));
 
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
-        for (auto tid=dispatcher->Get(); tid != Seq::NID; tid = dispatcher->Get()) {
-            if (worker.Correct(tid)) {
-                if ( worker.GetCorrected().size() > 0) {
-                    SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
-                    if (of_infos.is_open()) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
-                } else {
-                    LOG(WARNING)("Corrected Read(%s) is emtpy", dataset_.read_store_.QueryNameById(tid).c_str());
+
+        for (auto ids = dispatcher->Get(); ids.size() > 0; ids = dispatcher->Get()){
+            worker.ResetCache(ids, ids.size());
+            for (auto tid : ids) {
+                if (worker.Correct(tid)) {
+                    if ( worker.GetCorrected().size() > 0) {
+                        SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
+                        if (of_infos.is_open()) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
+                    } else {
+                        LOG(WARNING)("Failed to correct read(%s)", dataset_.read_store_.QueryNameById(tid).c_str());
+                    }
                 }
+                worker.Clear();
             }
-            worker.Clear();
             
             if (oss_cread.tellp() > (int)flush_block) {
                 save_oss(oss_cread, oss_scores, worker.stat_info);
             }
+            progress.Forward(1);
         }
 
         if (oss_cread.tellp() > 0) {
