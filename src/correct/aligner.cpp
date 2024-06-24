@@ -136,8 +136,8 @@ void Aligner::AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const
     int qe = !rc ? range[1] : qseq.size() - range[0];
 
     // TODO 
-    auto new_s = FindExactMatch(tseq, qseq, {ts, qs});
     DEBUG_printf("pos0: %d %d %d %d\n", qs, qe, ts,te);
+    auto new_s = FindExactMatch(tseq, qseq, {ts, qs});
     ts = new_s[0];
     qs = new_s[1];
     DEBUG_printf("pos1: %d %d %d %d\n", qs, qe, ts,te);

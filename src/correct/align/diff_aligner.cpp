@@ -1,6 +1,7 @@
 #include "diff_aligner.hpp"
 
 #include "../../utility.hpp"
+#include "utils/logger.hpp"
 
 namespace fsa {
 

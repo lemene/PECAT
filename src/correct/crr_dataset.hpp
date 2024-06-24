@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 
 #include "overlap_store.hpp"
 #include "read_store.hpp"
@@ -36,9 +37,12 @@ public:
         void Sort(double opt_ohwt);
         std::vector<double> GetWeight(double opt_ohwt);
 
+        void BuildIndex();
+
         Seq::Id id;
         std::vector<const Overlap*> ols;
         std::vector<std::array<size_t, 2>> index;
+        std::shared_ptr<std::vector<Overlap>> from_mapping;
     };
     OlGroup Get(int id) const { return OlGroup(grouper_.Get(id)); }
     OlGroup Get2(int id) const;
@@ -56,7 +60,9 @@ public:
     OverlapStore ol_store_{string_pool_ };
     
     OverlapGrouper grouper_ { ol_store_ };
-    Mapping mapping_ { ol_store_ };
+    OverlapStore rd_2_ref_ {string_pool_ };
+    Mapping mapping_ { rd_2_ref_ };
+
     
     std::vector<Seq::Id> read_ids_;
 };

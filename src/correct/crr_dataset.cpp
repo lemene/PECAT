@@ -11,6 +11,11 @@ void CrrDataset::Load() {
     LoadReadIds();
     LoadOverlaps();
     LoadReads();
+    
+    if (!opts_.rd_2_ref_fname_.empty()) {
+        rd_2_ref_.Load(opts_.rd_2_ref_fname_);
+        mapping_.BuildIndex();
+    }
 
     grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()));
 
@@ -61,7 +66,8 @@ void CrrDataset::LoadReads() {
         ids.insert(o.a_.id);
         ids.insert(o.b_.id);
     }
-    read_store_.Load(opts_.rread_fname_, "", false, ids);
+    //read_store_.Load(opts_.rread_fname_, "", false, ids);
+    read_store_.Load(opts_.rread_fname_, "");
     
     if (read_ids_.empty()) {
         read_ids_.assign(ids.begin(), ids.end());
@@ -168,5 +174,48 @@ void CrrDataset::EstimateParameters() {
     LOG(INFO)("Estimate parameters(%0.02f): min_identity = %f min_local_identity = %f", max_idt, opts_.min_identity_, opts_.min_local_identity_);
 }
 
+
+CrrDataset::OlGroup CrrDataset::Get2(Seq::Id id) const {
+    OlGroup group(id); 
+    auto map_pair = mapping_.QueryOverlaps(id);
+
+    group.from_mapping.reset(new std::vector<Overlap>());
+    group.from_mapping->reserve(map_pair.size());
+    for (auto& p : map_pair) {
+        group.from_mapping->push_back(p.ToOverlap());
+    }
+
+    for (const auto& ol : *group.from_mapping.get()) {
+        if (ol.AlignedLength() >= 3000) {
+            group.ols.push_back(&ol);
+            
+        }
+    }
+
+    group.BuildIndex();
+    return group;
+}
+
+void CrrDataset::OlGroup::BuildIndex() {
+    std::sort(ols.begin(), ols.end(), [this](const Overlap* a, const Overlap *b) { 
+        const auto& r0 = a->GetOtherRead(id);
+        const auto& r1 = b->GetOtherRead(id);
+
+        return (r0.id < r1.id) ||
+               (r0.id == r1.id && a->AlignedLength() > b->AlignedLength()) ||
+               (r0.id == r1.id && a->AlignedLength() == b->AlignedLength() && a->SameDirect() && !b->SameDirect());
+    });
+
+    index.push_back({0, ols.size()});
+    for (size_t i = 0; i < ols.size(); ++i) {
+        const auto& r0 = ols[index.back()[0]]->GetOtherRead(id);
+        const auto& r1 = ols[i]->GetOtherRead(id);
+
+        if (r0.id != r1.id) {
+            index.back()[1] = i;
+            index.push_back({i, ols.size()});
+        }
+    }  
+}
 
 }   // namespace fsa

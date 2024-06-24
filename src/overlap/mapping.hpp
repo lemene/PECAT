@@ -15,15 +15,15 @@ public:
     std::unordered_set<Seq::Id> GetMappedReads() const;
     const std::string& QueryNameById(Seq::Id id) { return ol_store_.GetStringPool().QueryStringById(id); }
     void BuildIndex();
-    void QueryOverlaps(const std::string &name);
 
     struct Pair {
-        Overlap ToOverlap();
+        Overlap ToOverlap() const;
 
         const Overlap* query;
         const Overlap* target;
     };
-    std::vector<Pair> QueryOverlaps(Seq::Id id);
+    std::vector<Pair> QueryOverlaps(const std::string &name) const;
+    std::vector<Pair> QueryOverlaps(Seq::Id id) const;
     
 protected:
     void BuildTargetIndex();

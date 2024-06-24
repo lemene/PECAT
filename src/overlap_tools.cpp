@@ -889,7 +889,12 @@ void Program_Test::Running() {
     ol_store.Load(ifname_);
     Mapping mapping(ol_store);
     mapping.BuildIndex();
-    mapping.QueryOverlaps(rname_);
+    auto ols = mapping.QueryOverlaps(rname_);
+    printf("ols: %zd\n", ols.size());
+    for (const auto ol : ols) {
+        printf("-\n%s\n%s\n", ol.query->ToM4Line().c_str(), ol.target->ToM4Line().c_str());
+        printf("x\n%s\n", ol.ToOverlap().ToM4Line().c_str());
+    }
 }
 
 } // namespace fsa

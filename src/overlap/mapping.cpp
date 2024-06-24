@@ -48,7 +48,7 @@ void Mapping::BuildQueryRange() {
 
     size_t curr = 0;
     for (size_t i = 0; i < sorted_by_start_.size(); ++i) {
-        if (sorted_by_start_[curr]->b_.id == sorted_by_start_[i]->b_.id) {
+        if (sorted_by_start_[curr]->b_.id != sorted_by_start_[i]->b_.id) {
             curr = i;
         }
 
@@ -104,26 +104,25 @@ std::unordered_set<Seq::Id> Mapping::GetMappedReads() const {
     return mapped;
 }
 
-void Mapping::QueryOverlaps(const std::string &name) {
+std::vector<Mapping::Pair> Mapping::QueryOverlaps(const std::string &name) const {
     auto id = ol_store_.GetStringPool().QueryIdByString(name);
-    if (id != StringPool::NID) {
-        QueryOverlaps(id);
-    }
+    return id != StringPool::NID ? QueryOverlaps(id) : std::vector<Pair>();
 }
 
-std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) {
+std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     assert (id != StringPool::NID) ;
 
-    std::vector<std::array<const Overlap*, 2>> ols;
-
+    std::vector<Mapping::Pair> ols;
     auto tgt = queries_.find(id);
     if (tgt != queries_.end()) {
         
         for (size_t i = tgt->second[0]; i < tgt->second[1]; ++i) {
             auto range = query_ranges_[i];
-            const Overlap* tol = sorted_by_start_[i];
+            const Overlap* tol = sorted_by_start_[range[0]];
 
             for (size_t ii = range[1]; ii < sorted_by_start_.size(); ++ii) {
+                if (ii == range[0]) continue;
+
                 auto qol = sorted_by_start_[ii];
                 const int offset = 3000;
                 if (qol->b_.end >= tol->b_.start + offset && qol->b_.start + offset <= tol->b_.end ) {
@@ -138,18 +137,109 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) {
 
     }
 
-    
+    return ols;
 }
 
 Overlap Mapping::Pair::ToOverlap() const {
     Overlap ol;
     ol.a_.id = query->a_.id;
     ol.a_.len = query->a_.len;
-    o.a_.strand = query->SameDirect() == target->SameDirect() ? 0 : 1;
+    ol.a_.strand = query->SameDirect() == target->SameDirect() ? 0 : 1;
     
     ol.b_.id = target->a_.id;
     ol.b_.len = target->a_.len;
     ol.b_.strand = 0;
+    ol.identity_ = std::min(query->identity_, target->identity_);
+
+    size_t als_len = std::max<size_t>(query->b_.end, target->b_.end) - 
+                     std::min<size_t>(query->b_.start, target->b_.start);
+    std::vector<std::array<int,2>> als(als_len, {-1, -1});
+
+    size_t als_start = std::min<size_t>(query->b_.start, target->b_.start);
+    auto align_cigar = [](const Overlap* query, decltype(als)& als, size_t als_start, size_t idx) {
+        size_t qcurr = 0;
+        size_t tcurr = 0;
+        for (const auto& d : query->detail_) {
+            switch (d.type) {
+            case 'M':
+            case '=':
+            case 'X':
+                
+                for (size_t i = 0; i < d.len; ++i) {
+                    auto p = query->a_.strand == 0 ? (query->a_.start + qcurr + i) : (query->a_.end - qcurr - i);
+                    
+                    als[query->b_.start + tcurr + i-als_start][idx] = p;
+                }
+                qcurr += d.len;
+                tcurr += d.len;
+                break;
+
+            case 'D':
+                for (size_t i = 0; i < d.len; ++i) {
+                    auto p = query->a_.strand == 0 ? query->a_.start + qcurr : query->a_.end - qcurr ;
+                    als[query->b_.start + tcurr + i-als_start][idx] = p;
+                }
+                tcurr += d.len;
+                break;
+
+            case 'I':
+                qcurr += d.len;
+                break;
+
+            default:
+                LOG(ERROR)("Not support cigar type '%c'.", d.type);
+            }
+        }
+    };
+
+    align_cigar(query, als, als_start, 0);
+    align_cigar(target, als, als_start, 1);
+
+
+    // for (size_t i = 0; i < als.size(); ++i) {
+    //     LOG(INFO)("-  %d %d", als[i][0], als[i][1]);
+    // }
+
+    const size_t N = 1;
+    size_t start = std::max<size_t>(query->b_.start, target->b_.start) - als_start;
+    size_t end = std::min<size_t>(query->b_.end, target->b_.end) - als_start;
+    //LOG(INFO)("S-E0: %d-%d", start,end);
+    for (; start + N < end; ++start) {
+        if (std::abs<int>(als[start][0] - als[start+N][0]) == N &&
+            std::abs<int>(als[start][1] - als[start+N][1]) == N) {
+            
+            break;
+        }
+    }
+
+    for (; start + N < end; end--) {
+        if (std::abs<int>(als[end-1][0] - als[end-1-N][0]) == N &&
+            std::abs<int>(als[end-1][1] - als[end-1-N][1]) == N) {
+            break;
+        }
+    }
+        
+
+    //LOG(INFO)("S-E1: %d-%d", start,end);
+    
+    //assert(end > start + 100);
+    if (query->a_.strand == 0) {
+        ol.a_.start = als[start][0];
+        ol.a_.end = als[end-1][0] + 1;
+    } else {
+        ol.a_.start = als[end-1][0]-1;
+        ol.a_.end = als[start][0];
+    }
+    
+    if (target->a_.strand == 0) {
+        ol.b_.start = als[start][1];
+        ol.b_.end = als[end-1][1] + 1;
+    } else {
+//        printf("tss: %d %d %d %d\n", start, end, als[start][0]-1, als[end-1][0]);
+        ol.b_.start = als[end-1][1]-1;
+        ol.b_.end = als[start][1];
+    }
+    return ol;
     
 }
 } // namespace fsa

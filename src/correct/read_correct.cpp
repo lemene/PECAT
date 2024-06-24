@@ -279,7 +279,7 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 
 
 bool ReadCorrect::Worker::Correct(int id) {
-    auto group = owner_.dataset_.Get(id);
+    auto group = owner_.dataset_.Get2(id);
     if (group.Empty()) return false;
 
     const DnaSeq& target = owner_.dataset_.read_store_.GetSeq(id);
@@ -315,7 +315,7 @@ bool ReadCorrect::Worker::Correct(int id) {
         for (size_t j = 0; j < group.Size(i); ++j) {
             auto ol = group.Get(i, j);
             Alignment al_local(tread.id, qread.id);
-        
+
             auto r_local = GetAlignment(id, ol, al_local);
             DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
                 owner_.dataset_.QueryStringById(qread.id).c_str(), owner_.dataset_.QueryStringById(tread.id).c_str(),
