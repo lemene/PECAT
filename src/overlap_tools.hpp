@@ -170,6 +170,27 @@ protected:
     int thread_size_ { 4 };
 };
 
+class Program_Location : public Program {
+public:
+    Program_Location() {
+        name_ = "location";
+        desc_ = "location of reads in reference";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), desc_);
+        ap.AddPositionOption(ifname_, "ifname", "paf file");
+        ap.AddPositionOption(mapped_, "mapped", "the file recording mapped reads");
+        ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string ifname_;
+    std::string mapped_;
+    int thread_size_ { 4 };
+};
+
 class Program_Test : public Program {
 public:
     Program_Test() {
@@ -200,6 +221,7 @@ public:
         Add(new Program_Sub());
         Add(new Program_Accuracy());
         Add(new Program_Accuracy2());
+        Add(new Program_Location());
         Add(new Program_Test());
     }
 };

@@ -43,6 +43,7 @@ void CrrDataset::LoadReadIds() {
         // correct all reads in read file
     }
     read_ids_.assign(ids.begin(), ids.end());
+    LOG(INFO)("read ids: %zd", read_ids_.size());
 }
 
 void CrrDataset::LoadOverlaps() {
@@ -185,6 +186,7 @@ CrrDataset::OlGroup CrrDataset::Get2(Seq::Id id) const {
         group.from_mapping->push_back(p.ToOverlap());
     }
 
+    group.ols = grouper_.GetRelatedOverlaps(id);
     for (const auto& ol : *group.from_mapping.get()) {
         if (ol.AlignedLength() >= 3000) {
             group.ols.push_back(&ol);

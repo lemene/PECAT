@@ -940,6 +940,25 @@ OverlapGrouper::Group OverlapGrouper::Get(int id) const {
     return group;
 }
 
+
+std::vector<const Overlap*> OverlapGrouper::GetRelatedOverlaps(int id) const {
+    std::vector<const Overlap*> ols;
+
+    auto info = index_.find(id);
+    if (info != index_.end()) {
+        const Index& sindex = info->second;
+
+        if (sindex.by_qurey[1] > sindex.by_qurey[0]) {
+            ols.insert(ols.end(), sorted_.begin() + sindex.by_qurey[0], sorted_.begin() + sindex.by_qurey[1]);
+        }
+
+        if (sindex.by_target[1] > sindex.by_target[0]) {
+            ols.insert(ols.end(), sorted_.begin() + sindex.by_target[0], sorted_.begin() + sindex.by_target[1]);
+        }
+    }
+    return ols;
+}
+
 void OverlapGrouper::Group::Sort(double opt_ohwt) {
     assert(!Empty());
 

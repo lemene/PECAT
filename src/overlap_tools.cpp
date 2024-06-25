@@ -884,6 +884,41 @@ void Program_Accuracy2::Running() {
 }
 
 
+void Program_Location::Running() {
+    OverlapStore ol_store;
+    
+    ol_store.Load(ifname_, "", std::min<size_t>(8, thread_size_));
+
+    GzFileWriter mapped_writer(mapped_);
+
+    std::mutex mutex_combine;
+    auto combine_func = [&mutex_combine,&mapped_writer, &ol_store](std::unordered_set<Seq::Id> &mapped) {
+        std::lock_guard<std::mutex> lock(mutex_combine);
+        LOG(INFO)("SZ %zd", mapped.size());
+        for (auto r : mapped) {
+            mapped_writer << ol_store.GetStringPool().QueryStringById(r) << "\n";
+        }
+    };
+
+    std::atomic<size_t> index { 0 };
+    auto work_func = [&index, &ol_store, combine_func](size_t tid) {
+        std::unordered_set<Seq::Id> mapped;
+        for (size_t i = index.fetch_add(1); i < ol_store.Size(); i = index.fetch_add(1)) {
+            const Overlap& ol = ol_store.Get(i);
+            if (ol.AlignedLength() >= 0.85 * ol.QueryLength()) {
+                mapped.insert(ol.a_.id);
+            } else {
+                //printf("%s\n", ol_store.ToPafLine1(ol).c_str());
+            }
+            
+        }
+        combine_func(mapped);
+    };
+
+    MultiThreadRun((size_t)thread_size_, work_func);
+}
+
+
 void Program_Test::Running() {
     OverlapStore ol_store;
     ol_store.Load(ifname_);

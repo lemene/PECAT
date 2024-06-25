@@ -475,6 +475,7 @@ public:
         std::vector<std::array<size_t, 2>> index;
     };
     Group Get(int id) const;
+    std::vector<const Overlap*> GetRelatedOverlaps(Seq::Id id) const;
 
     struct Index {
         std::array<int, 2> by_qurey; 

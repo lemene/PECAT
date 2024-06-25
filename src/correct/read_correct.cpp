@@ -8,6 +8,8 @@
 
 namespace fsa {
 
+TimeCounter tc_align("get_al");
+TimeCounter tc_graph("graph");
 
 ReadCorrect::ReadCorrect() {
 }
@@ -141,6 +143,7 @@ bool ReadCorrect::Worker::ExactFilter(const Alignment &r) {
 }
 
 bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& al) {
+    TimeCounter::Mark m(tc_align);
     const auto& tread = o->GetRead(id);
     const auto& qread = o->GetOtherRead(id);
 
@@ -381,8 +384,11 @@ bool ReadCorrect::Worker::Correct(int id) {
         }
         DEBUG_printf("aligned_.size: %zd\n", aligned_.size());
         for (auto &al : aligned_) { al.Rearrange(); }
+        {
+            TimeCounter::Mark m(tc_graph);
         graph_.Build(target, range, aligned_);
         graph_.Consensus();
+        }
         return true;
     }
     }
