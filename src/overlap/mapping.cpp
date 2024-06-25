@@ -205,16 +205,16 @@ Overlap Mapping::Pair::ToOverlap() const {
     size_t end = std::min<size_t>(query->b_.end, target->b_.end) - als_start;
     //LOG(INFO)("S-E0: %d-%d", start,end);
     for (; start + N < end; ++start) {
-        if (std::abs<int>(als[start][0] - als[start+N][0]) == N &&
-            std::abs<int>(als[start][1] - als[start+N][1]) == N) {
+        if (std::abs(als[start][0] - als[start+N][0]) == N &&
+            std::abs(als[start][1] - als[start+N][1]) == N) {
             
             break;
         }
     }
 
     for (; start + N < end; end--) {
-        if (std::abs<int>(als[end-1][0] - als[end-1-N][0]) == N &&
-            std::abs<int>(als[end-1][1] - als[end-1-N][1]) == N) {
+        if (std::abs(als[end-1][0] - als[end-1-N][0]) == N &&
+            std::abs(als[end-1][1] - als[end-1-N][1]) == N) {
             break;
         }
     }

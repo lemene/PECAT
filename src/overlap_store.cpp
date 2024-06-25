@@ -867,7 +867,8 @@ void OverlapGrouper::BuildIndex(size_t thread_size, const std::unordered_set<int
                (a->b_.id == b->b_.id && a->a_.id == b->a_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect()) ;
     });
 
-    assert(ol_store_.Size() > 0 && sorted_.size() == 2*ol_store_.Size());
+    assert( sorted_.size() == 2*ol_store_.Size());
+    if (sorted_.size() == 0) return;
 
     auto gp_s_qry = 0;
     auto gp_id_qry = sorted_[gp_s_qry]->a_.id;
