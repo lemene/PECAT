@@ -35,9 +35,9 @@ void ReadCorrect::Correct() {
     const size_t flush_block = 20*1024*1024;
     StatInfo stat_info;
 
-    ProgressM progress(5000, dataset_.read_ids_.size());
+    Progress progress(5000, dataset_.read_ids_.size());
 
-    auto save_oss = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, StatInfo &si) {
+    auto combine_func = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, StatInfo &si) {
         std::lock_guard<std::mutex> lock(mutex);
         of_cread << oss_cread.str();              
         oss_cread.str("");
@@ -73,13 +73,13 @@ void ReadCorrect::Correct() {
             }
             
             if (oss_cread.tellp() > (int)flush_block) {
-                save_oss(oss_cread, oss_scores, worker.stat_info);
+                combine_func(oss_cread, oss_scores, worker.stat_info);
             }
             progress.Forward(ids.size());
         }
 
         if (oss_cread.tellp() > 0) {
-            save_oss(oss_cread, oss_scores, worker.stat_info);
+            combine_func(oss_cread, oss_scores, worker.stat_info);
         }
     };
 
@@ -100,44 +100,45 @@ void ReadCorrect::SaveCRead(std::ostream &os, int tid, const std::string &cread,
        <<  cread << "\n";
 }
 
-bool ReadCorrect::Worker::ExactFilter(const Alignment &r, const std::array<size_t,2> &trange) {
-    size_t start = std::max(trange[0], r.target_start);
-    size_t end = std::min(trange[1], r.target_end);
-    auto align_size = start < end ? end - start : 0;
 
-    if (align_size < (size_t)owner_.opts_.filter1_.min_aligned_length && 
-        align_size < (trange[1]-trange[0]) * owner_.opts_.filter1_.min_aligned_rate) return true;
-    
-    if (r.Identity() < owner_.opts_.min_identity_) return true;
+bool ReadCorrect::ExactFilter(const Alignment &r) {
+    if (r.AlignSize() < (size_t)opts_.filter1_.min_aligned_length && 
+        r.AlignSize() < r.TargetSize() * opts_.filter1_.min_aligned_length) return true;
 
-    if (align_size >= (size_t)owner_.opts_.filter1_.min_accept_aligned_length) return false;
+    if (r.Identity() < opts_.min_identity_) return true;
 
-    const double oh_rate = owner_.opts_.filter1_.max_overhang_rate;
+    if (r.AlignSize() >= (size_t)opts_.filter1_.min_accept_aligned_length) return false;
 
-    size_t t_overhang = std::max(size_t((trange[1]-trange[0])*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
-    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
+    const double oh_rate = opts_.filter1_.max_overhang_rate;
 
-    if ( r.target_start > trange[0] + t_overhang && r.query_start > q_overhang) return true;
-    if (r.target_end + t_overhang < trange[1] && r.query_end + q_overhang < r.QuerySize()) return true;
+    size_t t_overhang = std::max(size_t(r.TargetSize()*oh_rate), (size_t)opts_.filter1_.max_overhang);
+    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)opts_.filter1_.max_overhang);
+
+    if (r.target_start > t_overhang && r.query_start > q_overhang) return true;
+    if (r.target_end + t_overhang < r.TargetSize() && r.query_end + q_overhang < r.QuerySize()) return true;
 
     return false;
 }
 
-bool ReadCorrect::Worker::ExactFilter(const Alignment &r) {
-    if (r.AlignSize() < (size_t)owner_.opts_.filter1_.min_aligned_length && 
-        r.AlignSize() < r.TargetSize() * owner_.opts_.filter1_.min_aligned_length) return true;
+bool ReadCorrect::ExactFilter(const Alignment &r, const std::array<size_t,2> &trange) {
+    size_t start = std::max(trange[0], r.target_start);
+    size_t end = std::min(trange[1], r.target_end);
+    auto align_size = start < end ? end - start : 0;
 
-    if (r.Identity() < owner_.opts_.min_identity_) return true;
+    if (align_size < (size_t)opts_.filter1_.min_aligned_length && 
+        align_size < (trange[1]-trange[0]) * opts_.filter1_.min_aligned_rate) return true;
+    
+    if (r.Identity() < opts_.min_identity_) return true;
 
-    if (r.AlignSize() >= (size_t)owner_.opts_.filter1_.min_accept_aligned_length) return false;
+    if (align_size >= (size_t)opts_.filter1_.min_accept_aligned_length) return false;
 
-    const double oh_rate = owner_.opts_.filter1_.max_overhang_rate;
+    const double oh_rate = opts_.filter1_.max_overhang_rate;
 
-    size_t t_overhang = std::max(size_t(r.TargetSize()*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
-    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
+    size_t t_overhang = std::max(size_t((trange[1]-trange[0])*oh_rate), (size_t)opts_.filter1_.max_overhang);
+    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)opts_.filter1_.max_overhang);
 
-    if (r.target_start > t_overhang && r.query_start > q_overhang) return true;
-    if (r.target_end + t_overhang < r.TargetSize() && r.query_end + q_overhang < r.QuerySize()) return true;
+    if ( r.target_start > trange[0] + t_overhang && r.query_start > q_overhang) return true;
+    if (r.target_end + t_overhang < trange[1] && r.query_end + q_overhang < r.QuerySize()) return true;
 
     return false;
 }
@@ -161,12 +162,16 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& 
             return al.Valid();
         }
     } else {
-        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-        return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+        if (o->detail_.size() == 0) {
+            std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+            return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+        } else {
+            return Cigar2Alignment(id, o, al);
+        }
     }
 }
       
- std::array<size_t,2> MostEffectiveCoverage(size_t tsize, const std::vector<Alignment> &aligns, size_t stub, int min_coverage) {
+std::array<size_t,2> MostEffectiveCoverage(size_t tsize, const std::vector<Alignment> &aligns, size_t stub, int min_coverage) {
     if (aligns.size() == 0) return {0, 0};
 
     assert(tsize >= stub*2);
@@ -183,7 +188,6 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& 
 
     for (size_t i=1; i< coverage.size(); ++i) {
         coverage[i] += coverage[i-1];
-        DEBUG_printf("COV(%zd) %d\n", i, coverage[i]);
     }
 
 
@@ -280,35 +284,21 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
     return true;
 }
 
-
 bool ReadCorrect::Worker::Correct(int id) {
-    auto group = owner_.dataset_.Get2(id);
+    auto group = owner_.dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
 
     const DnaSeq& target = owner_.dataset_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)owner_.opts_.filter0_.min_length); 
+    group.Sort(owner_.opts_.cands_opts_.overhang_weight);
 
-    std::vector<std::tuple<const Overlap*, double, size_t>> cands(group.Size());
-    for (size_t i = 0; i < group.Size(); ++i) {
-        std::get<0>(cands[i]) = group.Get(i, 0);        // overlap
-        std::get<1>(cands[i]) = 0.0;                    // weight
-        std::get<2>(cands[i]) = i;                      // order
-    }
-    CalculateWeight(id, target, cands, owner_.opts_.cands_opts_.overhang_weight);
-
-    std::make_heap(cands.begin(), cands.end(), [](const std::tuple<const Overlap*, double, size_t>& a, const std::tuple<const Overlap*, double, size_t>& b) {
-       return std::get<1>(a) < std::get<1>(b);    // CAUTION, calulated by CalculateWeight
-    });
-    size_t heap_size = cands.size();
     aligner_.SetTarget(target);
     std::vector<int> coverage(target.Size(), 0);
 
-    DEBUG_printf("al_cand_size=%zd\n", cands.size());
     std::vector<Alignment> first_als;
-    while (heap_size > 0) {
-        DEBUG_printf("done = %zd, heap_size = %zd, cands.size() = %zd wt=%.02f\n", cands.size()-heap_size, heap_size, cands.size(), std::get<1>(cands[0]));
-        auto i = std::get<2>(cands[0]);
-        auto ol = group.Get(i, 0); // == std::get<0>(cands[0])
+    for (size_t i = 0; i < group.Size(); ++i) {
+        DEBUG_printf("done = %zd, group_size = %zd\n", i, group.Size());
+        auto ol = group.Get(i, 0); 
         const auto& tread = ol->GetRead(id);
         const auto& qread = ol->GetOtherRead(id);
         Alignment al(tread.id, qread.id);
@@ -327,7 +317,7 @@ bool ReadCorrect::Worker::Correct(int id) {
                al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
 
             DEBUG_printf("al_global_ident %.02f <= %.02f\n", al_local.Identity(), owner_.opts_.min_identity_);
-            if (r_local && !ExactFilter(al_local) && al_local.Identity() >= owner_.opts_.min_identity_) {
+            if (r_local && !owner_.ExactFilter(al_local) && al_local.Identity() >= owner_.opts_.min_identity_) {
                 al_local.ComputeDistance(owner_.opts_.local_window_size_);
                 DEBUG_printf("al_local_ident %.02f <= %.02f\n", al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_), owner_.opts_.min_local_identity_);
                 if (al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_) >= owner_.opts_.min_local_identity_) {
@@ -343,18 +333,13 @@ bool ReadCorrect::Worker::Correct(int id) {
             }
         }
 
-        if (r && !ExactFilter(al)) { 
+        if (r && !owner_.ExactFilter(al)) { 
             stat_info.succ++;
             first_als.push_back(al);
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
         } 
 
         if (owner_.opts_.cands_opts_.IsEndCondition(coverage)) break;
-        
-        std::pop_heap(cands.begin(), cands.begin()+heap_size, [](std::tuple<const Overlap*, double, size_t>& a, std::tuple<const Overlap*, double, size_t>& b) {
-            return std::get<1>(a) < std::get<1>(b);    // CAUTION, calulated by CalculateWeight
-        });
-        heap_size--;
     }
 
     if (first_als.size() > 0) {
@@ -378,7 +363,7 @@ bool ReadCorrect::Worker::Correct(int id) {
         range[1] += stub;
 
         for (const auto &al : first_als) {
-            if (!ExactFilter(al, range)) {
+            if (!owner_.ExactFilter(al, range)) {
                aligned_.push_back(al);
             }
         }
@@ -482,60 +467,84 @@ std::vector<std::array<size_t, 2>> ReadCorrect::Worker::GroupPositions(const std
 }
 
 
-void ReadCorrect::Worker::CalculateWeight(Seq::Id id,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>>& cands, double opt_ohwt) {
-    std::vector<double> cand_cov_wts (target.Size()+1);
 
-    for (auto &it : cands) {
-        auto ol = std::get<0>(it); // it.first;
-        auto &t = ol->GetRead(id);
-        auto &q = ol->GetOtherRead(id);
+bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignment &al) {
+    assert(ol->detail_.size() > 0);
 
-        double ohwt = opt_ohwt * ol->identity_ / 100;
-        double olwt = ol->identity_ / 100;
+    const DnaSeq& qseq = owner_.dataset_.read_store_.GetSeq(ol->a_.id);
+    const DnaSeq& tseq = owner_.dataset_.read_store_.GetSeq(ol->b_.id);
+    assert(ol->b_.strand == 0);
 
-        auto mr = ol->MappingTo<2>(t, {0, q.len});
-        auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
-        auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
-        // start -- t.start -- t.end -- end
-        assert(start <= t.start && t.end <= end);
+    std::vector<uint8_t> tal;   tal.reserve(ol->AlignedLength()*2);
+    std::vector<uint8_t> qal;   qal.reserve(ol->AlignedLength()*2);
 
-        cand_cov_wts[start]   += ohwt;
-        cand_cov_wts[t.start] += (olwt - ohwt);
-        cand_cov_wts[t.end]   -= (olwt - ohwt);
-        cand_cov_wts[end]     -= ohwt;
-    }
 
-    for (size_t i=1; i<cand_cov_wts.size(); ++i) {
-        cand_cov_wts[i] += cand_cov_wts[i-1];
-    }
-    double max_cov_wts = *std::max_element(cand_cov_wts.begin(), cand_cov_wts.end());
-    for (size_t i = 0; i+1 < cand_cov_wts.size(); ++i) {
-        cand_cov_wts[i] = max_cov_wts - cand_cov_wts[i];
+    auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
+        return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
+    };
+
+    size_t qidx = 0;        // not from ol->b_.start;
+    size_t tidx = ol->b_.start;
+    for (const auto &d : ol->detail_) {
+        switch (d.type){
+        case 'M':
+        case '=':
+            for (size_t i = 0; i < d.len; ++i) {
+                uint8_t cq = get_base(ol->a_, qseq, qidx+i);
+                uint8_t ct = tseq[tidx+i];
+                qal.push_back(cq+1);
+                tal.push_back(ct+1);
+            }
+            qidx += d.len;
+            tidx += d.len;
+            break;
+        case 'I':
+            for (size_t i = 0; i < d.len; ++i) {
+                char cq = get_base(ol->a_, qseq, qidx+i);
+                qal.push_back(cq+1);
+                tal.push_back(0);
+            }
+            qidx += d.len;
+            break;
+        case 'D':
+            for (size_t i = 0; i < d.len; ++i) {
+                char ct = tseq[tidx+i];
+                qal.push_back(0);
+                tal.push_back(ct+1);
+            }
+            tidx += d.len;
+            break; 
+        default:
+            LOG(ERROR)("never come here");
+        }
     }
     
-    assert(std::abs(cand_cov_wts.back()) < 0.0000001);  // cand_cov_wts.back() == 0
+    const auto& tread = ol->GetRead(tid);
+    const auto& qread = ol->GetOtherRead(tid);
+    al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
+    al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
+    al.target_start = tread.start;
+    al.target_end = tread.end;
+    al.query_start = qread.start;
+    al.query_end = tread.end;
 
-    std::for_each(cands.begin(), cands.end(), [opt_ohwt, id, &cand_cov_wts](std::tuple<const Overlap*, double, size_t>& it) {
-        auto ol = std::get<0>(it);
-        auto &t = ol->GetRead(id);
-        auto &q = ol->GetOtherRead(id);
+    const char* ACGT = "-ACGT-";
+    if (tread.id == ol->b_.id) {
+        for (size_t i = 0; i < tal.size(); ++i) {
+            al.aligned_target.push_back(ACGT[tal[i]]);
+            al.aligned_query.push_back(ACGT[qal[i]]);
+        }
+    printf("q:%s\nt:%s\n", al.aligned_target.c_str(), al.aligned_query.c_str());
+    } else {
+        for (size_t i = 0; i < tal.size(); ++i) {
+            al.aligned_target.push_back(ACGT[5 - tal[tal.size()-i-1]]);
+            al.aligned_query.push_back(ACGT[5 - qal[tal.size()-i-1]]);
+        }
+    }
 
-        double ohwt = opt_ohwt * ol->identity_ / 100;
-        double olwt = ol->identity_ / 100;
 
-        auto mr = ol->MappingTo<2>(t, {0, q.len});
-        auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
-        auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
-        // start -- t.start -- t.end -- end
-        assert(start <= t.start && t.end <= end);
-
-        double wt = std::accumulate(cand_cov_wts.begin()+start, cand_cov_wts.begin()+t.start, 0.0) * ohwt +
-                    std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
-                    std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
-
-        std::get<1>(it) = wt;
-    });
+    return true;
 }
-
+   
 } // namespace fsa {
     

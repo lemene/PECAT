@@ -23,6 +23,10 @@ protected:
     void Correct();
     void SaveCRead(std::ostream &os, int tid, const std::string &cread, const std::array<size_t, 2> &range);
 
+
+    bool ExactFilter(const Alignment& r);
+    bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);
+
     // 
     struct StatInfo {
         void Merge(const StatInfo si) {
@@ -51,10 +55,6 @@ protected:
         };
         ~Worker() {  }
         bool Correct(int id);
-        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, std::vector<std::tuple<const Overlap*, double, size_t>> & cands, double opt_ohwt);
-        bool IsCoverageEnough(const std::vector<int> &cov);
-        bool ExactFilter(const Alignment& r);
-        bool ExactFilter(const Alignment& r, const std::array<size_t,2>& trange);
         bool GetAlignment(Seq::Id id, const Overlap* o, Alignment &al);
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(); }
         void ClearCache() { return cache_.Clear(); }
@@ -64,6 +64,7 @@ protected:
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rd) { graph_.SaveReadInfos(os, tid, rd); }
         std::vector<Alignment> CheckLocalDistance0(const std::vector<Alignment>& als);
         std::vector<std::array<size_t, 2>> GroupPositions(const std::vector<size_t> &sorted_positions);
+        bool Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignment &al);
    
         StatInfo stat_info;
     protected:

@@ -4,7 +4,6 @@
 #include "read_store.hpp"
 #include "utils/project_file.hpp"
 #include "assemble/read_variants.hpp"
-#include "correct/corrector.hpp"
 
 #include "overlap/mapping.hpp"
 
@@ -928,7 +927,7 @@ void Program_Test::Running() {
     printf("ols: %zd\n", ols.size());
     for (const auto ol : ols) {
         printf("-\n%s\n%s\n", ol.query->ToM4Line().c_str(), ol.target->ToM4Line().c_str());
-        printf("x\n%s\n", ol.ToOverlap().ToM4Line().c_str());
+        printf("x\n%s\n", ol.ToM4Line().c_str());
     }
 }
 

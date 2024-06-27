@@ -8,18 +8,22 @@
 namespace fsa {
 
 void CrrDataset::Load() {
+
     LoadReadIds();
     LoadOverlaps();
     LoadReads();
     
+    // load mapping
     if (!opts_.rd_2_ref_fname_.empty()) {
         rd_2_ref_.Load(opts_.rd_2_ref_fname_);
         mapping_.BuildIndex();
     }
 
-    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()));
+    std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
+        return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
+    });
 
-    if (opts_.use_cache) GroupReadIds();
+    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()));
     EstimateParameters();
 }
 
@@ -67,11 +71,20 @@ void CrrDataset::LoadReads() {
         ids.insert(o.a_.id);
         ids.insert(o.b_.id);
     }
-    //read_store_.Load(opts_.rread_fname_, "", false, ids);
-    read_store_.Load(opts_.rread_fname_, "");
+    
+    if (!opts_.rd_2_ref_fname_.empty()) {
+        read_store_.Load(opts_.rread_fname_, "", false, ids);
+    } else {
+        read_store_.Load(opts_.rread_fname_, "");
+
+    }
     
     if (read_ids_.empty()) {
-        read_ids_.assign(ids.begin(), ids.end());
+        read_ids_.reserve(read_store_.Size());
+        auto rs = read_store_.GetIdRange();
+        for (Seq::Id i = rs[0]; i < rs[1]; ++i) {
+            read_ids_.push_back(i);
+        }
     }
 }
 
@@ -86,10 +99,6 @@ std::vector<std::vector<Seq::Id>> CrrDataset::GroupReadIds() const {
         done[i] = false;
     }
 
-    // std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
-    //     return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
-    // });
-
     for (auto i : read_ids_) {
         if (done[i]) continue;
         
@@ -101,7 +110,7 @@ std::vector<std::vector<Seq::Id>> CrrDataset::GroupReadIds() const {
         auto gp = grouper_.Get(i);
         for (size_t ii = 0; ii < gp.Size(); ++ii) {
             auto ol = gp.Get(ii, 0);
-            if (ol->AlignedLength() >= GOOD_ALIGNED_RATE*ol->TargetLength() && 
+            if (ol->AlignedLength() >= GOOD_ALIGNED_RATE*ol->TargetLength() || 
                 ol->AlignedLength() >= GOOD_ALIGNED_RATE*ol->QueryLength()) {
 
                 auto d = done.find(ol->GetOtherRead(gp.id).id);
@@ -176,22 +185,18 @@ void CrrDataset::EstimateParameters() {
 }
 
 
-CrrDataset::OlGroup CrrDataset::Get2(Seq::Id id) const {
+CrrDataset::OlGroup CrrDataset::GetOverlaps(Seq::Id id) const {
     OlGroup group(id); 
-    auto map_pair = mapping_.QueryOverlaps(id);
-
-    group.from_mapping.reset(new std::vector<Overlap>());
-    group.from_mapping->reserve(map_pair.size());
-    for (auto& p : map_pair) {
-        group.from_mapping->push_back(p.ToOverlap());
+    group.map = mapping_.QueryOverlaps(id);
+    group.ava = grouper_.GetRelatedOverlaps(id);
+; 
+    group.ols.reserve(group.map.size() + group.ava.size());
+    for (size_t i = 0; i < group.map.size(); ++i) {
+        if (opts_.filter0_.Valid(group.map[i]))
+            group.ols.push_back({1, i});
     }
-
-    group.ols = grouper_.GetRelatedOverlaps(id);
-    for (const auto& ol : *group.from_mapping.get()) {
-        if (ol.AlignedLength() >= 3000) {
-            group.ols.push_back(&ol);
-            
-        }
+    for (size_t i = 0; i < group.ava.size(); ++i) {
+        group.ols.push_back({0, i});
     }
 
     group.BuildIndex();
@@ -199,7 +204,10 @@ CrrDataset::OlGroup CrrDataset::Get2(Seq::Id id) const {
 }
 
 void CrrDataset::OlGroup::BuildIndex() {
-    std::sort(ols.begin(), ols.end(), [this](const Overlap* a, const Overlap *b) { 
+    std::sort(ols.begin(), ols.end(), [this](const Index &ia, const Index &ib) { 
+
+        const Overlap* a = Get(ia);
+        const Overlap* b = Get(ib);
         const auto& r0 = a->GetOtherRead(id);
         const auto& r1 = b->GetOtherRead(id);
 
@@ -210,14 +218,86 @@ void CrrDataset::OlGroup::BuildIndex() {
 
     index.push_back({0, ols.size()});
     for (size_t i = 0; i < ols.size(); ++i) {
-        const auto& r0 = ols[index.back()[0]]->GetOtherRead(id);
-        const auto& r1 = ols[i]->GetOtherRead(id);
+        const auto& r0 = Get(ols[index.back()[0]])->GetOtherRead(id);
+        const auto& r1 = Get(ols[i])->GetOtherRead(id);
 
         if (r0.id != r1.id) {
             index.back()[1] = i;
             index.push_back({i, ols.size()});
         }
     }  
+}
+
+
+void CrrDataset::OlGroup::Sort(double opt_ohwt) {
+    assert(!Empty());
+
+    auto weights = GetWeight(opt_ohwt);
+
+    std::sort(index.begin(), index.end(), [&weights](const std::array<size_t, 2> &a, const std::array<size_t,2> &b) {
+        return weights[a[0]] > weights[b[0]];
+    });
+}
+
+std::vector<double> CrrDataset::OlGroup::GetWeight(double opt_ohwt) {
+    assert(!Empty());
+    size_t target_length = Get(ols[0])->GetRead(id).len;
+    std::vector<double> cand_cov_wts (target_length+1);
+
+    double wtsum = 0.0;
+    for (size_t i = 0; i < Size(); ++i) {
+        auto o = Get(i, 0);
+        auto &t = o->GetRead(id);
+        auto &q = o->GetOtherRead(id);
+
+        double ohwt = opt_ohwt * o->identity_ / 100;
+        double olwt = o->identity_ / 100;
+
+        auto mr = o->MappingTo<2>(t, {0, q.len});
+        auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
+        auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
+        // start -- t.start -- t.end -- end
+        assert(start <= t.start && t.end <= end);
+
+        cand_cov_wts[start]   += ohwt;
+        cand_cov_wts[t.start] += (olwt - ohwt);
+        cand_cov_wts[t.end]   -= (olwt - ohwt);
+        cand_cov_wts[end]     -= ohwt;
+
+        wtsum += olwt;
+    }
+
+    for (size_t i=1; i<cand_cov_wts.size(); ++i) {
+        cand_cov_wts[i] += cand_cov_wts[i-1];
+    }
+    assert(std::abs(cand_cov_wts.back()) < 0.0000001);  // cand_cov_wts.back() == 0
+
+    for (size_t i=0; i<cand_cov_wts.size(); ++i) {
+        cand_cov_wts[i] = wtsum - cand_cov_wts[i];
+    }
+
+    std::vector<double> weights(ols.size(), 0.0);
+    for (size_t i = 0; i < index.size(); ++i) {
+        auto o = Get(ols[index[i][0]]);
+        auto &t = o->GetRead(id);
+        auto &q = o->GetOtherRead(id);
+
+        double ohwt = opt_ohwt * o->identity_ / 100;
+        double olwt = o->identity_ / 100;
+
+        auto mr = o->MappingTo<2>(t, {0, q.len});
+        auto start = std::max(0, mr[0] < mr[1] ? mr[0] : mr[1]);
+        auto end =   std::min(t.len, mr[0] >= mr[1] ? mr[0] : mr[1]);
+        // start -- t.start -- t.end -- end
+        assert(start <= t.start && t.end <= end);
+
+        double wt = std::accumulate(cand_cov_wts.begin()+start, cand_cov_wts.begin()+t.start, 0.0) * ohwt +
+                    std::accumulate(cand_cov_wts.begin()+t.start, cand_cov_wts.begin()+t.end, 0.0) * olwt + 
+                    std::accumulate(cand_cov_wts.begin()+t.end, cand_cov_wts.begin()+end, 0.0) * ohwt;
+
+        weights[index[i][0]] = wt;
+    }
+    return weights;
 }
 
 }   // namespace fsa

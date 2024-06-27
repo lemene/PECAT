@@ -140,16 +140,15 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     return ols;
 }
 
-Overlap Mapping::Pair::ToOverlap() const {
-    Overlap ol;
-    ol.a_.id = query->a_.id;
-    ol.a_.len = query->a_.len;
-    ol.a_.strand = query->SameDirect() == target->SameDirect() ? 0 : 1;
+void Mapping::Pair::ToOverlap() {
+    a_.id = query->a_.id;
+    a_.len = query->a_.len;
+    a_.strand = query->SameDirect() == target->SameDirect() ? 0 : 1;
     
-    ol.b_.id = target->a_.id;
-    ol.b_.len = target->a_.len;
-    ol.b_.strand = 0;
-    ol.identity_ = std::min(query->identity_, target->identity_);
+    b_.id = target->a_.id;
+    b_.len = target->a_.len;
+    b_.strand = 0;
+    identity_ = std::min(query->identity_, target->identity_);
 
     size_t als_len = std::max<size_t>(query->b_.end, target->b_.end) - 
                      std::min<size_t>(query->b_.start, target->b_.start);
@@ -195,15 +194,9 @@ Overlap Mapping::Pair::ToOverlap() const {
     align_cigar(query, als, als_start, 0);
     align_cigar(target, als, als_start, 1);
 
-
-    // for (size_t i = 0; i < als.size(); ++i) {
-    //     LOG(INFO)("-  %d %d", als[i][0], als[i][1]);
-    // }
-
-    const size_t N = 1;
+    const size_t N = 4;
     size_t start = std::max<size_t>(query->b_.start, target->b_.start) - als_start;
     size_t end = std::min<size_t>(query->b_.end, target->b_.end) - als_start;
-    //LOG(INFO)("S-E0: %d-%d", start,end);
     for (; start + N < end; ++start) {
         if (std::abs(als[start][0] - als[start+N][0]) == N &&
             std::abs(als[start][1] - als[start+N][1]) == N) {
@@ -219,27 +212,20 @@ Overlap Mapping::Pair::ToOverlap() const {
         }
     }
         
-
-    //LOG(INFO)("S-E1: %d-%d", start,end);
-    
-    //assert(end > start + 100);
     if (query->a_.strand == 0) {
-        ol.a_.start = als[start][0];
-        ol.a_.end = als[end-1][0] + 1;
+        a_.start = als[start][0];
+        a_.end = als[end-1][0] + 1;
     } else {
-        ol.a_.start = als[end-1][0]-1;
-        ol.a_.end = als[start][0];
+        a_.start = als[end-1][0]-1;
+        a_.end = als[start][0];
     }
     
     if (target->a_.strand == 0) {
-        ol.b_.start = als[start][1];
-        ol.b_.end = als[end-1][1] + 1;
+        b_.start = als[start][1];
+        b_.end = als[end-1][1] + 1;
     } else {
-//        printf("tss: %d %d %d %d\n", start, end, als[start][0]-1, als[end-1][0]);
-        ol.b_.start = als[end-1][1]-1;
-        ol.b_.end = als[start][1];
-    }
-    return ol;
-    
+        b_.start = als[end-1][1]-1;
+        b_.end = als[start][1];
+    }    
 }
 } // namespace fsa

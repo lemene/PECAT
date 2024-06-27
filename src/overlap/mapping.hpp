@@ -16,12 +16,18 @@ public:
     const std::string& QueryNameById(Seq::Id id) { return ol_store_.GetStringPool().QueryStringById(id); }
     void BuildIndex();
 
-    struct Pair {
-        Overlap ToOverlap() const;
+    struct Pair : public Overlap {
+        Pair(const Overlap* q, const Overlap* t) : query(q), target(t) {
+            ToOverlap();
+        }
 
+protected:
+        void ToOverlap();
+public:
         const Overlap* query;
         const Overlap* target;
     };
+
     std::vector<Pair> QueryOverlaps(const std::string &name) const;
     std::vector<Pair> QueryOverlaps(Seq::Id id) const;
     

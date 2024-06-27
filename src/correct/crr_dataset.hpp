@@ -5,7 +5,6 @@
 
 #include "overlap_store.hpp"
 #include "read_store.hpp"
-#include "corrector.hpp"
 #include "overlap/mapping.hpp"
 
 namespace fsa {
@@ -27,25 +26,36 @@ public:
     class OlGroup {
     public:
         OlGroup(Seq::Id i) : id(i) {}
-        OlGroup(const OverlapGrouper::Group& gp) : id (gp.id), ols(gp.ols), index(gp.index) {}
 
         bool Empty() const { return ols.size() == 0; }
         size_t Size() const { return index.size(); }
         size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
-        const Overlap* Get(size_t i, size_t j) { return ols[index[i][0]+j]; }
+        const Overlap* Get(size_t i, size_t j) { return Get(ols[index[i][0]+j]); }
 
         void Sort(double opt_ohwt);
         std::vector<double> GetWeight(double opt_ohwt);
 
         void BuildIndex();
 
+        struct Index {
+            uint8_t t;  // type: 0 ava; 1 map
+            uint16_t p; // position;
+        };
+
         Seq::Id id;
-        std::vector<const Overlap*> ols;
+
+        const Overlap* Get(const Index& idx) {
+            return idx.t == 0 ? ava[idx.p] : &map[idx.p];
+        }
+
+
+        std::vector<Index> ols;
         std::vector<std::array<size_t, 2>> index;
-        std::shared_ptr<std::vector<Overlap>> from_mapping;
+        std::vector<const Overlap*> ava;
+        std::vector<Mapping::Pair> map;
     };
-    OlGroup Get(int id) const { return OlGroup(grouper_.Get(id)); }
-    OlGroup Get2(int id) const;
+
+    OlGroup GetOverlaps(int id) const;
 protected:
     void LoadReadIds();
     void LoadOverlaps();

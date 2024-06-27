@@ -6,9 +6,16 @@
 #include <map>
 #include <set>
 
-#include "corrector.hpp"
 
 #include "aligner.hpp"
+
+#include <fstream>
+#include <array>
+#include <vector>
+#include <unordered_set>
+#include "align/alignment.hpp"
+#include "../utils/logger.hpp"
+#include "overlap_store.hpp"
 
 namespace fsa {
 
@@ -16,8 +23,67 @@ class ReadStore;
 class CrrOptions;
 class CrrDataset;
 
-class AlignmentGraph : public Corrector {
+class AlignmentGraph {
 public:
+
+   struct Loc {
+        static Loc Invalid() { return { -1, 0, -1}; }
+
+        Loc(int c=-1, int r=-1, int b=-1) : col(c), row(r), base(b) { }
+        bool operator == (const Loc &a) const{
+            return col == a.col && row == a.row && base == a.base;
+        }
+        
+        bool operator != (const Loc &a) const{
+            return !(*this == a);
+        }
+        bool operator < (const Loc &a) const {
+            return col < a.col || (col == a.col && (row < a.row || (row == a.row && base < a.base)));
+        }
+
+        int col;      
+        int row ;
+        int base ;
+    };
+
+    struct Link {
+        bool operator == (const Link &a) const{
+            return prev == a.prev;
+        }
+        bool operator == (const Loc &a) const{
+            return prev == a;
+        }
+        bool operator < (const Link &a) const {
+            return prev < a.prev;
+        }
+
+        void Reset(const Loc& p, int id) {
+            prev = p;
+            count = 1;
+            seqs.reset();
+            seqs.set(id, true);
+        }
+        
+        Loc prev {-1, -1, -1};
+        size_t count {0};
+        MyBitSet seqs;
+        //double w;       // weight
+    };
+
+    struct Tag {
+        bool operator == (const Tag &a) const{
+            return curr == a.curr && prev == a.prev;
+        }
+        bool operator != (const Tag &a) const{
+            return !(*this == a);
+        }
+        bool operator < (const Tag &a) const {
+            return curr < a.curr || (curr == a.curr && prev < a.prev);
+        }
+        Loc curr;
+        Loc prev;
+        int id; // seq id
+    };
 
     struct Node {
         Node() {}

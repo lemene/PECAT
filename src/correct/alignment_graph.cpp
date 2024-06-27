@@ -701,6 +701,7 @@ void AlignmentGraph::AddQuery(size_t sid, size_t query_start, const std::string 
             continue;
         }
         
+        printf("assert: %c %d %d %d\n", bt, (*target_)[index_t], index_t, Base2Num[bt]); fflush(stdout);
         assert(bt == '-' || (*target_)[index_t] == Base2Num[bt]);
 
         if (index_t < (int)range_[0]) continue;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <vector>
 #include <thread>
 #include <future>
@@ -434,7 +435,7 @@ void ComputeMeanAbsoluteDeviation(std::vector<std::array<T,2>>& data, T &mean, T
 struct TimeCounter {
     TimeCounter(const std::string& n) : name(n) {}
     ~TimeCounter()  { 
-        std::cerr << "Record Time(" << name << "):" << count << ", " << ticks / 10  << ", " << value << "\n";
+        std::cerr << "Record Time(" << name << "): count=" << count << ", time(ms)=" << ticks / 10  << ", value=" << value << "\n";
     }
 
     void Inc(double s) {
@@ -491,5 +492,73 @@ void Intersection(const std::unordered_set<T> &a, std::unordered_set<T> &b, std:
 }
 
 size_t GetMemoryUsage();
+
+
+class BitSet {
+public:
+    static const size_t block_size = 256;
+
+    void reset() { 
+        for (auto &b : bits) b.reset();
+    }
+    void set(size_t i, bool torf) {
+        while (i >= block_size*bits.size()) {
+            bits.push_back(std::bitset<block_size>());
+        }
+        auto ib = i / block_size;
+        auto off = i % block_size;
+        bits[ib].set(off, torf);
+    }
+
+    bool operator [](size_t i) const {
+        //LOG(INFO)("S[]S");
+        if (i < block_size*bits.size()) {
+            auto ib = i / block_size;
+            auto off = i % block_size;
+            return bits[ib][off];
+        } else {
+            return false;
+        }
+        //LOG(INFO)("S[]C");
+    }
+    BitSet operator &(const BitSet& b) const {
+        //LOG(INFO)("SSS");
+        BitSet c;
+        if (bits.size() >= b.bits.size()) {
+            c.bits = b.bits;
+            for (size_t i = 0; i < c.bits.size(); ++i) {
+                c.bits[i] &= bits[i];
+            }
+        } else {
+            c.bits = bits;
+            for (size_t i = 0; i < c.bits.size(); ++i) {
+                c.bits[i] &= b.bits[i];
+            }
+        }
+        
+        //LOG(INFO)("ccc");
+        return c;
+    }
+    size_t count() const {
+        size_t cnt = 0;
+        for (const auto &b : bits) {
+            cnt += b.count();
+        }
+        return cnt;
+    }
+    std::string to_string() const {
+        std::string r;
+        for (const auto &b : bits) {
+            r += b.to_string();
+        }
+        return r;
+    }
+
+    std::vector<std::bitset<block_size>> bits;
+};
+
+//typedef std::bitset<500> MyBitSet;
+typedef BitSet MyBitSet;
+
 } // namespace fsa {
 
