@@ -523,6 +523,7 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
     const auto& qread = ol->GetOtherRead(tid);
     al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
     al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
+    assert(al.target!= nullptr);
     al.target_start = tread.start;
     al.target_end = tread.end;
     al.query_start = qread.start;
@@ -530,18 +531,31 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
 
     const char* ACGT = "-ACGT-";
     if (tread.id == ol->b_.id) {
+        assert(tread.strand == 0);
         for (size_t i = 0; i < tal.size(); ++i) {
             al.aligned_target.push_back(ACGT[tal[i]]);
             al.aligned_query.push_back(ACGT[qal[i]]);
         }
-    printf("q:%s\nt:%s\n", al.aligned_target.c_str(), al.aligned_query.c_str());
     } else {
-        for (size_t i = 0; i < tal.size(); ++i) {
-            al.aligned_target.push_back(ACGT[5 - tal[tal.size()-i-1]]);
-            al.aligned_query.push_back(ACGT[5 - qal[tal.size()-i-1]]);
+        if (tread.strand == 0) {
+            for (size_t i = 0; i < tal.size(); ++i) {
+                al.aligned_target.push_back(ACGT[qal[i]]);
+                al.aligned_query.push_back(ACGT[tal[i]]);
+            }
+        } else {
+            for (size_t i = 0; i < tal.size(); ++i) {
+                al.aligned_target.push_back(ACGT[5 - qal[tal.size()-i-1]]);
+                al.aligned_query.push_back(ACGT[5 - tal[tal.size()-i-1]]);
+            }
         }
     }
 
+    // for (size_t i = 0, it = 0; i < al.aligned_target.size(); ++i) {
+    //     if (al.aligned_target[i] != '-') {
+    //         assert(al.aligned_target[i] == "ACGT"[(*al.target)[it+al.target_start]]);
+    //         it ++;
+    //     }
+    // }
 
     return true;
 }
