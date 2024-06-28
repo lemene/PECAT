@@ -61,7 +61,7 @@ void ReadCorrect::Correct() {
         for (auto ids = dispatcher->Get(); ids.size() > 0; ids = dispatcher->Get()){
             worker.ResetCache(ids, ids.size());
             for (auto tid : ids) {
-                if (worker.Correct(tid)) {
+                if (Correct(tid, worker)) {
                     if ( worker.GetCorrected().size() > 0) {
                         SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
                         if (of_infos.is_open()) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
@@ -156,7 +156,6 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& 
             auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
             cache_.SetAlignment(qread.id, tread.id, o->SameDirect(), al);
             return r;
-
         } else {
             stat_info.cache++;
             return al.Valid();
@@ -284,69 +283,34 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
     return true;
 }
 
-bool ReadCorrect::Worker::Correct(int id) {
-    auto group = owner_.dataset_.GetOverlaps(id);
+bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
+    auto group = dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
 
-    const DnaSeq& target = owner_.dataset_.read_store_.GetSeq(id);
-    assert(target.Size() >= (size_t)owner_.opts_.filter0_.min_length); 
-    group.Sort(owner_.opts_.cands_opts_.overhang_weight);
+    const DnaSeq& target = dataset_.read_store_.GetSeq(id);
+    assert(target.Size() >= (size_t)opts_.filter0_.min_length); 
+    group.Sort(opts_.cands_opts_.overhang_weight);
 
-    aligner_.SetTarget(target);
+    wrk.aligner_.SetTarget(target);
     std::vector<int> coverage(target.Size(), 0);
 
     std::vector<Alignment> first_als;
     for (size_t i = 0; i < group.Size(); ++i) {
-        DEBUG_printf("done = %zd, group_size = %zd\n", i, group.Size());
-        auto ol = group.Get(i, 0); 
-        const auto& tread = ol->GetRead(id);
-        const auto& qread = ol->GetOtherRead(id);
-        Alignment al(tread.id, qread.id);
-        bool r = false;
-        double best_identity = 0.0;
+        auto al = GetAligmentBetweenTwoReads(id, group, i, wrk);
 
-        for (size_t j = 0; j < group.Size(i); ++j) {
-            auto ol = group.Get(i, j);
-            Alignment al_local(tread.id, qread.id);
-
-            auto r_local = GetAlignment(id, ol, al_local);
-            DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
-                owner_.dataset_.QueryStringById(qread.id).c_str(), owner_.dataset_.QueryStringById(tread.id).c_str(),
-                r_local,
-               al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
-               al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
-
-            DEBUG_printf("al_global_ident %.02f <= %.02f\n", al_local.Identity(), owner_.opts_.min_identity_);
-            if (r_local && !owner_.ExactFilter(al_local) && al_local.Identity() >= owner_.opts_.min_identity_) {
-                al_local.ComputeDistance(owner_.opts_.local_window_size_);
-                DEBUG_printf("al_local_ident %.02f <= %.02f\n", al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_), owner_.opts_.min_local_identity_);
-                if (al_local.MaxLocalIdentity_100(owner_.opts_.local_window_size_) >= owner_.opts_.min_local_identity_) {
-                    if (best_identity < al_local.Identity()) {
-                        best_identity = al_local.Identity();
-                        r = r_local;
-                        al = al_local;
-                        DEBUG_printf("ext d = %d\n", al.distance);
-                    }
-                    if (j >= 3) break;
-                }
-
-            }
-        }
-
-        if (r && !owner_.ExactFilter(al)) { 
-            stat_info.succ++;
+        if (al.Valid()) { 
             first_als.push_back(al);
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
         } 
 
-        if (owner_.opts_.cands_opts_.IsEndCondition(coverage)) break;
+        if (opts_.cands_opts_.IsEndCondition(coverage)) break;
     }
 
     if (first_als.size() > 0) {
     ////////
 
-    if (owner_.opts_.check_local_identity_) {
-        std::vector<Alignment> first_als1 = CheckLocalDistance0(first_als);
+    if (opts_.check_local_identity_) {
+        std::vector<Alignment> first_als1 = wrk.CheckLocalDistance0(first_als);
         
         DEBUG_printf("ckck first_als size %zd\n", first_als.size());
         std::swap(first_als1, first_als);
@@ -355,29 +319,77 @@ bool ReadCorrect::Worker::Correct(int id) {
 
 
     size_t stub = 500;
-    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, owner_.opts_.min_coverage); 
+    auto range = MostEffectiveCoverage(target.Size(), first_als, stub, opts_.min_coverage); 
     DEBUG_printf("Range: %zd - %zd\n", range[0], range[1]);
-    if (range[0] < range[1] && range[1] - range[0] + 2*stub >= (size_t)owner_.opts_.filter0_.min_length) {
+    if (range[0] < range[1] && range[1] - range[0] + 2*stub >= (size_t)opts_.filter0_.min_length) {
         assert(range[0] >= stub && range[1] + stub <= target.Size());
         range[0] -= stub;
         range[1] += stub;
 
         for (const auto &al : first_als) {
-            if (!owner_.ExactFilter(al, range)) {
-               aligned_.push_back(al);
+            if (!ExactFilter(al, range)) {
+               wrk.aligned_.push_back(al);
             }
         }
-        DEBUG_printf("aligned_.size: %zd\n", aligned_.size());
-        for (auto &al : aligned_) { al.Rearrange(); }
+        DEBUG_printf("aligned_.size: %zd\n", wrk.aligned_.size());
+        for (auto &al : wrk.aligned_) { al.Rearrange(); }
         {
             TimeCounter::Mark m(tc_graph);
-        graph_.Build(target, range, aligned_);
-        graph_.Consensus();
+        wrk.graph_.Build(target, range, wrk.aligned_);
+        wrk.graph_.Consensus();
         }
         return true;
     }
     }
     return false;
+}
+
+
+Alignment ReadCorrect::GetAligmentBetweenTwoReads(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
+
+    DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
+    auto ol = group.Get(ig, 0); 
+    const auto& tread = ol->GetRead(tid);
+    const auto& qread = ol->GetOtherRead(tid);
+
+    // 从cache查询
+
+    Alignment al(tread.id, qread.id);
+    bool r = false;
+    double best_identity = 0.0;
+
+    for (size_t j = 0; j < group.Size(ig); ++j) {
+        auto ol = group.Get(ig, j);
+        Alignment al_local(tread.id, qread.id);
+
+        auto r_local = wrk.GetAlignment(tid, ol, al_local);
+        DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
+            dataset_.QueryStringById(qread.id).c_str(), dataset_.QueryStringById(tread.id).c_str(),
+            r_local,
+            al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
+            al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
+
+        DEBUG_printf("al_global_ident %.02f <= %.02f\n", al_local.Identity(), opts_.min_identity_);
+        if (r_local && !ExactFilter(al_local) && al_local.Identity() >= opts_.min_identity_) {
+            al_local.ComputeDistance(opts_.local_window_size_);
+            DEBUG_printf("al_local_ident %.02f <= %.02f\n", al_local.MaxLocalIdentity_100(opts_.local_window_size_), opts_.min_local_identity_);
+            if (al_local.MaxLocalIdentity_100(opts_.local_window_size_) >= opts_.min_local_identity_) {
+                if (best_identity < al_local.Identity()) {
+                    best_identity = al_local.Identity();
+                    r = r_local;
+                    al = al_local;
+                    DEBUG_printf("ext d = %d\n", al.distance);
+                }
+                if (j >= 3) break;
+            }
+
+        }
+    }
+
+    if (r && !ExactFilter(al)) { 
+        wrk.stat_info.succ++;
+    }
+    return al;
 }
 
 std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vector<Alignment>& als) {
@@ -485,33 +497,39 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
 
     size_t qidx = 0;        // not from ol->b_.start;
     size_t tidx = ol->b_.start;
+    size_t distance = 0;
     for (const auto &d : ol->detail_) {
         switch (d.type){
         case 'M':
         case '=':
-            for (size_t i = 0; i < d.len; ++i) {
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
                 uint8_t cq = get_base(ol->a_, qseq, qidx+i);
                 uint8_t ct = tseq[tidx+i];
                 qal.push_back(cq+1);
                 tal.push_back(ct+1);
+                if (cq != ct) {
+                    distance++;
+                }
             }
             qidx += d.len;
             tidx += d.len;
             break;
         case 'I':
-            for (size_t i = 0; i < d.len; ++i) {
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
                 char cq = get_base(ol->a_, qseq, qidx+i);
                 qal.push_back(cq+1);
                 tal.push_back(0);
             }
             qidx += d.len;
+            distance += d.len;
             break;
         case 'D':
-            for (size_t i = 0; i < d.len; ++i) {
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
                 char ct = tseq[tidx+i];
                 qal.push_back(0);
                 tal.push_back(ct+1);
             }
+            distance += d.len;
             tidx += d.len;
             break; 
         default:
@@ -528,6 +546,7 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
     al.target_end = tread.end;
     al.query_start = qread.start;
     al.query_end = tread.end;
+    al.distance = distance;
 
     const char* ACGT = "-ACGT-";
     if (tread.id == ol->b_.id) {

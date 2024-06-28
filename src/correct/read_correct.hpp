@@ -54,7 +54,6 @@ protected:
             aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };
         ~Worker() {  }
-        bool Correct(int id);
         bool GetAlignment(Seq::Id id, const Overlap* o, Alignment &al);
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(); }
         void ClearCache() { return cache_.Clear(); }
@@ -67,7 +66,7 @@ protected:
         bool Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignment &al);
    
         StatInfo stat_info;
-    protected:
+
         ReadCorrect& owner_;
         AlignmentGraph graph_;
         Aligner aligner_;
@@ -76,7 +75,9 @@ protected:
         AlignmentCache cache_;
     };   
     friend class Worker;
-
+    
+    bool Correct(Seq::Id tid, Worker& wrk);
+    Alignment GetAligmentBetweenTwoReads(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk);
 protected:
     CrrOptions opts_;
     CrrDataset dataset_ { opts_ };

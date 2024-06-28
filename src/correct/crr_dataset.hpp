@@ -30,7 +30,7 @@ public:
         bool Empty() const { return ols.size() == 0; }
         size_t Size() const { return index.size(); }
         size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
-        const Overlap* Get(size_t i, size_t j) { return Get(ols[index[i][0]+j]); }
+        const Overlap* Get(size_t i, size_t j) const { return Get(ols[index[i][0]+j]); }
 
         void Sort(double opt_ohwt);
         std::vector<double> GetWeight(double opt_ohwt);
@@ -44,7 +44,7 @@ public:
 
         Seq::Id id;
 
-        const Overlap* Get(const Index& idx) {
+        const Overlap* Get(const Index& idx) const {
             return idx.t == 0 ? ava[idx.p] : &map[idx.p];
         }
 
