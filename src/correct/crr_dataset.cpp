@@ -72,17 +72,16 @@ void CrrDataset::LoadReads() {
         ids.insert(o.b_.id);
     }
     
-    if (!opts_.rd_2_ref_fname_.empty()) {
+    if (opts_.rd_2_ref_fname_.empty()) {
         read_store_.Load(opts_.rread_fname_, "", false, ids);
     } else {
         read_store_.Load(opts_.rread_fname_, "");
-
     }
     
     if (read_ids_.empty()) {
         read_ids_.reserve(read_store_.Size());
         auto rs = read_store_.GetIdRange();
-        for (Seq::Id i = rs[0]; i < rs[1]; ++i) {
+        for (Seq::Id i = rs[0]; i < (Seq::Id)rs[1]; ++i) {
             read_ids_.push_back(i);
         }
     }
@@ -188,15 +187,18 @@ void CrrDataset::EstimateParameters() {
 CrrDataset::OlGroup CrrDataset::GetOverlaps(Seq::Id id) const {
     OlGroup group(id); 
     group.map = mapping_.QueryOverlaps(id);
+    
     group.ava = grouper_.GetRelatedOverlaps(id);
-; 
+
     group.ols.reserve(group.map.size() + group.ava.size());
     for (size_t i = 0; i < group.map.size(); ++i) {
-        if (opts_.filter0_.Valid(group.map[i]))
-            group.ols.push_back({1, i});
+        OlGroup::SetType(group.map[i], OlGroup::Type::MAP);
+        if (opts_.filter0_.Valid(group.map[i])) 
+            group.ols.push_back({1, (uint16_t)i});
     }
     for (size_t i = 0; i < group.ava.size(); ++i) {
-        group.ols.push_back({0, i});
+        OlGroup::SetType(*group.ava[i], OlGroup::Type::AVA);
+        group.ols.push_back({0, (uint16_t)i});
     }
 
     group.BuildIndex();

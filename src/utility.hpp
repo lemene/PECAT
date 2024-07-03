@@ -511,7 +511,6 @@ public:
     }
 
     bool operator [](size_t i) const {
-        //LOG(INFO)("S[]S");
         if (i < block_size*bits.size()) {
             auto ib = i / block_size;
             auto off = i % block_size;
@@ -519,10 +518,8 @@ public:
         } else {
             return false;
         }
-        //LOG(INFO)("S[]C");
     }
     BitSet operator &(const BitSet& b) const {
-        //LOG(INFO)("SSS");
         BitSet c;
         if (bits.size() >= b.bits.size()) {
             c.bits = b.bits;

@@ -63,7 +63,6 @@ protected:
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rd) { graph_.SaveReadInfos(os, tid, rd); }
         std::vector<Alignment> CheckLocalDistance0(const std::vector<Alignment>& als);
         std::vector<std::array<size_t, 2>> GroupPositions(const std::vector<size_t> &sorted_positions);
-        bool Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignment &al);
    
         StatInfo stat_info;
 
@@ -77,7 +76,13 @@ protected:
     friend class Worker;
     
     bool Correct(Seq::Id tid, Worker& wrk);
-    Alignment GetAligmentBetweenTwoReads(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk);
+    Alignment GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk);
+    Alignment GetAlignmentOnes(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk);
+    Alignment GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& wrk);
+    void GetAlignmentFromCigar(Seq::Id tid, const Overlap &ol, Alignment &al);
+    void GetAlignmentFromMapping0(Seq::Id tid, const Overlap &ol, Worker& wrk, Alignment &al);
+    void GetAlignmentFromMapping1(Seq::Id tid, const Overlap &ol, Worker& wrk, Alignment &al);
+
 protected:
     CrrOptions opts_;
     CrrDataset dataset_ { opts_ };

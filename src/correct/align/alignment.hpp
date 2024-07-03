@@ -22,12 +22,12 @@ public:
     size_t AlignSize()  const { return target_end - target_start; }
     size_t TargetSize() const { return target == nullptr ? 0 : target->Size(); }
     size_t QuerySize() const { return query == nullptr ? 0 : query->Size(); }
-    double Identity() const { return 100*(1- distance * 1.0 / aligned_target.size()); }
+    double Identity() const { return aligned_target.size() > 0 ? 100*(1- distance * 1.0 / aligned_target.size()) : 0; }
     double IdentityIgnoreHomo(size_t len) const;
     std::array<char,2> GetAlign(size_t i) const { return {aligned_query[i], aligned_target[i]}; }
 
     bool Valid() const { return target_end - target_start > 0; }
-    void Swap(bool sameDirect=true); 
+    void Swap(); 
     void Rearrange() { Rearrange(aligned_query, aligned_target); }
     static void Rearrange(std::string &alq, std::string &alt);
     static void Rearrange1(std::string &alq, std::string &alt);
@@ -38,6 +38,7 @@ public:
     std::pair<bool, uint16_t> MaxLocalDistance (size_t s, size_t e) const;
     size_t MaxLocalDistancePosition() const { return max_local_distance_position + target_start; }
     double MaxLocalIdentity_100(size_t win_size) const { return 100.0 - (MaxLocalDistance() * 100.0 / win_size); }
+    void CheckAlignment();
 
     Seq::Id tid { Seq::NID };
     Seq::Id qid { Seq::NID };
@@ -48,6 +49,7 @@ public:
     size_t distance {0};
     std::string aligned_target;
     std::string aligned_query;
+    uint8_t strand:1;              // 0 same 1 reverse complement
 
     std::vector<int16_t> local_distances;
     size_t max_local_distance_position { 0 };

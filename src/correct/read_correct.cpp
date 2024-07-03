@@ -5,6 +5,7 @@
 #include <ctime>
 #include "./utils/logger.hpp"
 #include "../utility.hpp"
+#include "edlib.h"
 
 namespace fsa {
 
@@ -147,26 +148,23 @@ bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& 
     TimeCounter::Mark m(tc_align);
     const auto& tread = o->GetRead(id);
     const auto& qread = o->GetOtherRead(id);
+    al.strand = o->SameDirect() ? 0 : 1;
 
     stat_info.total++;
     DEBUG_printf("start align %s %s\n", owner_.dataset_.read_store_.QueryNameById(qread.id).c_str(), owner_.dataset_.read_store_.QueryNameById(tread.id).c_str());
     if (owner_.opts_.use_cache) {
-        if (!cache_.GetAlignment(qread.id, tread.id, o->SameDirect(), al)) {
+        if (!cache_.GetAlignment(qread.id, tread.id, al)) {
             std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
             auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-            cache_.SetAlignment(qread.id, tread.id, o->SameDirect(), al);
+            cache_.SetAlignment(qread.id, tread.id, al);
             return r;
         } else {
             stat_info.cache++;
             return al.Valid();
         }
     } else {
-        if (o->detail_.size() == 0) {
-            std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-            return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-        } else {
-            return Cigar2Alignment(id, o, al);
-        }
+        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+        return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
     }
 }
       
@@ -296,7 +294,7 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 
     std::vector<Alignment> first_als;
     for (size_t i = 0; i < group.Size(); ++i) {
-        auto al = GetAligmentBetweenTwoReads(id, group, i, wrk);
+        auto al = GetAlignmentWithCache(id, group, i, wrk);
 
         if (al.Valid()) { 
             first_als.push_back(al);
@@ -345,51 +343,84 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 }
 
 
-Alignment ReadCorrect::GetAligmentBetweenTwoReads(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
+Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
+    
+    DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
+    auto ol = group.Get(ig, 0); 
+    const auto& tread = ol->GetRead(tid);
+    const auto& qread = ol->GetOtherRead(tid);
+
+    Alignment al(tread.id, qread.id);
+    al.strand = ol->SameDirect() ? 0 : 1;
+
+    // 从cache查询
+    if (opts_.use_cache) {
+        if (!wrk.cache_.GetAlignment(qread.id, tread.id, al)) {
+            al = GetAlignmentOnes(tid, group, ig, wrk);
+            al.CheckAlignment();
+            wrk.cache_.SetAlignment(qread.id, tread.id, al);
+        } else {
+            wrk.stat_info.cache++;
+        }
+    } else {{
+        al = GetAlignmentOnes(tid, group, ig, wrk);
+        al.CheckAlignment();
+    }}
+    return al;
+}
+
+        // DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
+        //     dataset_.QueryStringById(qread.id).c_str(), dataset_.QueryStringById(tread.id).c_str(),
+        //     r_local,
+        //     al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
+        //     al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
+
+
+Alignment ReadCorrect::GetAlignmentOnes(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
 
     DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
     auto ol = group.Get(ig, 0); 
     const auto& tread = ol->GetRead(tid);
     const auto& qread = ol->GetOtherRead(tid);
 
-    // 从cache查询
+    Alignment al_best(tread.id, qread.id);
 
-    Alignment al(tread.id, qread.id);
-    bool r = false;
-    double best_identity = 0.0;
-
-    for (size_t j = 0; j < group.Size(ig); ++j) {
-        auto ol = group.Get(ig, j);
-        Alignment al_local(tread.id, qread.id);
-
-        auto r_local = wrk.GetAlignment(tid, ol, al_local);
-        DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
-            dataset_.QueryStringById(qread.id).c_str(), dataset_.QueryStringById(tread.id).c_str(),
-            r_local,
-            al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
-            al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
-
-        DEBUG_printf("al_global_ident %.02f <= %.02f\n", al_local.Identity(), opts_.min_identity_);
-        if (r_local && !ExactFilter(al_local) && al_local.Identity() >= opts_.min_identity_) {
-            al_local.ComputeDistance(opts_.local_window_size_);
-            DEBUG_printf("al_local_ident %.02f <= %.02f\n", al_local.MaxLocalIdentity_100(opts_.local_window_size_), opts_.min_local_identity_);
-            if (al_local.MaxLocalIdentity_100(opts_.local_window_size_) >= opts_.min_local_identity_) {
-                if (best_identity < al_local.Identity()) {
-                    best_identity = al_local.Identity();
-                    r = r_local;
-                    al = al_local;
-                    DEBUG_printf("ext d = %d\n", al.distance);
+    for (size_t j = 0; j < std::min<size_t>(3, group.Size(ig)); ++j) {
+        const Overlap& ol = *group.Get(ig, j);
+        Alignment al = GetAlignmentOne(tid, ol, wrk);
+        if (!ExactFilter(al) && al.Identity() >= opts_.min_identity_) {     
+            al.ComputeDistance(opts_.local_window_size_);
+            if (al.MaxLocalIdentity_100(opts_.local_window_size_) >= opts_.min_local_identity_) {
+                // pass check
+                if (al_best.Identity() < al.Identity()) {
+                    al_best = al;
                 }
-                if (j >= 3) break;
             }
-
         }
     }
+    return al_best;
+}
 
-    if (r && !ExactFilter(al)) { 
-        wrk.stat_info.succ++;
-    }
+Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& wrk) {
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
+    Alignment al(tread.id, qread.id);
+    al.strand = ol.SameDirect() ? 0 : 1;
+    
+    if (ol.detail_.size() != 0) {
+        GetAlignmentFromCigar(tid, ol, al);
+    } else if (CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP) {
+        GetAlignmentFromMapping0(tid, ol, wrk, al);
+    } else {
+        // return GetAlignmentFromBases();
+        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+
+        // TODO target 由调用者设置，可能存在不一致，需要优化。
+        wrk.aligner_.Align(dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  
+        
+    } 
     return al;
+
 }
 
 std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vector<Alignment>& als) {
@@ -479,31 +510,30 @@ std::vector<std::array<size_t, 2>> ReadCorrect::Worker::GroupPositions(const std
 }
 
 
+void ReadCorrect::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol, Alignment &al) {
+    assert(ol.detail_.size() > 0);
 
-bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignment &al) {
-    assert(ol->detail_.size() > 0);
+    const DnaSeq& qseq = dataset_.read_store_.GetSeq(ol.a_.id);
+    const DnaSeq& tseq = dataset_.read_store_.GetSeq(ol.b_.id);
+    assert(ol.b_.strand == 0);
 
-    const DnaSeq& qseq = owner_.dataset_.read_store_.GetSeq(ol->a_.id);
-    const DnaSeq& tseq = owner_.dataset_.read_store_.GetSeq(ol->b_.id);
-    assert(ol->b_.strand == 0);
-
-    std::vector<uint8_t> tal;   tal.reserve(ol->AlignedLength()*2);
-    std::vector<uint8_t> qal;   qal.reserve(ol->AlignedLength()*2);
+    std::vector<uint8_t> tal;   tal.reserve(ol.AlignedLength()*2);
+    std::vector<uint8_t> qal;   qal.reserve(ol.AlignedLength()*2);
 
 
     auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
         return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
     };
 
-    size_t qidx = 0;        // not from ol->b_.start;
-    size_t tidx = ol->b_.start;
+    size_t qidx = 0;        // not from ol.b_.start;
+    size_t tidx = ol.b_.start;
     size_t distance = 0;
-    for (const auto &d : ol->detail_) {
+    for (const auto &d : ol.detail_) {
         switch (d.type){
         case 'M':
         case '=':
             for (size_t i = 0; i < (size_t)d.len; ++i) {
-                uint8_t cq = get_base(ol->a_, qseq, qidx+i);
+                uint8_t cq = get_base(ol.a_, qseq, qidx+i);
                 uint8_t ct = tseq[tidx+i];
                 qal.push_back(cq+1);
                 tal.push_back(ct+1);
@@ -516,7 +546,7 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
             break;
         case 'I':
             for (size_t i = 0; i < (size_t)d.len; ++i) {
-                char cq = get_base(ol->a_, qseq, qidx+i);
+                char cq = get_base(ol.a_, qseq, qidx+i);
                 qal.push_back(cq+1);
                 tal.push_back(0);
             }
@@ -537,10 +567,10 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
         }
     }
     
-    const auto& tread = ol->GetRead(tid);
-    const auto& qread = ol->GetOtherRead(tid);
-    al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
-    al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
+    al.query = &dataset_.read_store_.GetSeq(qread.id);
+    al.target = &dataset_.read_store_.GetSeq(tread.id);
     assert(al.target!= nullptr);
     al.target_start = tread.start;
     al.target_end = tread.end;
@@ -549,7 +579,7 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
     al.distance = distance;
 
     const char* ACGT = "-ACGT-";
-    if (tread.id == ol->b_.id) {
+    if (tread.id == ol.b_.id) {
         assert(tread.strand == 0);
         for (size_t i = 0; i < tal.size(); ++i) {
             al.aligned_target.push_back(ACGT[tal[i]]);
@@ -573,11 +603,72 @@ bool ReadCorrect::Worker::Cigar2Alignment(Seq::Id tid, const Overlap* ol, Alignm
     //     if (al.aligned_target[i] != '-') {
     //         assert(al.aligned_target[i] == "ACGT"[(*al.target)[it+al.target_start]]);
     //         it ++;
-    //     }
+    //     } 
     // }
 
-    return true;
 }
-   
+TimeCounter tc_map("mapping");
+void ReadCorrect::GetAlignmentFromMapping0(Seq::Id tid, const Overlap& ol, Worker& wrk, Alignment &al) {
+    TimeCounter::Mark m(tc_map);
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
+
+    std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+    wrk.aligner_.Align(dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al); 
+}
+
+void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worker& wrk, Alignment &al) {
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
+    const auto& qseq = dataset_.read_store_.GetSeq(qread.id);
+    const auto& tseq = dataset_.read_store_.GetSeq(tread.id);
+    
+
+    assert(CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP);
+    auto pair = static_cast<const Mapping::Pair&>(ol);
+
+
+    al.target_start = tread.start;
+    al.target_end = tread.end;
+    al.query_start = qread.start;
+    al.query_end = qread.end;
+
+
+    const char* ACGT = "ACGT";
+    size_t it = al.target_start;
+    size_t iq = 0;
+    auto get_query_base = [&qseq, &qread, &pair](size_t p) {
+        return pair.SameDirect() ? qseq[qread.start + p] : 3 - qseq[qread.end - 1 - p];
+    };
+
+    auto aligned = pair.AlignBases(tid, qseq, tseq);
+    for (auto i : aligned) {
+        if (i == EDLIB_EDOP_MATCH) {
+            al.aligned_query .push_back(ACGT[get_query_base(iq++)]);
+            al.aligned_target.push_back(ACGT[tseq[it++]]);
+        } else if (i == EDLIB_EDOP_INSERT) {
+            al.aligned_query .push_back(ACGT[get_query_base(iq++)]);
+            al.aligned_target.push_back('-');
+            al.distance++;
+
+        } else if (i == EDLIB_EDOP_DELETE) {
+            al.aligned_query .push_back('-');
+            al.aligned_target.push_back(ACGT[tseq[it++]]);
+            al.distance++;
+            
+        } else {
+            assert(i == EDLIB_EDOP_MISMATCH);
+            al.aligned_query .push_back(ACGT[get_query_base(iq++)]);
+            al.aligned_target.push_back(ACGT[tseq[it++]]);
+            al.distance++;
+        }
+    }
+    //printf("eeee: %zd %d %d %d\n", aligned.size(), it, al.target_start, al.target_end);
+    assert(it == al.target_end);
+    assert(iq == al.query_end - al.query_start);
+    //printf("q:%s\nt:%s\n", al.aligned_query.c_str(), al.aligned_target.c_str());
+    //assert(0);
+}
+
 } // namespace fsa {
     

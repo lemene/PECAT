@@ -10,9 +10,9 @@ namespace fsa {
 
 class AlignmentCache {
 public:
-    bool GetAlignment(Seq::Id qit, Seq::Id tid, bool isSameDirect, Alignment &al) ;
-    void SetAlignment(Seq::Id qit, Seq::Id tid, bool isSameDirect, const Alignment &r);
-    bool HasAlignment(Seq::Id qit, Seq::Id tid, bool isSameDirect) const;
+    bool GetAlignment(Seq::Id qit, Seq::Id tid, Alignment &al) ;
+    void SetAlignment(Seq::Id qit, Seq::Id tid, const Alignment &r);
+    bool HasAlignment(Seq::Id qit, Seq::Id tid) const;
     void Clear() { cache_.clear(); ids_.clear();}
     
     void Reset(const std::vector<Seq::Id> &ids, size_t size) { 
@@ -20,10 +20,8 @@ public:
         ids_.insert(ids.begin(), ids.begin()+size); 
     }
 protected:
-    long long int ToKey(Seq::Id qit, Seq::Id tid, bool same_direct) const {
-        long long int k = ((long long int)qit << 32) + tid;
-        assert(k > 0);  // TODO Save one bit
-        return same_direct ? k : -k;
+    long long int ToKey(Seq::Id qit, Seq::Id tid) const {
+        return ((long long int)qit << 32) + tid;
     }
 
 protected:

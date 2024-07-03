@@ -1,15 +1,17 @@
 #include "alignment.hpp"
 
 #include <numeric>
+
+#include "utils/logger.hpp"
 namespace fsa {
 
-void Alignment::Swap(bool isSameDirect) {
+void Alignment::Swap() {
     std::swap(target, query);
     std::swap(target_start, query_start);
     std::swap(target_end, query_end);
     std::swap(aligned_target, aligned_query);
 
-    if (!isSameDirect) {
+    if (strand) {
         std::swap(target_start, target_end);
         target_start = target->Size() - target_start;
         target_end = target->Size() - target_end;
@@ -366,4 +368,38 @@ double Alignment::IdentityIgnoreHomo(size_t len) const {
 
 }
 
+void Alignment::CheckAlignment() {
+    if (!Valid()) return;
+    assert(aligned_query.size() == aligned_target.size());
+    for (size_t i = 0; i < aligned_query.size(); ++i) {
+        if (aligned_query[i] != '-' && aligned_target[i] != '-') {
+            assert(aligned_query[i] == aligned_target[i]);
+        }
+    }
+
+    assert(target != nullptr);
+    assert(query != nullptr);
+
+    size_t it = target_start;
+    size_t iq = 0;
+    auto get_query_base = [this](size_t p) {
+        return strand == 0 ? (*query)[query_start + p] : 3 - (*query)[query->Size() - query_start - 1 - p];
+    };
+
+    for (size_t i = 0; i < aligned_query.size(); ++i) {
+        if (aligned_target[i] != '-') {
+            assert(aligned_target[i] == "ACGT"[(*target)[it]]);
+            it++;
+        }
+
+        if (aligned_query[i] != '-') {
+            assert(aligned_query[i] == "ACGT"[get_query_base(iq)]);
+            iq++;
+        }
+
+    }
+ 
+    assert(it == target_end);
+    assert(iq == query_end - query_start);
+}
 } // namespace fsa {

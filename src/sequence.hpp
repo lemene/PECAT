@@ -137,6 +137,14 @@ public:
         }
     
     }
+    static DnaSeq ReverseComplement(const DnaSeq &s) {
+        DnaSeq r(s);
+        for (size_t i = 0; i < s.Size(); ++i)  {
+            r.Set(i, 3 - s[s.Size()-1-i]);
+            assert(r[i] == 3 - s[s.Size()-1-i]);
+        }
+        return r;
+    }
 
     void Reset(const std::string &str) {
         
@@ -168,6 +176,16 @@ public:
         assert(i < len_);
         return (data_[i/4] >> ((i%4)*2)) & 0x3;
     }
+    void Set(size_t i, uint8_t b) {
+        assert(i < len_ && b < 4);
+        //printf("xxx: %zd %d %d %08X %zd %02X %02X\n", i, i/4, i%4, data_[i/4], b, (3 << ((i%4)*2)), ~(3 << ((i%4)*2)));
+        data_[i/4] &= ~(3 << ((i%4)*2));
+        //printf("xxx: %zd %d %d %08X %zd %02X\n", i, i/4, i%4, data_[i/4], b, (b << ((i%4)*2)));
+        data_[i/4] |= (b << ((i%4)*2));
+        //printf("xxx: %zd %d %d %08X %zd\n", i, i/4, i%4, data_[i/4], b);
+        //fflush(stdout);
+    }
+
     std::shared_ptr<std::string> ToString(bool upper=true) const {
         std::shared_ptr<std::string> str(new std::string(len_, 'N'));
         const char* base = upper ? "ACGT" : "acgt";

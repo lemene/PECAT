@@ -31,11 +31,21 @@ public:
         size_t Size() const { return index.size(); }
         size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
         const Overlap* Get(size_t i, size_t j) const { return Get(ols[index[i][0]+j]); }
+        //uint8_t GetType(size_t i, size_t j) const { return ols[index[i][0]+j]}
 
         void Sort(double opt_ohwt);
         std::vector<double> GetWeight(double opt_ohwt);
 
         void BuildIndex();
+        enum Type {
+            AVA = 0, MAP = 1
+        };
+        static void SetType(const Overlap& ol, Type t) {
+            ol.attached = 0x01 & t;
+        }
+        static Type GetType(const Overlap &ol) {
+            return Type(ol.attached & 0x01);
+        }
 
         struct Index {
             uint8_t t;  // type: 0 ava; 1 map
@@ -96,8 +106,8 @@ struct SimpleDispatcher : public Dispatcher {
         return ids;
     }
     
-    size_t N { 1 };
     const std::vector<Seq::Id>& read_ids_;
+    size_t N { 1 };
     std::atomic<size_t> index { 0 };
 };
 
