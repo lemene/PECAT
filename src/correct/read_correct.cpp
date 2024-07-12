@@ -10,7 +10,11 @@
 namespace fsa {
 
 TimeCounter tc_align("get_al");
-TimeCounter tc_graph("graph");
+TimeCounter tc_graph("graph");;
+TimeCounter tc_al_ava("al_ava");
+TimeCounter tc_al_cigar("al_cigar");
+TimeCounter tc_al_map("al_map");
+TimeCounter tc_al_head_tail("al_head_tail");
 
 ReadCorrect::ReadCorrect() {
 }
@@ -144,29 +148,6 @@ bool ReadCorrect::ExactFilter(const Alignment &r, const std::array<size_t,2> &tr
     return false;
 }
 
-bool ReadCorrect::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& al) {
-    TimeCounter::Mark m(tc_align);
-    const auto& tread = o->GetRead(id);
-    const auto& qread = o->GetOtherRead(id);
-    al.strand = o->SameDirect() ? 0 : 1;
-
-    stat_info.total++;
-    DEBUG_printf("start align %s %s\n", owner_.dataset_.read_store_.QueryNameById(qread.id).c_str(), owner_.dataset_.read_store_.QueryNameById(tread.id).c_str());
-    if (owner_.opts_.use_cache) {
-        if (!cache_.GetAlignment(qread.id, tread.id, al)) {
-            std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-            auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-            cache_.SetAlignment(qread.id, tread.id, al);
-            return r;
-        } else {
-            stat_info.cache++;
-            return al.Valid();
-        }
-    } else {
-        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-        return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-    }
-}
       
 std::array<size_t,2> MostEffectiveCoverage(size_t tsize, const std::vector<Alignment> &aligns, size_t stub, int min_coverage) {
     if (aligns.size() == 0) return {0, 0};
@@ -345,6 +326,7 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 
 Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
     
+    TimeCounter::Mark m(tc_align);
     DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
     auto ol = group.Get(ig, 0); 
     const auto& tread = ol->GetRead(tid);
@@ -353,18 +335,18 @@ Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGr
     Alignment al(tread.id, qread.id);
     al.strand = ol->SameDirect() ? 0 : 1;
 
+    wrk.stat_info.total++;
     // 从cache查询
     if (opts_.use_cache) {
+        
         if (!wrk.cache_.GetAlignment(qread.id, tread.id, al)) {
             al = GetAlignmentOnes(tid, group, ig, wrk);
-            al.CheckAlignment();
             wrk.cache_.SetAlignment(qread.id, tread.id, al);
         } else {
             wrk.stat_info.cache++;
         }
     } else {{
         al = GetAlignmentOnes(tid, group, ig, wrk);
-        al.CheckAlignment();
     }}
     return al;
 }
@@ -406,12 +388,21 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
     const auto& qread = ol.GetOtherRead(tid);
     Alignment al(tread.id, qread.id);
     al.strand = ol.SameDirect() ? 0 : 1;
+    //LOG(INFO)("start %s", dataset_.QueryStringById(tid).c_str());
+    al.query = &dataset_.read_store_.GetSeq(ol.a_.id);
+    al.target = &dataset_.read_store_.GetSeq(ol.b_.id);
     
     if (ol.detail_.size() != 0) {
+        TimeCounter::Mark m(tc_al_cigar);
         GetAlignmentFromCigar(tid, ol, al);
     } else if (CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP) {
-        GetAlignmentFromMapping0(tid, ol, wrk, al);
+        TimeCounter::Mark m(tc_al_map);
+        GetAlignmentFromMapping1(tid, ol, wrk, al);
+        
+        al.CheckAlignment();
     } else {
+        
+        TimeCounter::Mark m(tc_al_ava);
         // return GetAlignmentFromBases();
         std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
 
@@ -627,11 +618,14 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     assert(CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP);
     auto pair = static_cast<const Mapping::Pair&>(ol);
 
-
     al.target_start = tread.start;
     al.target_end = tread.end;
-    al.query_start = qread.start;
-    al.query_end = qread.end;
+    // the query position is at reverse-complement sequence
+    al.query_start = ol.SameDirect() ? qread.start : qread.len - qread.end;
+    al.query_end = ol.SameDirect() ? qread.end : qread.len - qread.start;
+    // printf("GetAlignmentFromMapping1: %d %d %d - %d %d %d\n", 
+    //     qread.start, qread.end, qread.end, 
+    //     tread.start, tread.end, tread.end);
 
 
     const char* ACGT = "ACGT";
@@ -663,11 +657,91 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
             al.distance++;
         }
     }
-    //printf("eeee: %zd %d %d %d\n", aligned.size(), it, al.target_start, al.target_end);
     assert(it == al.target_end);
     assert(iq == al.query_end - al.query_start);
-    //printf("q:%s\nt:%s\n", al.aligned_query.c_str(), al.aligned_target.c_str());
-    //assert(0);
+    // printf("%s - %s %d %d\nq:%s\nt:%s\n", dataset_.QueryStringById(qread.id).c_str(),
+    //  dataset_.QueryStringById(tread.id).c_str(),
+    //  pair.query->SameDirect(), pair.target->SameDirect(), al.aligned_query.c_str(), al.aligned_target.c_str());
+    //fflush(stdout);
+
+    if (ol.SameDirect()) {
+        TimeCounter::Mark m(tc_al_head_tail);
+        // head
+        auto thead = tseq.ToUInt8(0, al.target_start);
+        auto qhead = qseq.ToUInt8(0, al.query_start);
+        Alignment al_h;
+        auto r_h = wrk.aligner_.GetWorker()->Align(
+            (const char*)&qhead[0], qhead.size(), 
+            (const char*)&thead[0], thead.size(), 
+            {al.query_start, al.query_start},
+            {al.target_start, al.target_start}, 
+            al_h);
+        if (r_h) {
+            al.distance += al_h.distance;
+            al.query_start = al_h.query_start;
+            al.target_start = al_h.target_start;
+            al.aligned_query = al_h.aligned_query + al.aligned_query;
+            al.aligned_target = al_h.aligned_target + al.aligned_target;
+        }
+
+        // tail
+        auto tseq_t = tseq.ToUInt8(al.target_end);
+        auto qseq_t = qseq.ToUInt8(al.query_end);
+        Alignment al_t;
+        auto r_t = wrk.aligner_.GetWorker()->Align(
+            (const char*)&qseq_t[0], qseq_t.size(), 
+            (const char*)&tseq_t[0], tseq_t.size(), 
+            {0, 0},
+            {0, 0}, 
+            al_t);
+        if (r_t) {
+            al.distance += al_t.distance;
+            al.query_end += al_t.query_end;
+            al.target_end += al_t.target_end;
+            al.aligned_query += al_t.aligned_query;
+            al.aligned_target += al_t.aligned_target;
+        }
+
+    } else {
+        TimeCounter::Mark m(tc_al_head_tail);
+        // head
+        auto tseq_h = tseq.ToUInt8(0, tread.start);
+        auto qseq_h = qseq.ToUInt8(qread.end, -1, true);
+        Alignment al_h;
+        auto r_h = wrk.aligner_.GetWorker()->Align(
+            (const char*)&qseq_h[0], qseq_h.size(), 
+            (const char*)&tseq_h[0], tseq_h.size(), 
+            {qread.len - qread.end, qread.len - qread.end},
+            {tread.start, tread.start}, 
+            al_h);
+        if (r_h) {
+            al.distance += al_h.distance;
+            al.query_start = al_h.query_start;
+            al.target_start = al_h.target_start;
+            al.aligned_query = al_h.aligned_query + al.aligned_query;
+            al.aligned_target = al_h.aligned_target + al.aligned_target;
+        }
+
+        // tail
+        auto tseq_t = tseq.ToUInt8(tread.end);
+        auto qseq_t = qseq.ToUInt8(0, qread.start, true);
+        Alignment al_t;
+        auto r_t = wrk.aligner_.GetWorker()->Align(
+            (const char*)&qseq_t[0], qseq_t.size(), 
+            (const char*)&tseq_t[0], tseq_t.size(), 
+            {0, 0},
+            {0, 0}, 
+            al_t);
+        if (r_t) {
+            al.distance += al_t.distance;
+            al.query_end += al_t.query_end;
+            al.target_end += al_t.target_end;
+            al.aligned_query += al_t.aligned_query;
+            al.aligned_target += al_t.aligned_target;
+        }
+
+    }
+    
 }
 
 } // namespace fsa {

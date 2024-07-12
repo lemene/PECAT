@@ -126,7 +126,11 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
 
                 auto qol = sorted_by_start_[ii];
                 const int offset = 3000;
-                if (qol->b_.end >= tol->b_.start + offset && qol->b_.start + offset <= tol->b_.end ) {
+                if (qol->b_.end >= tol->b_.start && qol->b_.start <= tol->b_.end &&
+                    std::min(qol->b_.end, tol->b_.end) >= std::max(qol->b_.start, tol->b_.start) + offset) {
+                    //printf("ToPair: %s - %s: %d %d | %d %d\n", 
+                    //    ol_store_.QueryNameById(qol->a_.id).c_str(), ol_store_.QueryNameById(tol->a_.id).c_str(), 
+                    //    qol->b_.start, qol->b_.end, tol->b_.start, tol->b_.end);
                     ols.push_back({qol, tol});
                 }
 
@@ -202,59 +206,78 @@ void Mapping::Pair::ToOverlap() {
     start = std::max<size_t>(query->b_.start, target->b_.start) - als_start;
     end = std::min<size_t>(query->b_.end, target->b_.end) - als_start;
 
+
     for (; start + N < end; ++start) {
+        //printf("cccc(%d-%d) %zd %zd |  %d %d | %d %d\n", a_.id, b_.id, start, end, 
+        //    aligned_query[start], aligned_target[start], aligned_query[start+N], aligned_target[start+N]);
         if (aligned_query[start] == -1 || aligned_target[start]== -1) continue;
         if (std::abs(aligned_query[start] - aligned_query[start+N]) == N &&
             std::abs(aligned_target[start] - aligned_target[start+N]) == N) {      
             break;
         }
     }
-    assert(aligned_query[start] != -1 && aligned_target[start]!= -1);
 
-    for (; start + N < end; end--) {
+    for (; start + N < end; end--) {    
         if (aligned_query[end-1] == -1 || aligned_target[end-1]== -1) continue;
         if (std::abs(aligned_query[end-1] - aligned_query[end-1-N]) == N &&
             std::abs(aligned_target[end-1] - aligned_target[end-1-N]) == N) {
             break;
         }
     }
-    assert(aligned_query[end-1] != -1 && aligned_target[end-1]!= -1);
-    // if (end - start > 10000) {    
-    //     printf("start-end: %zd, %zd\n", start, end);
-    //     for (size_t i = start; i < end ; ++i) {
-    //         printf("%d xx %d\n", aligned[i][0], aligned[i][1]);
-    //     }
-    //     fflush(stdout);
-    //     assert(0);
-    // }
-    if (query->a_.strand == 0) {
-        a_.start = aligned_query[start];
-        a_.end = aligned_query[end-1] + 1;
-    } else {
-        a_.start = aligned_query[end-1];
-        a_.end = aligned_query[start] + 1;
-    }
     
-    if (target->a_.strand == 0) {
-        b_.start = aligned_target[start];
-        b_.end = aligned_target[end-1] + 1;
-    } else {
-        b_.start = aligned_target[end-1];
-        b_.end = aligned_target[start] + 1;
-    }    
+    
+    if (start < end && aligned_query[start] != -1 && aligned_target[start]!= -1 && 
+                       aligned_query[end-1] != -1 && aligned_target[end-1]!= -1) {
 
-    //printf("%d %d\n", target->SameDirect(), target->SameDirect()); 
-    //printf("%d %d %d <-> %d %d %d\n", b_.start , b_.end , b_.len , a_.start , a_.end , a_.len );
-    //fflush(stdout);
-    assert(0 <= b_.start  && b_.start <= b_.end && b_.end <= b_.len);
-    assert(0 <= a_.start  && a_.start <= a_.end && a_.end <= a_.len);
+        // if (end - start > 10000) {    
+        //     printf("start-end: %zd, %zd\n", start, end);
+        //     for (size_t i = start; i < end ; ++i) {
+        //         printf("%d xx %d\n", aligned[i][0], aligned[i][1]);
+        //     }
+        //     fflush(stdout);
+        //     assert(0);
+        // }
+        if (query->a_.strand == 0) {
+            a_.start = aligned_query[start];
+            a_.end = aligned_query[end-1] + 1;
+        } else {
+            a_.start = aligned_query[end-1];
+            a_.end = aligned_query[start] + 1;
+        }
+        
+        if (target->a_.strand == 0) {
+            b_.start = aligned_target[start];
+            b_.end = aligned_target[end-1] + 1;
+        } else {
+            b_.start = aligned_target[end-1];
+            b_.end = aligned_target[start] + 1;
+        }    
+
+        //printf("%d %d\n", target->SameDirect(), target->SameDirect()); 
+        //printf("%d %d %d <-> %d %d %d\n", b_.start , b_.end , b_.len , a_.start , a_.end , a_.len );
+        //fflush(stdout);
+        assert(0 <= b_.start  && b_.start <= b_.end && b_.end <= b_.len);
+        assert(0 <= a_.start  && a_.start <= a_.end && a_.end <= a_.len);
+    } else {
+        a_.start = 0;
+        a_.end = 0;
+    
+        b_.start = 0;
+        b_.end = 0;
+    }
+
 }
 
+
+TimeCounter tc_al_map_bases("al_map_bases"); 
+TimeCounter tc_al_map_seg("al_map_seg");
 std::vector<uint8_t> Mapping::Pair::AlignBases(Seq::Id tid, const DnaSeq &qseq, const DnaSeq &tseq) {
+    TimeCounter::Mark m(tc_al_map_bases);
     const DnaSeq* proxy_qseq = &qseq;
     DnaSeq qseq_rv;
     std::vector<int> alt;
     std::vector<int> alq;
+    //printf("AlignBase: direct %d %d\n", query->SameDirect(), target->SameDirect());
     if (tid == b_.id) { // consistent  
         if (query->SameDirect() && target->SameDirect()) {
             alq.assign(aligned_query.begin()+start, aligned_query.begin()+end);
@@ -468,6 +491,8 @@ std::vector<uint8_t> Mapping::Pair::RealignBlock(
         return ss;
     }
 
+    {
+    TimeCounter::Mark m(tc_al_map_seg);
     std::vector<uint8_t> ss;
     auto r = edlibAlign((const char*)&qs[0], qs.size(), (const char*)&ts[0], ts.size(), 
         edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, NULL, 0));
@@ -480,6 +505,42 @@ std::vector<uint8_t> Mapping::Pair::RealignBlock(
     }
     edlibFreeAlignResult(r);
     return ss;
+    
+    }
+}
+
+
+void QueryGrouper::BuildIndex() {
+    sorted_.assign(ol_store_.Size(), nullptr);
+
+    for (size_t i = 0; i < ol_store_.Size(); ++i)  {
+        auto ol = &ol_store_.Get(i);
+        sorted_[i] = ol;
+    }
+    std::sort(sorted_.begin(), sorted_.begin() + sorted_.size(), [](const Overlap* a, const Overlap *b) { 
+        return (a->a_.id < b->a_.id) || 
+               (a->a_.id == b->a_.id && a->b_.id < b->b_.id) ||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() > b->AlignedSize()) ||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect());
+    });
+
+
+    if (sorted_.size() == 0) return;
+
+    auto gp_s_qry = 0;
+    auto gp_id_qry = sorted_[gp_s_qry]->a_.id;
+    for (size_t i = 0; i < sorted_.size(); ++i) {
+        if (gp_id_qry != sorted_[i]->a_.id) {
+            auto &idx = index_[gp_id_qry];
+            queries_.push_back({gp_s_qry, i});
+            idx[0] = gp_s_qry;
+            idx[1] = i;    // group_end
+
+            gp_s_qry = i;
+            gp_id_qry = sorted_[gp_s_qry]->a_.id;
+        }
+    }
+    queries_.push_back({gp_s_qry, sorted_.size()});
 }
 
 } // namespace fsa

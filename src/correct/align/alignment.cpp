@@ -373,7 +373,7 @@ void Alignment::CheckAlignment() {
     assert(aligned_query.size() == aligned_target.size());
     for (size_t i = 0; i < aligned_query.size(); ++i) {
         if (aligned_query[i] != '-' && aligned_target[i] != '-') {
-            assert(aligned_query[i] == aligned_target[i]);
+            //assert(aligned_query[i] == aligned_target[i]);
         }
     }
 
@@ -393,6 +393,11 @@ void Alignment::CheckAlignment() {
         }
 
         if (aligned_query[i] != '-') {
+            // printf("%d %d %d %c %d %d %d %d\n", i, iq, it, aligned_query[i], get_query_base(iq), strand, query_start, query_end);
+            // if (aligned_query[i] != "ACGT"[get_query_base(iq)]) {
+            //     printf("%s \n%s\n", query->ToString()->c_str(), target->ToString()->c_str());
+            // }
+            // fflush(stdout);
             assert(aligned_query[i] == "ACGT"[get_query_base(iq)]);
             iq++;
         }

@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <vector>
 
 #include "overlap_store.hpp"
 
@@ -56,6 +57,24 @@ protected:
     std::unordered_map<Seq::Id, std::array<size_t, 2>> queries_;
     
     std::vector<std::array<size_t, 2>> query_ranges_;
+
+};
+
+class QueryGrouper {
+public:
+    QueryGrouper(const OverlapStore &ols) : ol_store_(ols) {}
+
+    void BuildIndex();
+    size_t QuerySize() const { return queries_.size(); }
+    std::array<size_t, 2> GetQuery(size_t i) { return queries_[i]; }
+    const Overlap* GetOverlap(size_t i) { return sorted_[i]; }
+
+protected:
+
+    const OverlapStore &ol_store_;
+    std::vector<const Overlap*> sorted_;
+    std::unordered_map<Seq::Id, std::array<size_t,2>> index_;
+    std::vector<std::array<size_t,2>> queries_;
 
 };
 

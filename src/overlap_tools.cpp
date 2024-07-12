@@ -676,7 +676,7 @@ void Program_Accuracy::Running() {
                     << inf.len << '\t' << inf.match << '\t' << inf.mismatch << '\t' 
                     << inf.clip  << '\t' << inf.insert  << '\t' << inf.dels  << '\t' 
                     << inf.hclip << '\t' << inf.local_error << '\t' 
-                    << ol_store.GetReadName(inf.ref) << ':' << inf.range[0] << '-' << inf.range[1] << '\n';
+                    << ol_store.QueryNameById(inf.ref) << ':' << inf.range[0] << '-' << inf.range[1] << '\n';
                 writer.Flush(oss);
                 oss.str("");
             }
@@ -887,25 +887,42 @@ void Program_Location::Running() {
     OverlapStore ol_store;
     
     ol_store.Load(ifname_, "", std::min<size_t>(8, thread_size_));
+    QueryGrouper grouper(ol_store);
+    grouper.BuildIndex();
 
     GzFileWriter mapped_writer(mapped_);
 
     std::mutex mutex_combine;
     auto combine_func = [&mutex_combine,&mapped_writer, &ol_store](std::unordered_set<Seq::Id> &mapped) {
         std::lock_guard<std::mutex> lock(mutex_combine);
-        LOG(INFO)("SZ %zd", mapped.size());
+        //LOG(INFO)("SZ %zd", mapped.size());
         for (auto r : mapped) {
             mapped_writer << ol_store.GetStringPool().QueryStringById(r) << "\n";
         }
     };
 
     std::atomic<size_t> index { 0 };
-    auto work_func = [&index, &ol_store, combine_func](size_t tid) {
+    auto work_func = [&index, &grouper, combine_func, &ol_store](size_t tid) {
         std::unordered_set<Seq::Id> mapped;
-        for (size_t i = index.fetch_add(1); i < ol_store.Size(); i = index.fetch_add(1)) {
-            const Overlap& ol = ol_store.Get(i);
-            if (ol.AlignedLength() >= 0.85 * ol.QueryLength()) {
-                mapped.insert(ol.a_.id);
+        for (size_t i = index.fetch_add(1); i < grouper.QuerySize(); i = index.fetch_add(1)) {
+            auto rs = grouper.GetQuery(i);
+            auto ol = grouper.GetOverlap(rs[0]);
+            //LOG(INFO)("%s %zd %zd", ol_store.QueryNameById(ol->a_.id).c_str(), rs[0], rs[1]);
+            std::vector<uint16_t> cov(ol->a_.len+1, 0);
+            for (size_t irs = rs[0]; irs < rs[1]; ++irs) {
+                auto ol = grouper.GetOverlap(irs);
+                if (ol->AlignedLength() >= std::min<size_t>(5000, 0.5*ol->QueryLength())) {
+                    cov[ol->a_.start] ++;
+                    cov[ol->a_.end] --;
+                }
+            }
+            for (size_t icov = 1; icov < cov.size(); icov++) {
+                cov[icov] += cov[icov-1];
+            }
+            auto csize = std::count_if(cov.begin(), cov.end(), [](uint16_t c) { return c > 0; });
+            //LOG(INFO)("csize=%zd qlen=%zd", csize, ol->QueryLength());
+            if (csize >= 0.85 * ol->QueryLength()) {
+                mapped.insert(ol->a_.id);
             } else {
                 //printf("%s\n", ol_store.ToPafLine1(ol).c_str());
             }

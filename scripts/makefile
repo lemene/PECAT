@@ -2,8 +2,8 @@
 
 TARGET_DIR=../build/bin
 
-TARGET_FILES =   ${TARGET_DIR}/FsaUtils.pm 
-TARGET_SCRIPTS = ${TARGET_DIR}/pecat.pl  ${TARGET_DIR}/show_hapkmer.R ${TARGET_DIR}/parallel_medaka.py
+TARGET_FILES =   ${TARGET_DIR}/FsaUtils.pm ${TARGET_DIR}/RaecUtils.pm 
+TARGET_SCRIPTS = ${TARGET_DIR}/pecat.pl  ${TARGET_DIR}/raec.pl ${TARGET_DIR}/show_hapkmer.R ${TARGET_DIR}/parallel_medaka.py
 
 scripts: ${TARGET_SCRIPTS} ${TARGET_FILES}
 

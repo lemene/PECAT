@@ -82,12 +82,8 @@ public:
     // const Overlap& Get(size_t i) const { return  overlaps_[i]; }
 
 
-    std::string GetReadName(int id) {
+    std::string QueryNameById(int id) const {
         return string_pool_.QueryStringById(id);
-    }
-
-    Seq::Id GetReadId(const std::string &name) {
-        return string_pool_.GetIdByString(name);
     }
 
     std::array<Seq::Id, 2> GetReadIdRange() const;

@@ -36,7 +36,7 @@ public:
     static void AppendAlignedString(const uint32_t * cigar, size_t cigarLen, const char* query, const char* target, std::string& aligned_query, std::string& aligned_target);
 
     static bool CheckAlignedString(const std::string &q, const std::string &t);
-
+    ToolAligner* GetWorker() const { return worker.get(); }
 protected:
     void SetAligner(const std::string &opts);
 protected:
