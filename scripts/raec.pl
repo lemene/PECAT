@@ -13,13 +13,13 @@ use Plgd::Logger;
 use Plgd::Config;
 use Plgd::Pipeline;
 use Plgd::Job;
-use RaecUtils;
+use FsaUtils;
 
 use Env qw(PATH);
 
 use strict;
 
-package RaecPipeline;
+package FsaPipeline;
 
 our @ISA = qw(Plgd::Pipeline);  
 
@@ -36,22 +36,6 @@ sub initialize($$) {
     $self->SUPER::initialize($fname);
 }
 
-sub job_map_read_to_reference($$$$$$$) {
-    my ($self, $name, $reads, $ref, $rd_2_ref, $options, $wrkdir) = @_;
-
-    my $threads = $self->get_config("threads");
-    my $job = $self->newjob(
-        name => "${name}_rd_2_ref",
-        ifiles => [$reads, $ref],
-        ofiles => [$rd_2_ref],
-        gfiles => [$rd_2_ref],
-        mfiles => [],
-        cmds => ["minimap2  -t $threads $options $ref $reads > $rd_2_ref"],
-        msg => "mapping reads to reference, ${name}",
-    );
-
-    return $job;
-}
 sub job_get_unmaped_reads($$$$$$) {
     my ($self, $name, $reads, $rd_2_ref, $unmapped, $wrkdir) = @_;
 
@@ -124,7 +108,7 @@ sub getjob_correct_with_reference($$$$$$) {
 
     # map reads to reference
     my $rd_2_ref = "$wrkdir/rd_2_ref.paf";
-    my $job_rd_2_ref = $self->job_map_read_to_reference($name, $rreads, $ref, 
+    my $job_rd_2_ref = $self->getjob_map_read_to_reference($name, $rreads, $ref, 
         $rd_2_ref, $opts_rd_2_ref, $wrkdir);
 
     # 
@@ -158,8 +142,8 @@ sub run_correct($) {
     my $wrkdir = $self->get_project_folder();
     mkdir $wrkdir;
 
-    my $rreads = abs_path($self->get_config("reads"));
-    my $ref = abs_path($self->get_config("reference"));
+    my $rreads = Cwd::abs_path($self->get_config("reads"));
+    my $ref = Cwd::abs_path($self->get_config("reference"));
     my $creads = "$wrkdir/corrected.fasta";
     my $opts_rd_2_ref = $self->get_config("opts_rd_2_ref");
     my $opts_rd_2_rd = $self->get_config("opts_rd_2_rd");
@@ -203,7 +187,7 @@ my @defaultConfig = (
 );
 
 
-my $pipeline = RaecPipeline->new(\@defaultConfig);
+my $pipeline = FsaPipeline->new(\@defaultConfig);
 
 
 sub cmd_correct($) {

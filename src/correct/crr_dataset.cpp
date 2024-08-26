@@ -189,18 +189,20 @@ CrrDataset::OlGroup CrrDataset::GetOverlaps(Seq::Id id) const {
     group.map = mapping_.QueryOverlaps(id);
     
     group.ava = grouper_.GetRelatedOverlaps(id);
+    DEBUG_printf("get_ols: map=%zd, ava=%zd\n", group.map.size(), group.ava.size());
 
     group.ols.reserve(group.map.size() + group.ava.size());
     for (size_t i = 0; i < group.map.size(); ++i) {
         OlGroup::SetType(group.map[i], OlGroup::Type::MAP);
         if (opts_.filter0_.Valid(group.map[i])) 
-            group.ols.push_back({1, (uint16_t)i});
+            group.ols.push_back({1, i});
     }
     for (size_t i = 0; i < group.ava.size(); ++i) {
         OlGroup::SetType(*group.ava[i], OlGroup::Type::AVA);
-        group.ols.push_back({0, (uint16_t)i});
+        group.ols.push_back({0, i});
     }
-
+    
+    DEBUG_printf("get_ols: size=%zd\n", group.ols.size());
     group.BuildIndex();
     return group;
 }
@@ -228,6 +230,10 @@ void CrrDataset::OlGroup::BuildIndex() {
             index.push_back({i, ols.size()});
         }
     }  
+
+    for (size_t i = 0; i<index.size(); ++i) {
+        DEBUG_printf("INDEX(%zd): %zd %zd\n", i, index[i][0], index[i][1]);
+    }
 }
 
 
@@ -239,6 +245,11 @@ void CrrDataset::OlGroup::Sort(double opt_ohwt) {
     std::sort(index.begin(), index.end(), [&weights](const std::array<size_t, 2> &a, const std::array<size_t,2> &b) {
         return weights[a[0]] > weights[b[0]];
     });
+
+    
+    for (size_t i = 0; i<index.size(); ++i) {
+        DEBUG_printf("INDEX2(%zd): %zd %zd\n", i, index[i][0], index[i][1]);
+    }
 }
 
 std::vector<double> CrrDataset::OlGroup::GetWeight(double opt_ohwt) {

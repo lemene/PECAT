@@ -43,14 +43,6 @@ void AlignmentGraph::ParseScoreParamter(const std::string &opts) {
 
     auto ss = SplitStringByChar(opts, ':');
     if (ss.size() >= 1) {
-        if (ss[0] == "count") {
-            LinkScore = &AlignmentGraph::LinkScoreCount;
-        } else if (ss[0] == "weight") {
-            LinkScore = &AlignmentGraph::LinkScoreWeight;
-        } else {
-            LOG(ERROR)("Not support parameter: score=%s", opts.c_str());
-        }
-
         for (size_t i=1; i<ss.size(); ++i) {
             auto kv = SplitStringByChar(ss[i], '=');
             if (kv[0] == "lc") {
@@ -185,43 +177,43 @@ void AlignmentGraph::Clear() {
 }
 
 
-AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnCount() {
-    Segment seg;
+// AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnCount() {
+//     Segment seg;
 
-    double global_score = -1;
+//     double global_score = -1;
 
-    for (size_t i = 0; i < cols.size(); i++) {
+//     for (size_t i = 0; i < cols.size(); i++) {
         
-        for (size_t j = 0; j < cols[i].Size(); j++) {
-            for (size_t k = 0; k < cols[i][j].Size(); k++) {
+//         for (size_t j = 0; j < cols[i].Size(); j++) {
+//             for (size_t k = 0; k < cols[i][j].Size(); k++) {
 
-                Node &node = cols[i][j][k];
+//                 Node &node = cols[i][j][k];
                 
-                node.SortLinks();
+//                 node.SortLinks();
 
-                for (const auto &link : node.links) {
-                    if (link.count == 0) continue;
-                    const Loc& prev = link.prev;
+//                 for (const auto &link : node.links) {
+//                     if (link.count == 0) continue;
+//                     const Loc& prev = link.prev;
                     
-                    double score = LinkScoreCount(i, j, link) +  (prev.col == -1 ? 0 : cols[prev.col][prev.row][prev.base].score);
+//                     double score = LinkScoreCount(i, j, link) +  (prev.col == -1 ? 0 : cols[prev.col][prev.row][prev.base].score);
 
-                    if (score > node.score) {
-                        node.score = score;
-                        node.best_link = &link;
-                    }
-                }
+//                     if (score > node.score) {
+//                         node.score = score;
+//                         node.best_link = &link;
+//                     }
+//                 }
 
-                if (node.score > global_score) {
-                    global_score = node.score;
-                    seg.end = Loc(i, j, k);                       
-                }
-            }
-        }
-    }
+//                 if (node.score > global_score) {
+//                     global_score = node.score;
+//                     seg.end = Loc(i, j, k);                       
+//                 }
+//             }
+//         }
+//     }
 
-    return seg;
+//     return seg;
 
-}
+// }
 
 AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
     Segment seg ;
@@ -260,7 +252,9 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
 
                 Node &node = cols[i][j][k];
                 
-                for (const auto &link : node.links) {
+                node.SortLinks();
+                
+                for (auto &link : node.links) {
                     if (link.count == 0) continue;
 
                     Loc prev = link.prev;
@@ -304,6 +298,27 @@ void AlignmentGraph::Reconstruct(const std::vector<Segment>& segs) {
         size_t off = segs[i].begin.base == 4 ? 0 : 1;           // if the base is not '-', skip the base
         sequence_.insert(sequence_.end(), cns[i].begin()+off, cns[i].end());
     }
+}
+
+auto AlignmentGraph::GetBestPath(const Loc& start, const Loc& end) -> std::vector<Loc> {
+    std::vector<Loc> path {end};
+    do {
+        auto n = Get(path.back());
+        assert(n != nullptr && n->best_link != nullptr);
+        path.push_back(n->best_link->prev);
+    } while (path.back() != start);
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+std::string AlignmentGraph::ReconstructPath(const std::vector<Loc>& path) {
+    std::string cns;
+    const std::vector<std::string> toBase = {"A", "C", "G", "T", ""};
+
+    for (size_t i = 0; i < path.size(); ++i) {
+        cns += toBase[path[i].base];
+    }
+    return cns;
 }
 
 std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
@@ -397,35 +412,111 @@ std::string AlignmentGraph::ReconstructComplex(const Segment& seg) {
 }
 
 
+std::vector<std::string> AlignmentGraph::RestoreSegment(const Segment &seg) {
+    std::vector<std::string> seqs;
+
+    assert(seg.begin.col != -1);
+
+    struct Item {
+        Loc loc;
+        size_t link;
+        MyBitSet seqs;
+    };
+
+    // std::vector<Loc> stack_loc;
+    // std::vector<size_t> stack_link;
+    // std::vector<MyBitSet> stack_seqs;
+    const std::vector<std::string> bases = {"A", "C", "G", "T", ""};
+
+    for (size_t i=0; i<5; ++i) {
+        std::vector<Item> stack(1);
+
+        stack.back().loc = seg.end;
+        stack.back().loc.base = i;
+        stack.back().link = 0;
+        stack.back().seqs = Get(stack.back().loc)->seqs;
+        
+        while (stack.size() > 0) {
+            auto& top = stack.back();
+
+            // 是否到达边界
+            if (top.loc.col == seg.begin.col && top.loc.row == 0) {
+                std::string s;
+                for (auto i : stack) {
+                    s += bases[i.loc.base];
+                }
+                std::reverse(s.begin(), s.end());
+
+                size_t c = 0;
+                if (top.seqs[0]) {
+                    c++;
+                }
+                for (auto s : query_infos_.selected_) {
+                    if ( top.seqs[s+1]) {
+                        LOG(INFO)("s %d/%zd", s, top.seqs.count());
+                        c++;
+                    }
+                }
+
+                for (size_t i=0; i<c; ++i) {
+                    seqs.push_back(s);
+                }
+
+                stack.pop_back();
+            } else {
+                // 是否可以延长
+                auto n = Get(top.loc);
+                if (top.link < n->links.size()) {
+                    Link& lnk = n->links[top.link];
+                    auto ss = top.seqs & lnk.seqs;
+                    top.link++;
+
+                    if (ss.count() > 0 && lnk.prev.col >= 0) {
+                        stack.push_back({lnk.prev, 0, ss});
+                    }
+                    
+                } else {
+                    stack.pop_back();
+                }
+
+            }
+            
+        }
+    }
+
+    return seqs;
+}
+
 std::vector<AlignmentGraph::Segment> AlignmentGraph::SplitSegment(const Loc &end) {
 
     std::vector<Segment> segments;
 
-    auto is_clear_node = [](const Node* n, size_t cov) {
-        if (cov <= 10) return true;         // coverage偏少，则分为简单区域
-
-        if (n->best_link == &n->links[0] && n->best_link->count >= cov / 2) {
-            if (n->links.size() == 1 || (n->links.size() > 1 && n->links[0].count / 2 >= n->links[1].count)) {
-                return true;
-            } else {
-                return false;
-            }
+    auto node_type = [](const Node* n, double w) {
+        //if (cov <= 10) return true;     
+        for (auto l : n->links) {
+            DEBUG_printf("(%f,%d)->", l.w, l.prev.base);
+        }
+            DEBUG_printf("\n");
+        if (n->best_link->w >= w * 0.6) {
+            return 0;       // simple node
         } else {
-            return false;
+            return 1;
         }
     };
     
-    std::vector<Loc> traceback;
-    std::vector<uint8_t> state; // 0 clear, 1 unclear
+    struct Item {
+        Loc loc;
+        uint8_t ntype;
+        uint8_t stype;
+    };
+    std::vector<Item> traceback;
 
-
-    const Node *curr_node = Get(end);
+    Node *curr_node = Get(end);
     Loc loc = end;
     while (loc.col >= 0) {
-        traceback.push_back(loc);
-        DEBUG_printf("seg is_complex: (%d %d %d), %d, %d\n", loc.col, loc.row, loc.base, cols[loc.col].coverage, is_clear_node(curr_node, cols[loc.col].coverage));
-        state.push_back(is_clear_node(curr_node, cols[loc.col].coverage)? 0 : 1);
- 
+        DEBUG_printf("seg is_simple: (%d %d %d), %f, %f %d\n", loc.col, loc.row, loc.base, cols[loc.col].weight, curr_node->best_link->w, node_type(curr_node, cols[loc.col].weight));
+        traceback.push_back({loc, (uint8_t)node_type(curr_node, cols[loc.col].weight), 0});
+
         if (curr_node->best_link != nullptr) {
             loc = curr_node->best_link->prev;
             curr_node = Get(loc);
@@ -434,191 +525,46 @@ std::vector<AlignmentGraph::Segment> AlignmentGraph::SplitSegment(const Loc &end
         }
     }
 
+    const int SOLID = 20;
 
-    const int SOLID_LEN = 10;
+    for (size_t i = 0; i < traceback.size(); ++i) {
+        if (traceback[i].ntype == 1) {
+            traceback[i].stype = 1;
 
-    Segment seg;
-    seg.end = traceback[0];
-    seg.begin = traceback.back();
-    seg.type = state[0];
-    size_t startIndex = 0;
-
-    size_t index = 0;
-    while (index < traceback.size()) {
-
-        if (seg.type == 0) {
-            for (; index < traceback.size(); ++index) {
-                if (state[index] == 0) continue;
-                else break;
+            size_t front = 0;
+            for (size_t ii = i+1; ii < traceback.size(); ++ii) {
+                if (traceback[ii].loc.row == 0 && traceback[ii].ntype == 0) {
+                    front ++;
+                } else if (traceback[ii].ntype == 1) {
+                    front = 0;
+                }
+                traceback[ii].stype = 1;
+                if (front >= SOLID) break;
             }
 
-            if (index < traceback.size()) {
-                assert(state[index] == 1);
-                
-                // 寻找分割点
-                int count = 0;
-                size_t endIndex = index;
-                for (; endIndex> startIndex; --endIndex) {
-                    if (traceback[endIndex-1].row == 0) count ++;
-                    if (count >= SOLID_LEN/2) break;
+            size_t back = 0;
+            for (size_t ii = i; ii > 0; --ii) {
+                if (traceback[ii-1].loc.row == 0 && traceback[ii-1].ntype == 0) {
+                    back ++;
+                } else if (traceback[ii-1].ntype == 1) {
+                    back = 0;
                 }
-                if (count >= SOLID_LEN/2) {
-                    seg.begin = traceback[endIndex-1];
-                    segments.push_back(seg);
-                    seg.end = traceback[endIndex-1];
-                    seg.begin = traceback.back();
-                    seg.type = 1;
-                } else {
-                    seg.type = 1;
-                }
-
-            } else {
-                segments.push_back(seg);
-            }
-        } else {
-            assert(seg.type == 1);
-            int count = 0;
-            for (; index < traceback.size(); ++index) {
-                if (state[index] == 0) {
-                    if (traceback[index].row == 0) {
-                        count ++;
-                        if (count == SOLID_LEN) break;
-                    }
-                } else {
-                    count = 0;
-                }
-            }
-
-            if (index < traceback.size()) {
-                int count = 0;
-                size_t endIndex = index;
-                for (; endIndex > startIndex; --endIndex) {
-                    if (traceback[endIndex-1].row == 0) count ++;
-                    if (count >= SOLID_LEN/2) break;
-                }
-                assert(count >= SOLID_LEN/2);
-                seg.begin = traceback[endIndex-1];
-                segments.push_back(seg);
-                seg.end = traceback[endIndex-1];
-                seg.begin = traceback.back();
-                seg.type = 0;
-            
-            } else {
-                segments.push_back(seg);
+                traceback[ii-1].stype = 1;
+                if (back >= SOLID) break;
             }
         }
     }
-
-    std::reverse(segments.begin(), segments.end());
-
-    return segments;
-
-}
-
-
-std::vector<AlignmentGraph::Segment> AlignmentGraph::SplitSegment2(const Loc &end) {
-
-    std::vector<Segment> segments;
-
-    std::vector<Loc> traceback;
-    std::vector<uint8_t> state; // 0 clear, 1 unclear
-
-
-    std::vector<bool> simple_cols(cols.size());
-    for (size_t i=0; i<cols.size(); ++i) {
-        simple_cols[i] = IsSimpleColumn(i);
-    }
-
-    const Node *curr_node = Get(end);
-    Loc loc = end;
-    while (loc.col >= 0) {
-        traceback.push_back(loc);
-        
-        state.push_back(simple_cols[loc.col] ? 0 : 1);
- 
-        if (curr_node->best_link != nullptr) {
-            loc = curr_node->best_link->prev;
-            curr_node = Get(loc);
-        } else {
-            break;
+    size_t start = 0;
+    for (size_t i = 0; i < traceback.size(); ++i) {
+        if (traceback[i].stype != traceback[start].stype) {
+            segments.push_back({traceback[start].loc, traceback[i-1].loc, traceback[start].stype});
+            start = i;
         }
     }
+    if (start < traceback.size()) {
+        segments.push_back({traceback[start].loc, traceback.back().loc, traceback[start].stype});
 
-
-    const int SOLID_LEN = 12;
-
-    Segment seg;
-    seg.end = traceback[0];
-    seg.begin = traceback.back();
-    seg.type = state[0];
-    size_t startIndex = 0;
-
-    size_t index = 0;
-    while (index < traceback.size()) {
-
-        if (seg.type == 0) {
-            for (; index < traceback.size(); ++index) {
-                if (state[index] == 0) continue;
-                else break;
-            }
-
-            if (index < traceback.size()) {
-                assert(state[index] == 1);
-                
-                // 寻找分割点
-                int count = 0;
-                size_t endIndex = index;
-                for (; endIndex> startIndex; --endIndex) {
-                    if (traceback[endIndex-1].row == 0) count ++;
-                    if (count >= SOLID_LEN/2) break;
-                }
-                if (count >= SOLID_LEN/2) {
-                    seg.begin = traceback[endIndex-1];
-                    segments.push_back(seg);
-                    seg.end = traceback[endIndex-1];
-                    seg.begin = traceback.back();
-                    seg.type = 1;
-                } else {
-                    seg.type = 1;
-                }
-
-            } else {
-                segments.push_back(seg);
-            }
-        } else {
-            assert(seg.type == 1);
-            int count = 0;
-            for (; index < traceback.size(); ++index) {
-                if (state[index] == 0) {
-                    if (traceback[index].row == 0) {
-                        count ++;
-                        if (count == SOLID_LEN) break;
-                    }
-                } else {
-                    count = 0;
-                }
-            }
-
-            if (index < traceback.size()) {
-                int count = 0;
-                size_t endIndex = index;
-                for (; endIndex > startIndex; --endIndex) {
-                    if (traceback[endIndex-1].row == 0) count ++;
-                    if (count >= SOLID_LEN/2) break;
-                }
-                assert(count >= SOLID_LEN/2);
-                seg.begin = traceback[endIndex-1];
-                segments.push_back(seg);
-                seg.end = traceback[endIndex-1];
-                seg.begin = traceback.back();
-                seg.type = 0;
-            
-            } else {
-                segments.push_back(seg);
-            }
-        }
     }
-
     std::reverse(segments.begin(), segments.end());
 
     return segments;
@@ -639,16 +585,23 @@ AlignmentGraph::Loc AlignmentGraph::Locate(const Node& node) {
 }
 
 void AlignmentGraph::Consensus() {
-    Segment seg = LinkScore == &AlignmentGraph::LinkScoreWeight 
-        ? FindBestPathBasedOnWeight()
-        : FindBestPathBasedOnCount();
+    Segment seg = FindBestPathBasedOnWeight();
 
 
-    //auto segs = SplitSegment(seg.end);
-    // DEBUG_printf("seg: size=%zd\n", segs.size());
-    // for (auto &s : segs) {
-    //     DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
-    // }
+    auto segs = SplitSegment(seg.end);
+    DEBUG_printf("seg: size=%zd\n", segs.size());
+    for (auto &s : segs) {
+        DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
+        if (s.type == 1) {
+            auto reads = RestoreSegment(s);
+            LOG(INFO)("reads");
+            for (auto &r : reads) {
+                LOG(INFO)("%s", r.c_str());
+            }
+            auto ss = ReconstructSimple(s);
+            LOG(INFO)("cns:%s", ss.c_str());
+        }
+    }
     if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
         sequence_ = ReconstructSimple(seg);
     } else {
@@ -1455,14 +1408,9 @@ double mypow(double x, size_t n) { // GLIBC_2.29
     }
 }
 
-double AlignmentGraph::LinkScoreCount(size_t col, size_t row, const Link& link) { 
+double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, Link &link) {
     
-    double scale = std::max<double>(mypow(opts_.branch_score_[2], row)*opts_.branch_score_[0], opts_.branch_score_[1]);
-    double compensate = std::max<double>(scale * cols[col].coverage, sopts_.min_coverage * opts_.branch_score_[0]);
-    return link.count - compensate;
-} 
 
-double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link) {
     double s = 0;
     for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
         if (link.seqs[i+1] && query_infos_.selected_.find(i) != query_infos_.selected_.end()) {
@@ -1472,28 +1420,15 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, const Link &link)
     if (link.seqs[0]) {
         s += 0.5; // TODO Target score 
     }
-
+    link.w = s;
 
     double scale = std::max<double>(mypow(opts_.branch_score_[2], row)*opts_.branch_score_[0], opts_.branch_score_[1]);
     double compensate = std::max<double>(scale * cols[col].weight, opts_.branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
-    
+    DEBUG_printf("FFF: s= %f, c=%f %f %f %d\n", s, compensate, scale, cols[col].weight, cols[col].coverage);
+
     return s - compensate;
 }
 
-
-bool AlignmentGraph::IsSimpleColumn(size_t col) {
-    if (col + 1 < cols.size()) {
-        auto links = CollectLinks(col+1);       // 下个col会收拢前一个的分支，方便统计
-
-        std::sort(links.begin(), links.end(), [](const Link* a, const Link *b) {
-            return a->count > b->count || (a->count == b->count && a->prev < b->prev);
-        });
-
-        return links.size() <= 1 || (links[0]->count * 3 >= cols[col].coverage && links[0]->count >= links[1]->count *4/2);
-    } else {
-        return true;
-    }
-}
 
 void AlignmentGraph::SaveGraph(const std::string &fname, size_t s, size_t e) const {
 

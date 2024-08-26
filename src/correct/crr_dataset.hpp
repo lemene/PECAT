@@ -48,8 +48,8 @@ public:
         }
 
         struct Index {
-            uint8_t t;  // type: 0 ava; 1 map
-            uint16_t p; // position;
+            uint8_t t;      // type: 0 ava; 1 map
+            uint32_t p:24; // position;
         };
 
         Seq::Id id;

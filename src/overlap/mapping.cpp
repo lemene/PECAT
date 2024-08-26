@@ -112,6 +112,9 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(const std::string &name) const
 
 std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     assert (id != StringPool::NID) ;
+    const size_t MIN_ALIGNED_LEN = 3000;
+    const size_t ACCEPT_ALIGNED_LEN = 10000;
+    const size_t MAX_OVERHANG = 1000;
 
     std::vector<Mapping::Pair> ols;
     auto tgt = queries_.find(id);
@@ -127,11 +130,41 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                 auto qol = sorted_by_start_[ii];
                 const int offset = 3000;
                 if (qol->b_.end >= tol->b_.start && qol->b_.start <= tol->b_.end &&
-                    std::min(qol->b_.end, tol->b_.end) >= std::max(qol->b_.start, tol->b_.start) + offset) {
-                    //printf("ToPair: %s - %s: %d %d | %d %d\n", 
-                    //    ol_store_.QueryNameById(qol->a_.id).c_str(), ol_store_.QueryNameById(tol->a_.id).c_str(), 
-                    //    qol->b_.start, qol->b_.end, tol->b_.start, tol->b_.end);
-                    ols.push_back({qol, tol});
+                    std::min(qol->b_.end, tol->b_.end) >= std::max(qol->b_.start, tol->b_.start) + MIN_ALIGNED_LEN) {
+
+                    auto expect_range = [](const Overlap* ol) -> std::array<int,2> {
+                        auto exp_s = ol->b_.start - (ol->SameDirect() ?  ol->a_.start : (ol->a_.len - ol->a_.end) );
+                        exp_s = std::max(0, exp_s);
+                        auto exp_e = ol->b_.end + (ol->SameDirect() ?  (ol->a_.len - ol->a_.end) : ol->a_.start );
+                        exp_e = std::min(ol->b_.end, exp_e);
+                        return {exp_s, exp_e};
+                    };
+
+                    auto exp_tr = expect_range(tol);
+                    auto exp_qr = expect_range(qol);
+
+                    auto len_q_t  = std::min(qol->b_.end, tol->b_.end) - std::max(qol->b_.start, tol->b_.start);
+                    auto len_q_tr = std::min(qol->b_.end, exp_tr[1]) - std::max(qol->b_.start, exp_tr[0]);
+                    auto len_qr_t = std::min(exp_qr[1], tol->b_.end) - std::max(exp_qr[0], tol->b_.start);
+                    
+                    if (std::abs(len_q_tr - len_q_t) <= MAX_OVERHANG && std::abs(len_qr_t - len_q_t) <= MAX_OVERHANG) {
+
+                        if (len_q_t >= ACCEPT_ALIGNED_LEN) {
+                            ols.push_back({qol, tol});
+                        } else {
+                            std::array<int,2> qoh = qol->SameDirect() ? std::array<int,2>({qol->a_.start, qol->a_.len - qol->a_.end})
+                                                                    : std::array<int,2>({qol->a_.len - qol->a_.end, qol->a_.start});
+                
+                            std::array<int,2> toh = tol->SameDirect() ? std::array<int,2>({tol->a_.start, tol->a_.len - tol->a_.end})
+                                                                    : std::array<int,2>({tol->a_.len - tol->a_.end, tol->a_.start});
+
+                            if (std::min(qoh[0], qoh[0]) <= MAX_OVERHANG && std::min(qoh[1], qoh[1]) < MAX_OVERHANG) {
+                                ols.push_back({qol, tol});
+                            }
+                                                                    
+                        }
+                        
+                    }
                 }
 
                 if (qol->b_.start > tol->b_.end) {
@@ -183,9 +216,6 @@ void Mapping::Pair::ToOverlap() {
                 tcurr += d.len;
                 break;
             case 'D':
-                // for (size_t i = 0; i < d.len; ++i) {
-                //     auto p = query->a_.strand == 0 ? query->a_.start + qcurr : query->a_.end - qcurr ;
-                // }
                 tcurr += d.len;
                 break;
 
@@ -208,8 +238,6 @@ void Mapping::Pair::ToOverlap() {
 
 
     for (; start + N < end; ++start) {
-        //printf("cccc(%d-%d) %zd %zd |  %d %d | %d %d\n", a_.id, b_.id, start, end, 
-        //    aligned_query[start], aligned_target[start], aligned_query[start+N], aligned_target[start+N]);
         if (aligned_query[start] == -1 || aligned_target[start]== -1) continue;
         if (std::abs(aligned_query[start] - aligned_query[start+N]) == N &&
             std::abs(aligned_target[start] - aligned_target[start+N]) == N) {      
@@ -229,14 +257,6 @@ void Mapping::Pair::ToOverlap() {
     if (start < end && aligned_query[start] != -1 && aligned_target[start]!= -1 && 
                        aligned_query[end-1] != -1 && aligned_target[end-1]!= -1) {
 
-        // if (end - start > 10000) {    
-        //     printf("start-end: %zd, %zd\n", start, end);
-        //     for (size_t i = start; i < end ; ++i) {
-        //         printf("%d xx %d\n", aligned[i][0], aligned[i][1]);
-        //     }
-        //     fflush(stdout);
-        //     assert(0);
-        // }
         if (query->a_.strand == 0) {
             a_.start = aligned_query[start];
             a_.end = aligned_query[end-1] + 1;
@@ -253,11 +273,14 @@ void Mapping::Pair::ToOverlap() {
             b_.end = aligned_target[start] + 1;
         }    
 
-        //printf("%d %d\n", target->SameDirect(), target->SameDirect()); 
-        //printf("%d %d %d <-> %d %d %d\n", b_.start , b_.end , b_.len , a_.start , a_.end , a_.len );
-        //fflush(stdout);
         assert(0 <= b_.start  && b_.start <= b_.end && b_.end <= b_.len);
         assert(0 <= a_.start  && a_.start <= a_.end && a_.end <= a_.len);
+
+        // reduce memory
+        aligned_query = std::vector<int>(aligned_query.begin()+start, aligned_query.begin()+end);
+        aligned_target = std::vector<int>(aligned_target.begin()+start, aligned_target.begin()+end);
+        end = end - start;
+        start = 0;
     } else {
         a_.start = 0;
         a_.end = 0;
@@ -271,13 +294,14 @@ void Mapping::Pair::ToOverlap() {
 
 TimeCounter tc_al_map_bases("al_map_bases"); 
 TimeCounter tc_al_map_seg("al_map_seg");
+TimeCounter tc_al_base00("al_base00");
 std::vector<uint8_t> Mapping::Pair::AlignBases(Seq::Id tid, const DnaSeq &qseq, const DnaSeq &tseq) {
     TimeCounter::Mark m(tc_al_map_bases);
     const DnaSeq* proxy_qseq = &qseq;
     DnaSeq qseq_rv;
     std::vector<int> alt;
     std::vector<int> alq;
-    //printf("AlignBase: direct %d %d\n", query->SameDirect(), target->SameDirect());
+
     if (tid == b_.id) { // consistent  
         if (query->SameDirect() && target->SameDirect()) {
             alq.assign(aligned_query.begin()+start, aligned_query.begin()+end);
@@ -292,7 +316,7 @@ std::vector<uint8_t> Mapping::Pair::AlignBases(Seq::Id tid, const DnaSeq &qseq, 
             }
             qseq_rv = DnaSeq::ReverseComplement(qseq);
             proxy_qseq = &qseq_rv; 
-            assert(Seq::ReverseComplement(*(qseq.ToString())) == *(qseq_rv.ToString()));
+            //assert(Seq::ReverseComplement(*(qseq.ToString())) == *(qseq_rv.ToString()));
             alt.assign(aligned_target.rbegin()+aligned_target.size()-end, aligned_target.rbegin()+aligned_target.size()-start);
         } else if (!query->SameDirect() && target->SameDirect()) {
             alq.assign(aligned_query.begin()+start, aligned_query.begin()+end);
@@ -341,29 +365,14 @@ std::vector<uint8_t> Mapping::Pair::AlignBases(Seq::Id tid, const DnaSeq &qseq, 
             alt.assign(aligned_query.rbegin()+aligned_query.size()-end, aligned_query.rbegin()+aligned_query.size()-start);
         }
     }
-    // for (size_t i = start; i < end; ++i) {
-    //     if (aligned_query[i] != -1 && aligned_target[i] != -1) {
-    //         printf("old-al: %zd %d %d - %d %d\n", i, aligned_query[i], aligned_target[i], qseq[aligned_query[i]], tseq[aligned_target[i]]);
-    //     } else {
-    //         printf("old-al: %zd %d %d \n", i, aligned_query[i], aligned_target[i] );
-    //     }
-    // }
-    // for (size_t i = 0; i < alt.size(); ++i) {
-    //     if (alq[i] != -1 && alt[i] != -1) {
-    //         printf("new-al: %zd %d %d - %d %d\n", i, alq[i], alt[i], (*proxy_qseq)[alq[i]], tseq[alt[i]]);
-    //     } else {
-    //         printf("new-al: %zd %d %d\n", i, alq[i], alt[i]);
-    //     }
-    // }
-    //assert(alq.size() == alt.size());
-    //printf("direct %d %d %d\n", tid == b_.id, query->SameDirect(), target->SameDirect());
-    //assert(0);
     return AlignBases00(*proxy_qseq, alq, tseq, alt);
 }
 
 std::vector<uint8_t> Mapping::Pair::AlignBases00(
     const DnaSeq &qseq, const std::vector<int> &al_q_2_ref, 
     const DnaSeq &tseq, const std::vector<int> &al_t_2_ref) {
+  
+    TimeCounter::Mark m(tc_al_base00);
 
     std::vector<uint8_t> alignment;
     alignment.reserve(AlignedLength()*2);

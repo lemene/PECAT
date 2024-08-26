@@ -542,7 +542,7 @@ void Program_Weight::Running() {
             }
         }
     
-        return sum / count;
+        return count > 0 ? sum / count : count;
     };
     
     std::atomic<long long>  total_weight { 0 };
@@ -552,6 +552,10 @@ void Program_Weight::Running() {
         weight[id - rd_store.GetIdLow()] = wt;
         total_weight.fetch_add(int(wt*seq.Size()));
         total_length.fetch_add(seq.Size());
+        LOG(INFO)("wt: %f, %d, %zd", wt, int(wt*seq.Size()), seq.Size());
+
+        LOG(INFO)("READ: %lld, %lld, %0.3f", total_weight.fetch_add(0), total_length.fetch_add(0), total_weight.fetch_add(0) *1.0/ total_length.fetch_add(0));
+
     }, thread_size_);
 
     double wt_rate = total_weight.load() * 1.0 / total_length.load();

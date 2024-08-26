@@ -284,9 +284,9 @@ sub run_correct($) {
     }
     
     if ($baseSize > 0) {
-        push @jobs, $self->jobExtract($name, $corrOutput, $corrReads, $baseSize);  
+        push @jobs, $self->getjob_extract_longest_reads($name, $corrOutput, $corrReads, $baseSize);  
     } else {
-        push @jobs, $self->jobSkip("crr", $corrOutput, $corrReads);
+        push @jobs, $self->getjob_make_softlink("crr", $corrOutput, $corrReads);
     }
 
     $self->run_jobs($self->newjob(

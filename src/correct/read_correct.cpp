@@ -58,6 +58,7 @@ void ReadCorrect::Correct() {
     auto dispatcher = dataset_.GetDispatcher();
 
     auto work_func = [&](size_t i) {
+        LOG(INFO)("Start thread %zd", i);
         Worker worker(*this);
 
         std::ostringstream oss_cread;
@@ -74,8 +75,8 @@ void ReadCorrect::Correct() {
                         LOG(WARNING)("Failed to correct read(%s)", dataset_.read_store_.QueryNameById(tid).c_str());
                     }
                 }
-                worker.Clear();
             }
+            worker.Clear();
             
             if (oss_cread.tellp() > (int)flush_block) {
                 combine_func(oss_cread, oss_scores, worker.stat_info);
@@ -263,8 +264,11 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 }
 
 bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
+    //LOG(INFO)("Start correcting");
     auto group = dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
+    LOG(INFO)("groupsize(%s) = %zd", dataset_.QueryStringById(id).c_str(), group.Size());
+    
 
     const DnaSeq& target = dataset_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)opts_.filter0_.min_length); 
@@ -274,8 +278,12 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
     std::vector<int> coverage(target.Size(), 0);
 
     std::vector<Alignment> first_als;
-    for (size_t i = 0; i < group.Size(); ++i) {
+    
+    DEBUG_printf("groupsize = %zd\n", group.Size());
+    for (size_t i = 0; i < std::min<size_t>(1000, group.Size()); ++i) {
+        
         auto al = GetAlignmentWithCache(id, group, i, wrk);
+        //LOG(INFO)("the i = %zd", i);
 
         if (al.Valid()) { 
             first_als.push_back(al);
@@ -284,6 +292,9 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 
         if (opts_.cands_opts_.IsEndCondition(coverage)) break;
     }
+    
+    //LOG(INFO)("alignsize = %zd", first_als.size());
+
 
     if (first_als.size() > 0) {
     ////////
@@ -314,9 +325,13 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
         for (auto &al : wrk.aligned_) { al.Rearrange(); }
         {
             TimeCounter::Mark m(tc_graph);
+        //LOG(INFO)("build graph");
         wrk.graph_.Build(target, range, wrk.aligned_);
+                //LOG(INFO)("Consensus");
         wrk.graph_.Consensus();
         }
+        
+    //LOG(INFO)("End correcting");
         return true;
     }
     }
@@ -327,11 +342,11 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
     
     TimeCounter::Mark m(tc_align);
-    DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
     auto ol = group.Get(ig, 0); 
     const auto& tread = ol->GetRead(tid);
     const auto& qread = ol->GetOtherRead(tid);
 
+    DEBUG_printf("doing=%zd/%zd, qid=%s\n", ig, group.Size(), dataset_.QueryStringById(qread.id).c_str());
     Alignment al(tread.id, qread.id);
     al.strand = ol->SameDirect() ? 0 : 1;
 
@@ -360,24 +375,30 @@ Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGr
 
 Alignment ReadCorrect::GetAlignmentOnes(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
 
-    DEBUG_printf("done = %zd, group_size = %zd\n", ig, group.Size());
     auto ol = group.Get(ig, 0); 
     const auto& tread = ol->GetRead(tid);
     const auto& qread = ol->GetOtherRead(tid);
 
     Alignment al_best(tread.id, qread.id);
 
-    for (size_t j = 0; j < std::min<size_t>(3, group.Size(ig)); ++j) {
+    for (size_t j = 0; j < group.Size(ig); ++j) {
         const Overlap& ol = *group.Get(ig, j);
+        DEBUG_printf("subgroup(%zd) = %zd: %s <-> %s: %lld, %s\n", j, group.Size(ig), dataset_.QueryStringById(ol.a_.id).c_str(),
+             dataset_.QueryStringById(ol.b_.id).c_str(), ol, ol.ToM4Line().c_str());
         Alignment al = GetAlignmentOne(tid, ol, wrk);
+        DEBUG_printf("check_global: %f > %f\n", al.Identity(), opts_.min_identity_);
         if (!ExactFilter(al) && al.Identity() >= opts_.min_identity_) {     
             al.ComputeDistance(opts_.local_window_size_);
+            DEBUG_printf("check_local: %f > %f\n", al.MaxLocalIdentity_100(opts_.local_window_size_), opts_.min_local_identity_);
             if (al.MaxLocalIdentity_100(opts_.local_window_size_) >= opts_.min_local_identity_) {
                 // pass check
                 if (al_best.Identity() < al.Identity()) {
                     al_best = al;
                 }
             }
+        }
+        if (j >= 5) {
+            break;
         }
     }
     return al_best;
@@ -411,7 +432,6 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
         
     } 
     return al;
-
 }
 
 std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vector<Alignment>& als) {
@@ -442,17 +462,17 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
         }
         
         size_t threshold = 1000;
-        size_t cov = 60;
+        size_t cov = 40;
         if (vdist.size() == 0) continue;
         if (vdist.size() <= 10) {
             auto m = ComputeMeanAbsoluteDeviation(vdist);
-            threshold = m[0] + 6*1.253*m[1];
+            threshold = m[0] + 3*1.253*m[1];
             DEBUG_printf("al_local_th mean = %d, %d, %d, %zd\n" , threshold, m[0], m[1], vdist.size());
         } else {
             std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
             std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
             auto m = ComputeMedianAbsoluteDeviation(oks);
-            threshold = m[0] + 6*1.4826*m[1];
+            threshold = m[0] + 3*1.4826*m[1];
             DEBUG_printf("al_local_th median = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
         }
 
@@ -636,6 +656,8 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     };
 
     auto aligned = pair.AlignBases(tid, qseq, tseq);
+    al.aligned_query.reserve(aligned.size());
+    al.aligned_target.reserve(aligned.size());
     for (auto i : aligned) {
         if (i == EDLIB_EDOP_MATCH) {
             al.aligned_query .push_back(ACGT[get_query_base(iq++)]);

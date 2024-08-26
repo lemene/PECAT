@@ -67,7 +67,7 @@ public:
         Loc prev {-1, -1, -1};
         size_t count {0};
         MyBitSet seqs;
-        //double w;       // weight
+        double w {0.0};       // weight
     };
 
     struct Tag {
@@ -198,7 +198,7 @@ public:
     struct Segment {
         Loc end;
         Loc begin;
-        int type = 0;
+        int type;
     };
 
     struct Options {
@@ -240,14 +240,17 @@ public:
         return &cols[loc.col].rows[loc.row].base[loc.base];
     }
 
-    Segment FindBestPathBasedOnCount();
     Segment FindBestPathBasedOnWeight();
+    
+    std::vector<std::string> RestoreSegment(const Segment &seg) ;
 
     std::vector<Segment> SplitSegment(const Loc &end);
-    std::vector<Segment> SplitSegment2(const Loc &end);
     void Reconstruct(const std::vector<Segment>& segs);
     void Consensus();
 
+    std::vector<Loc> GetBestPath(const Loc& start, const Loc& end);
+
+    std::string ReconstructPath(const std::vector<Loc>& path);
     std::string ReconstructSimple(const Segment& seg);
     std::string ReconstructComplex(const Segment& seg);
 
@@ -284,9 +287,7 @@ public:
 protected:
     void AddTarget(const DnaSeq &target, const std::array<size_t, 2> &range);
     void AddQuery(size_t qid, size_t query_start, const std::string &aligned_query,  size_t target_start, const std::string &aligned_target);
-    double LinkScoreCount(size_t col, size_t row, const Link& link);
-    double LinkScoreWeight(size_t col, size_t row, const Link& link);
-    bool IsSimpleColumn(size_t col);
+    double LinkScoreWeight(size_t col, size_t row, Link& link);
 protected:
     static DnaSerialTable2 Base2Num;
 
@@ -305,7 +306,6 @@ protected:
 
     std::string sequence_;
     std::string quality_;
-    double (AlignmentGraph::*LinkScore)(size_t, size_t, const Link&) { nullptr };
     QueryInfos query_infos_;
 };
 

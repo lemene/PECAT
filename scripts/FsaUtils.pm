@@ -3,7 +3,7 @@ use strict;
 
 package FsaPipeline;
 
-sub jobSkip($$$$) {
+sub getjob_make_softlink($$$$) {
     my ($self, $name, $ifile, $ofile) = @_;
     
     my $job = $self->newjob (
@@ -14,32 +14,17 @@ sub jobSkip($$$$) {
         funcs => [sub ($$) {
             `ln -s -f $ifile $ofile`;
         }],        
-        msg => "skipping job, $name",
+        msg => "make softlink, $name",
     );
     return $job;
 }
 
-
-sub jobExtract($$$$$) {
-    my ($self, $name, $ifname, $ofname, $basesize) = @_;
+## 
+sub getjob_extract_longest_reads($$$$$) {
+    my ($self, $name, $ifname, $ofname, $bsize) = @_;
     
-    my $binPath = $self->get_env("BinPath");
-    my $threads = $self->get_config("THREADS");
-
-    my $isGz = ($ofname =~ /\.gz$/);
-    my $ofnTemp = $ofname;
-    $ofnTemp =~ s/\.gz//;
-    
-    my @cmds = ();
-    if ($basesize > 0) {
-        push @cmds, "$binPath/fsa_rd_tools longest $ifname $ofnTemp --base_size=$basesize";
-    } else {
-        push @cmds, "$binPath/fsa_rd_tools copy --ifname=$ifname --ofname=$ofnTemp";
-    }
-
-    if ($isGz) {
-        push @cmds, "$binPath/pigz -p $threads $ofnTemp"
-    }
+    my $bin_path = $self->get_env("BinPath");
+    my $threads = $self->get_config("threads");
 
     my $job = $self->newjob(
         name => "${name}_extract",
@@ -47,41 +32,36 @@ sub jobExtract($$$$$) {
         ofiles => [$ofname],
         gfiles => [$ofname],
         mfiles => [],
-        cmds => [@cmds],
+        threads => 1,
+        cmds => ["$bin_path/fsa_rd_tools longest $ifname $ofname --base_size=$bsize"],
         msg => "extracting longest reads, $name"
     );
-
     return $job;
 }
 
 
-sub jobRead2Read($$$$$$) {
-    my ($self, $name, $reads, $options, $rd2rd, $workDir) = @_;
+sub getjob_map_read_to_read_0($$$$$$) {
+    my ($self, $name, $reads, $options, $rd_2_rd, $wrkdir) = @_;
 
+    my $isgz = ($rd_2_rd =~ /\.gz$/);
 
-    mkdir $workDir;
+    my $bin_path = $self->get_env("BinPath");
+    my $threads = $self->get_config("threads");
 
-    my $isGz = ($rd2rd =~ /\.gz$/);
+    my $opts_map = $options->[0];
+    my $opts_flt = $options->[1];
 
-    my $binPath = $self->get_env("BinPath");
-    my $threads = $self->get_config("THREADS");
-
-    my $alignOptions = $options->[0];
-    my $filterOptions = $options->[1];
-
-    my $cmdSub = $isGz ? " | $binPath/pigz -c -p $threads > $rd2rd" : " > $rd2rd";
+    my $cmdSub = $isgz ? " | $bin_path/pigz -c -p $threads > $rd_2_rd" : " > $rd_2_rd";
     my $job = $self->newjob(
-        name => "${name}_rd2rd",
+        name => "${name}_rd_2_rd_0",
         ifiles => [$reads], 
-        ofiles => [$rd2rd], 
+        ofiles => [$rd_2_rd], 
         mfiles => [],
-        cmds => ["minimap2 $alignOptions -t $threads $reads $reads | $binPath/fsa_ol_cut - - --itype paf --otype paf --thread_size 4 $filterOptions $cmdSub"],
+        cmds => ["minimap2 -t $threads $opts_map $reads $reads | $bin_path/fsa_ol_cut - - --itype paf --otype paf --thread_size 4 $opts_flt $cmdSub"],
     
         msg => "mapping reads",
     );
     return $job;
-
-                   
 }
 
 
@@ -196,121 +176,6 @@ sub jobRead2ReadParallelly($$$$$$$) {
     );
 }
 
-
-sub runRead2ReadParallelly($$$$$$) {
-    my ($self, $name, $workDir, $reads, $options, $rd2rd) = @_;
-
-
-    mkdir $workDir;
-
-    my $isGz = ($rd2rd =~ /\.gz$/);
-    my $rd2rd_raw = "$workDir/overlap_raw.paf";
-
-    my $binPath = $self->get_env("BinPath");
-    my $threads = $self->get_config("THREADS");
-
-    my $min_aligned_length = $self->get_config("MIN_ALIGNED_LENGTH") + 0;
-    my $blocksize = 2000000000;
-    my $blockInfo = "$workDir/block_info";
-    my $alignOptions = $options->[0];
-    my $filterOptions = $options->[1];
-
-    my $readsIndex = "$workDir/reads.index";
-    my $jobIndex = $self->newjob(
-        name => "${name}_index",
-        ifiles => [$reads],
-        ofiles => [$readsIndex],
-        gfiles => [$readsIndex],
-        mfiles => [],
-        cmds => ["minimap2 -t $threads $alignOptions -d $readsIndex $reads"],
-        msg => "indexing reads, $name"
-    );
-
-    my $jobSplit = $self->newjob(
-        name => "${name}_split",
-        ifiles => [$reads],
-        ofiles => [$blockInfo],  
-        gfiles => [$blockInfo, "$workDir/cc*.fasta"],
-        mfiles => [],
-        cmds => ["$binPath/fsa_rd_tools split $reads $workDir/cc{}.fasta --block_size=$blocksize",
-                 "ls $workDir/cc*.fasta > $blockInfo"],
-        msg => "spliting reads, $name",
-    );
-
-    my $jobAlign = $self->newjob(
-        prefunc => sub ($) {
-            my ($job) = @_;
-            @{$job->ifiles} = @{$jobSplit->ofiles};
-            my $size = `wc -l $blockInfo`;
-
-            for (my $i=0; $i < $size; $i=$i+1) {
-                my $f = "$workDir/cc${i}.fasta";
-                
-                my $ofile = $isGz ? "$f.paf.gz" : "$f.paf";
-                my $cmdSub = $isGz ? " | $binPath/pigz -c -p $threads > $ofile" : " > $ofile";
-                my $jobSub = $self->newjob(
-                    name => "${name}_align_$i",
-                    ifiles => [$f],
-                    ofiles => [$ofile],
-                    gfiles => [$ofile],
-                    mfiles => [],
-                    cmds => ["minimap2 $alignOptions -t $threads $readsIndex $f | $binPath/fsa_ol_cut - - --itype paf --otype paf  --thread_size 4 $filterOptions $cmdSub"],
-                    msg => "aligning reads $i, $name"
-                );
-
-                push @{$job->pjobs}, $jobSub;
-                push @{$job->ofiles}, $ofile;
-            }
-
-        },
-        name => "${name}_align",
-        ifiles => [$blockInfo], #prefunc
-        ofiles => [], # prefunc
-        mfiles => [],
-        pjobs => [], # prefunc
-        msg => "aligning reads, $name",
-    );
-
-    my $jobCat = $self->newjob(
-        prefunc => sub ($) {
-            my ($job) = @_;
-
-            @{$job->ifiles} = @{$jobAlign->ofiles};
-            push @{$job->cmds}, "cat @{$jobAlign->ofiles} > $rd2rd_raw && rm @{$jobAlign->ofiles}";
-
-        },
-        name => "${name}_cat",
-        ifiles => [], #prefunc
-        ofiles => [$rd2rd_raw], 
-        gfiles => [$rd2rd_raw],
-        mfiles => [],
-        cmds => [],     # prefunc
-        threads => 1,
-        msg => "cat overlaps, $name",
-    );
-
-    my $jobExtend = $self->newjob(
-        name => "${name}_extend",
-        ifiles => [$rd2rd_raw], #prefunc
-        ofiles => [$rd2rd], 
-        gfiles => [$rd2rd],
-        mfiles => [],
-        cmds => ["$binPath/fsa_ol_extend $rd2rd_raw $reads $rd2rd --thread_size $threads"],     # prefunc
-        msg => "Extending overlaps, $name",
-    );
-
-
-    $self->run_jobs($self->newjob(
-        name => "${name}_job",
-        ifiles => [$reads],
-        ofiles => [$rd2rd],
-        mfiles => ["$workDir/cc*.fasta", $readsIndex, "$workDir/cc*.fasta.paf", "$workDir/cc*.fasta.paf.gz"],
-        jobs => [$jobSplit, $jobIndex, $jobAlign, $jobCat, $jobExtend],
-        msg => "aligning reads to reads, $name",
-    ));
-}
-
-
 sub job_map_reads_to_contigs($$$$$$) {
     my ($self, $name, $wrkdir, $reads, $contigs, $options) = @_;
 
@@ -327,6 +192,24 @@ sub job_map_reads_to_contigs($$$$$$) {
         mfiles => [],
         cmds => ["minimap2  -t $threads $options $prictg $reads > $read2ctg"],
         msg => "mapping reads to contigs, ${name}",
+    );
+
+    return $job;
+}
+
+
+sub getjob_map_read_to_reference($$$$$$$$) {
+    my ($self, $name, $reads, $ref, $rd_2_ref, $options, $wrkdir) = @_;
+
+    my $threads = $self->get_config("threads");
+    my $job = $self->newjob(
+        name => "${name}_rd_2_ref",
+        ifiles => [$reads, $ref],
+        ofiles => [$rd_2_ref],
+        gfiles => [$rd_2_ref],
+        mfiles => [],
+        cmds => ["minimap2  -t $threads $options $ref $reads > $rd_2_ref"],
+        msg => "mapping reads to reference, ${name}",
     );
 
     return $job;

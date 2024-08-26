@@ -111,16 +111,6 @@ std::array<size_t, 3> KmerBin::CountKmers(size_t k, const std::string& seq,
         if (patkmers.Find(kmin)) count[0] ++;
         if (matkmers.Find(kmin)) count[1] ++;
         if (offkmers.Find(kmin)) count[2] ++;
-
-        // if (patkmers.Find(kid) || patkmers.Find(vkid)) count[0] ++;
-        // if (matkmers.Find(kid) || matkmers.Find(vkid)) count[1] ++;
-        // if (offkmers.Find(kid) || offkmers.Find(vkid)) count[2] ++;
-        // if (thread_size_ == 1) {
-        //     if (patkmers.Find(kid)) printf("%zd 1, %s\n", i, KmerId2String(kid, k).c_str());
-        //     if (patkmers.Find(vkid)) printf("%zd 1, %s\n", i, KmerId2String(vkid, k).c_str());
-        //     if (matkmers.Find(kid)) printf("%zd -1, %s\n", i, KmerId2String(kid, k).c_str());
-        //     if (matkmers.Find(vkid)) printf("%zd -1, %s\n", i, KmerId2String(vkid, k).c_str());
-        // }
     }
     return count;
 }
