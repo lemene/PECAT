@@ -12,6 +12,7 @@
 #include "stat_readinfo.hpp"
 #include "read_variants.hpp"
 #include "phase/phase_info.hpp"
+#include "phase/hic_read_infos.hpp"
 
 namespace fsa {
 
@@ -37,7 +38,9 @@ public:
     void Purge();
     void FilterLowQuality();
     void FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored);
-    double GetOverlapQuality(const Overlap &ol);
+    double GetOverlapQuality0(const Overlap &ol);
+    double GetOverlapQuality1(const Overlap &ol) { return is_ol_accurate ? ol.Identity() : GetOverlapQuality0(ol); }
+
     void GroupOverlaps();
     void FilterDuplicate();
     void GroupAndFilterDuplicate();
@@ -111,12 +114,22 @@ public:
         return read_variants_.get(); 
     }
     PhaseInfoFile* GetInconsistentOverlaps() {
-        if (phased_reads_ == nullptr && !opts_.variants.empty()) {
+        if (phased_reads_ == nullptr && !opts_.phased.empty()) {
             phased_reads_.reset(new PhaseInfoFile(string_pool_));
             phased_reads_->Load(opts_.phased);
         }
         return phased_reads_.get(); 
     }
+    
+    HicReadInfos* GetHicReadInfos() {
+
+        if (hic_read_info_ == nullptr && !opts_.hic_info.empty()) {
+            hic_read_info_.reset(new HicReadInfos(string_pool_));
+            hic_read_info_->Load(opts_.hic_info);
+        }
+        return hic_read_info_.get(); 
+    }
+
     // misc
     std::string OutputPath(const std::string &fname) const { return opts_.OutputPath(fname); }
 
@@ -132,6 +145,7 @@ public:
     double CalcLocalOverhangThreshold(std::vector<std::array<double,2>> &overhang);
 
     void EstimateGenomeSize();
+    void TestOverlapIdentity();
    
     bool HasDup(int qid, int tid) const  {
         auto it = dup_groups_.find(tid);
@@ -171,8 +185,10 @@ public:
     
     std::shared_ptr<ReadVariants> read_variants_;
     std::shared_ptr<PhaseInfoFile> phased_reads_;
+    std::shared_ptr<HicReadInfos> hic_read_info_;
 
     size_t mean_of_read_length { 0 };
+    bool is_ol_accurate { false };
 };
 
 }

@@ -19,7 +19,7 @@ void ReadVariants::Load(const std::string& fname) {
             auto items = SplitStringBySpace(line);
             assert(items.size() >= item_start);
 
-            if (items.size() > item_start) {
+            if (items.size() >= item_start) {
                 Variants v;
                 v.contig = string_pool_.GetIdByString(items[0]);
                 auto rid = string_pool_.GetIdByString(items[1]);
@@ -44,6 +44,7 @@ void ReadVariants::Load(const std::string& fname) {
     } else {
         LOG(WARNING)("Failed to open file: %s", fname.c_str());
     }
+    LOG(INFO)("Load readvariants %zd", reads.size());
 }
 
 

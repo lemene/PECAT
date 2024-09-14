@@ -118,12 +118,11 @@ void ContigGenerator::Save() {
 
 void ContigGenerator::PhaseBubbles(std::vector<Contig> &contigs) {
     
-    if (!opts_.hic_info.empty()) {
-        HicReadInfos hic_infos(dataset_.string_pool_);
-        hic_infos.Load(opts_.hic_info);
+    auto hic_infos = dataset_.GetHicReadInfos();
+    if (hic_infos != nullptr) {
         if (dataset_.GetReadVariants() != nullptr) {
             for (auto &c : contigs) {
-                c.PhaseBubbles(hic_infos, *dataset_.GetReadVariants());
+                c.PhaseBubbles(*hic_infos, *dataset_.GetReadVariants());
             }
         }
     } else {

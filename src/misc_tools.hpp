@@ -384,6 +384,7 @@ public:
         ap.AddPositionOption(fn_paf2_, "hic2_2_ctg", "alignment(PAF format) between hic2 reads and contigs");
         ap.AddPositionOption(fn_vars_, "variants", "SNP information in contigs");
         ap.AddPositionOption(fn_snp_in_hic_, "snp_in_hic", "result, SNP information in hic reads");
+        ap.AddNamedOption(thread_size_, "thread_size", "Number of threads");
 
         return ap;
     }
@@ -395,6 +396,7 @@ protected:
     std::string fn_paf2_;
     std::string fn_vars_;
     std::string fn_snp_in_hic_;
+    int thread_size_ { 4 };
 };
 
 class MiscTools : public MultiProgram {

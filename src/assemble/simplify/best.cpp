@@ -192,7 +192,7 @@ void BestOverlapsSimplifier::ComfirmCandidateBestEdges() {
                 if (!added) {
                     for (size_t i = 0; i < out_bests.size(); ++i) {
                         auto e = out_bests[i].e;
-                        if (true || ok_out_nodes.find(e->OutNode()) == ok_out_nodes.end()) {
+                        if (ok_out_nodes.find(e->OutNode()) == ok_out_nodes.end()) {
                             Debug("cand add: %s -> %s\n", graph_.GetAsmData().QueryNameById(e->InNode()->ReadId()).c_str(),
                                 graph_.GetAsmData().QueryNameById(e->OutNode()->ReadId()).c_str());
                             best_edges.insert(e);

@@ -684,7 +684,7 @@ void StringGraph::IdentifySimplePaths() {
         }
     }
 
-
+    
 //    assert(Assert_PathDual(paths_));  TOO SLOW
 }
 
@@ -934,22 +934,7 @@ void StringGraph::SaveEdges(const std::string &fname) {
 
 
 double StringGraph::GetOverlapQuality(const Overlap &ol) {
-    const auto &rd_store = asmdata_.GetReadStore();
-
-    const auto & query = rd_store.GetSeq(ol.a_.id);
-    const auto & target = rd_store.GetSeq(ol.b_.id);
-
-    auto tseq = target.ToUInt8(ol.b_.start, ol.b_.end);
-    auto qseq = query.ToUInt8(ol.a_.start, ol.a_.end, !ol.SameDirect());
-
-    auto r = edlibAlign((const char*)&qseq[0], qseq.size(), (const char*)&tseq[0], tseq.size(),
-        edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
-    if (r.status == EDLIB_STATUS_OK) {
-        const_cast<Overlap&>(ol).identity_ = (1.0 - r.editDistance * 1.0 / ol.AlignedLength()) * 100;
-        return 1.0 - r.editDistance * 1.0 / ol.AlignedLength();
-    } else {
-        return 0.0;
-    }
+    return asmdata_.GetOverlapQuality1(ol);
 }
 
 
@@ -1229,6 +1214,8 @@ void PathGraph::IdentifyPaths(const std::string &method) {
     }
 
     SortPaths();
+    tcode_AnalysePath();
+    MakeLinkMatrix();
 }
 
 template<typename TI, typename TO>
@@ -1688,6 +1675,130 @@ void PathGraph::Cluster::FindLongest1(PathEdge* e, std::unordered_set<PathEdge*>
         lp.second.push_back(e);
     }
     visited.erase(e);
+}
+
+
+void PathGraph::tcode_AnalysePath() {
+    // 每条path对应第一次组装结果的位置
+
+    auto rvs = asmdata_.GetReadVariants();
+    if (rvs != nullptr) {
+        for (const auto& path : paths_) {
+            LOG(INFO)("tcode_AnalysePath");
+            std::vector<Position> position;
+            
+            for (const auto& e : path) {
+                for (size_t i = 0; i < e->SimplePathSize(); ++i) {
+                    auto sp = e->GetSimplePath(i);
+                    for (const auto& be : sp) {
+                        LOG(INFO)("read %s", asmdata_.QueryNameById(be->read_).c_str());
+                        auto vs = rvs->GetVariants(be->read_);
+                        if (vs != nullptr) {
+                            std::array<size_t, 2> range = { 10000000000L, 0};
+                            for (auto vs_in_ctg : *vs) {
+                                if (vs_in_ctg.d == 0) {
+                                    position.push_back({vs_in_ctg.contig, vs_in_ctg.offset, vs_in_ctg.offset + asmdata_.GetReadStore().GetSeqLength(be->read_)});
+                                } else {
+                                    position.push_back({vs_in_ctg.contig, vs_in_ctg.offset - asmdata_.GetReadStore().GetSeqLength(be->read_), vs_in_ctg.offset });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            LOG(INFO)("position: %zd", position.size());
+            std::sort(position.begin(), position.end(), [](const Position &a, const Position &b) {
+                return (a.ctg < b.ctg) || 
+                       (a.ctg == b.ctg && a.start < b.start) || 
+                       (a.ctg == b.ctg && a.start == b.start && a.end < b.end);
+            });
+            std::vector<Position> p_in_asm;
+            if (position.size() > 0) {
+                std::vector<Position> ins;
+                Position p = position[0];
+                for (size_t i = 0; i < position.size(); ++i) {
+                    LOG(INFO)("%d, %d, %d", position[i].ctg, position[i].start, position[i].end);
+                    if (position[i].ctg == p.ctg) {
+                        if (p.end > position[i].start) {
+                            p.end = std::max(p.end, position[i].end);
+                        } else {
+                            ins.push_back(p);
+                            p = position[i];
+                        }
+                    } else {
+                        ins.push_back(p);
+                        p = position[i];
+                    }
+                }
+                ins.push_back(p);
+                LOG(INFO)("position: %zd, %zd", position.size(), ins.size());
+                for (size_t i = 0; i < ins.size(); ++i) {
+                    LOG(INFO)("- %d, %d, %d", ins[i].ctg, ins[i].start, ins[i].end);
+                    if (ins[i].end - ins[i].start > 100000) {
+                        p_in_asm.push_back(ins[i]);
+                    }
+                }
+            }
+            path_at_asm_.push_back(p_in_asm);
+        }
+    }
+}
+
+void PathGraph::MakeLinkMatrix() {
+    std::vector<size_t> matrix((path_at_asm_.size() / 2) * (path_at_asm_.size() / 2) , 0);
+
+    std::unordered_map<Seq::Id, std::vector<size_t>> path_index;
+    for (size_t i = 0; i < path_at_asm_.size(); i+=2)  {
+        for (const auto& p : path_at_asm_[i]) {
+            path_index[p.ctg].push_back(i);
+        }
+    }
+
+    auto test_hic_in_path = [](Seq::Id ctg, int hpoc, const std::vector<Position>& path) {
+        for (const auto &p : path) {
+            if (p.ctg == ctg && p.start <= hpoc && p.end >= hpoc) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto hic_infos = asmdata_.GetHicReadInfos();
+    if (hic_infos != nullptr) {
+        for (auto& info : hic_infos->GetInfos()) {
+            std::array<std::vector<size_t>, 2> links; 
+            for (size_t i = 0; i < 2; ++i) {
+                for (auto& h : info.second.hic[i]) {
+                    auto it = path_index.find(h.ctg);
+                    if (it != path_index.end()) {
+                        for (auto ipath : it->second) {
+                            if (test_hic_in_path(h.ctg, h.offset, path_at_asm_[ipath])) {
+                                links[i].push_back(ipath);
+                            }
+                        }
+                    }
+                    
+                }
+            }
+
+            for (auto iln : links[0]) {
+                for (auto jln : links[1]) {
+                    matrix[iln/2*path_at_asm_.size()/2 + jln/2] += 1;
+                    matrix[jln/2*path_at_asm_.size()/2 + iln/2] += 1;
+                }
+            }
+        }
+        
+    }
+
+    for (size_t i = 0; i < path_at_asm_.size()/2; ++i) {
+        for (size_t j = 0; j < path_at_asm_.size()/2; ++j) {
+            printf("%d, ", matrix[i*path_at_asm_.size()/2 + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
 }
 
 } // namespace fsa {

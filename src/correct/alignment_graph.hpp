@@ -248,11 +248,15 @@ public:
     void Reconstruct(const std::vector<Segment>& segs);
     void Consensus();
 
+    std::vector<std::vector<Loc>> GetGoodPaths(const Loc& strat, const Loc &end);
     std::vector<Loc> GetBestPath(const Loc& start, const Loc& end);
 
     std::string ReconstructPath(const std::vector<Loc>& path);
     std::string ReconstructSimple(const Segment& seg);
     std::string ReconstructComplex(const Segment& seg);
+    
+    size_t Distance(const std::string &cns, const std::string &seg);
+    size_t Distance(const std::string &cns, const std::vector<std::string> &segs);
 
     // std::vector<std::string> RestoreSegment(const Segment &seg);
 

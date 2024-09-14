@@ -618,13 +618,7 @@ void ContigPhaser::DumpReadInfos(std::ostream& of) const {
         auto &ri = i.second;
         assert(ri.o->b_.id == ctg_);
 
-        int offset = ri.o->SameDirect() ? ri.o->a_.start - ri.o->b_.strand : ri.o->a_.start + ri.o->b_.strand;
-        for (auto &v : ri.vars) {
-            if (v[1] >= 0) {
-                offset = ri.o->SameDirect() ? v[0] - v[1] : v[0] + v[1] ;
-                break;
-            }
-        }
+        int offset = ri.o->SameDirect() ? ri.o->b_.start - ri.o->a_.start : ri.o->b_.end + ri.o->a_.start;
 
         of  << dataset_.QueryNameById(ctg_) << " " << dataset_.QueryNameById(ri.o->a_.id) << " " 
             << (ri.o->SameDirect() ? 0 : 1) << " " << offset << " ";

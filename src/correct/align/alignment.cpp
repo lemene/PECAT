@@ -256,6 +256,7 @@ void Alignment::ComputeDistance(size_t win_size) {
         }
     }
 
+    assert(score.size() >= win_size);
     local_distances.assign(score.size() - win_size + 1, 0);
             
     local_distances[0] = std::accumulate(score.begin(), score.begin()+win_size, 0);

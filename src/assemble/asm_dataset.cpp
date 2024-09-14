@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <random>
+
 #include "../utility.hpp"
 
 #include "edlib.h"
@@ -22,7 +24,7 @@ void AsmDataset::Purge() {
     
     GroupAndFilterDuplicate();
 
-    //FilterLowQuality();
+    if (is_ol_accurate) FilterLowQuality();
 
     ExtendOverlapToEnd();
 
@@ -55,9 +57,8 @@ void AsmDataset::LoadOverlaps(const std::string &fname) {
         read_infos_[i].id = i; // TODO
     }
 
-    if (opts_.dump >= 2) {
-        DumpOverlaps(OutputPath("load.paf"));
-    }
+    TestOverlapIdentity();
+
 }
 
 
@@ -413,7 +414,7 @@ void AsmDataset::FilterCoverage() {
 }
 
 
-double AsmDataset::GetOverlapQuality(const Overlap &ol) {
+double AsmDataset::GetOverlapQuality0(const Overlap &ol) {
     const auto &rd_store = rd_store_;
 
     const auto & query = rd_store.GetSeq(ol.a_.id);
@@ -1405,6 +1406,31 @@ void AsmDataset::EstimateGenomeSize() {
 
     opts_.UpdateByGenomeSize(gsize);
 
+}
+
+void AsmDataset::TestOverlapIdentity() {
+
+    size_t count = std::min<size_t>(10, ol_store_.Size());
+
+    std::vector<const Overlap*> ols(count, nullptr);
+
+    std::default_random_engine e;
+    std::uniform_int_distribution<int> u(0, ol_store_.Size()-1);
+    e.seed(time(0));
+    
+    std::generate(ols.begin(), ols.end(), [this, &u, &e](){ return &ol_store_.Get(u(e)); });
+
+    double diff = 0.0;
+    for (const auto o : ols) {
+        diff += std::abs(GetOverlapQuality0(*o) - o->Identity());
+    }
+    is_ol_accurate = diff / count < 0.005;
+
+    if (is_ol_accurate) {
+        LOG(INFO)("The identity of overlaps is accurate %.02f", diff / count);
+    } else {
+        LOG(INFO)("The identity of overlaps is inaccurate %.02f", diff / count);
+    }
 }
 
 } // namespace fsa {

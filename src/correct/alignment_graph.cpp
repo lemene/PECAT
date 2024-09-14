@@ -15,6 +15,7 @@
 #include "../read_store.hpp"
 #include "crr_dataset.hpp"
 #include "crr_options.hpp"
+#include "edlib.h"
 
 namespace fsa {
 
@@ -300,13 +301,100 @@ void AlignmentGraph::Reconstruct(const std::vector<Segment>& segs) {
     }
 }
 
+auto AlignmentGraph::GetGoodPaths(const Loc& start, const Loc &end) -> std::vector<std::vector<Loc>> {
+    // 找best path上的分叉位置 
+    std::vector<std::vector<Loc>> paths;
+
+    std::map<const Node*, std::vector<const Link*>> brs;
+    auto loc = end;
+    do {
+        auto n = Get(loc);
+        assert(n != nullptr && n->best_link != nullptr);
+
+        if (n->best_link->w < cols[loc.col].weight * 0.6) {
+            for (const auto& l : n->links) {
+                if (l.w >= n->best_link->w / 4) {
+                    if (&l != n->best_link) {   // 不存储 best
+                        brs[n].push_back(&l);
+                    }
+                }
+            }
+        }
+
+        loc = n->best_link->prev;
+    } while (loc != start);
+
+    LOG(INFO)("branch size: %zd", brs.size());
+
+    // 遍历分支找路径
+    std::vector<Loc> path;
+    struct Item {
+        const Loc loc;
+        const Node* n;
+        std::vector<const Link*> lnks;
+        size_t ilnk;     // 0 表示 best，n 指lnks[n-1]
+        double score ;
+    };
+
+    std::vector<Item> stack;
+    stack.push_back({end, Get(end), brs[Get(end)], 0, 0.0});
+    while (stack.size() > 0) {
+
+        if (stack.back().loc == start) {
+            // paths.push
+            paths.push_back(std::vector<Loc>());
+            for (size_t i = stack.size(); i > 0; --i) {
+                paths.back().push_back(stack[i-1].loc);
+            }
+            stack.pop_back();
+
+        } else if (stack.back().loc.col < start.col) {
+            stack.pop_back();
+
+        } else {
+
+        }
+
+
+        while (stack.size() > 0) {
+            //LOG(INFO)("stack.top(%zd) (%d,%d,%d), %zd", stack.size(), stack.back().loc.col, stack.back().loc.row, stack.back().loc.base, stack.back().ilnk);
+            if (stack.back().ilnk >= 1 + stack.back().lnks.size()) {
+                stack.pop_back();
+
+            } else {
+                if (stack.back().ilnk == 0) {
+                    stack.back().ilnk ++;
+                    assert(stack.back().n->best_link != nullptr);
+                    auto loc = stack.back().n->best_link->prev;
+
+                    stack.push_back({loc, Get(loc), brs[Get(loc)], 0});
+                } else {
+                    assert(stack.back().ilnk < 1 + stack.back().lnks.size());
+
+                    auto loc = stack.back().lnks[stack.back().ilnk-1]->prev;
+                    stack.back().ilnk ++;
+                    stack.push_back({loc, Get(loc), brs[Get(loc)], 0, 0.0});
+                }
+                break;
+            }
+        }
+
+
+
+    }
+
+    return paths;
+}
+
 auto AlignmentGraph::GetBestPath(const Loc& start, const Loc& end) -> std::vector<Loc> {
     std::vector<Loc> path {end};
+
     do {
         auto n = Get(path.back());
         assert(n != nullptr && n->best_link != nullptr);
         path.push_back(n->best_link->prev);
     } while (path.back() != start);
+    if (path.back().base == -1) path.pop_back();
     std::reverse(path.begin(), path.end());
     return path;
 }
@@ -314,7 +402,7 @@ auto AlignmentGraph::GetBestPath(const Loc& start, const Loc& end) -> std::vecto
 std::string AlignmentGraph::ReconstructPath(const std::vector<Loc>& path) {
     std::string cns;
     const std::vector<std::string> toBase = {"A", "C", "G", "T", ""};
-
+    
     for (size_t i = 0; i < path.size(); ++i) {
         cns += toBase[path[i].base];
     }
@@ -382,26 +470,30 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
 
     if (range.size() > 0) {
         DEBUG_printf("vvv %zd %d %d %d %d\n", range.size(), (*mx)[0].col, (*mx)[1].col, seg.begin.col, seg.end.col);
-        loc = (*mx)[0];
-        true_range_[1] = loc.col;
-        if (loc.col >=0 ) curr_node = Get(loc);
-        while (loc.col >= 0 ) {
-            cns += toBase[loc.base];
-            if (curr_node->best_link != nullptr && loc != (*mx)[1]) {
-                if (!valid(curr_node, loc) ) {
-                    break;
-                }
-                loc = curr_node->best_link->prev;
-                curr_node = Get(loc);
-            } else {
-                break;
-            }
-            if (loc.col != -1) true_range_[0] = loc.col; 
-        }
+        cns = ReconstructPath(GetBestPath((*mx)[1], (*mx)[0]));
+        true_range_[1] = (*mx)[0].col;
+        true_range_[0] = (*mx)[1].col;
+        DEBUG_printf("true_range: %zd %zd\n", true_range_[0], true_range_[1]);
     }
-    DEBUG_printf("true_range: %zd %zd\n", true_range_[0], true_range_[1]);
-    std::reverse(cns.begin(), cns.end());
     return cns;
+}
+
+
+size_t AlignmentGraph::Distance(const std::string &cns, const std::string &seg) {
+    
+    auto r = edlibAlign(cns.c_str(), cns.size(), seg.c_str(), seg.size(),
+        edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+    if (r.status == EDLIB_STATUS_OK) {
+        return r.editDistance;
+    } else {
+        return cns.size() + seg.size();
+    }
+}
+
+size_t AlignmentGraph::Distance(const std::string &cns, const std::vector<std::string> &segs) {
+    return std::accumulate(segs.begin(), segs.end(), 0, [&cns, this](size_t a, const std::string& seg) {
+        return a + Distance(cns, seg);
+    });
 }
 
 std::string AlignmentGraph::ReconstructComplex(const Segment& seg) {
@@ -588,20 +680,44 @@ void AlignmentGraph::Consensus() {
     Segment seg = FindBestPathBasedOnWeight();
 
 
-    auto segs = SplitSegment(seg.end);
-    DEBUG_printf("seg: size=%zd\n", segs.size());
-    for (auto &s : segs) {
-        DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
-        if (s.type == 1) {
-            auto reads = RestoreSegment(s);
-            LOG(INFO)("reads");
-            for (auto &r : reads) {
-                LOG(INFO)("%s", r.c_str());
-            }
-            auto ss = ReconstructSimple(s);
-            LOG(INFO)("cns:%s", ss.c_str());
-        }
-    }
+    // auto segs = SplitSegment(seg.end);
+    // DEBUG_printf("seg: size=%zd\n", segs.size());
+    // for (auto &s : segs) {
+    //     DEBUG_printf("seg: (%zd, %zd) %d\n", s.begin.col, s.end.col, s.type);
+    //     if (s.type == 1) {
+    //         auto reads = RestoreSegment(s);
+    //         LOG(INFO)("seg: (%zd, %zd) %d", s.begin.col, s.end.col, s.type);
+    //         for (auto &r : reads) {
+    //             LOG(INFO)("%s", r.c_str());
+    //         }
+
+    //         auto paths = GetGoodPaths(s.begin, s.end);
+            
+    //         assert(paths.size() > 0);
+    //         std::vector<std::string> segcns(paths.size());
+    //         std::transform(paths.begin(), paths.end(), segcns.begin(), [this](const std::vector<Loc> &path) {
+    //             return ReconstructPath(path);
+    //         });
+
+    //         std::vector<size_t> scores(paths.size());
+    //         std::transform(segcns.begin(), segcns.end(), scores.begin(), [this, &reads](const std::string &cns) {
+    //             return Distance(cns, reads);
+    //         });
+
+    //         LOG(INFO)("best: %s", ReconstructSimple(s).c_str());
+    //         for (size_t i = 0; i < paths.size(); ++i) {
+    //             LOG(INFO)("cns (%d): %s", scores[i], segcns[i].c_str());
+    //         }
+
+    //         auto mn = (size_t)(std::min_element(scores.begin(), scores.end()) - scores.begin());
+    //         assert(mn <= scores.size());
+    //         LOG(INFO)("mn=%zd", mn);
+    //         sequence_ += segcns[mn];
+
+    //     } else {
+    //         sequence_ += ReconstructSimple(s);
+    //     }
+    //}
     if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
         sequence_ = ReconstructSimple(seg);
     } else {

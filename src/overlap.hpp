@@ -133,6 +133,8 @@ public:
 
 
     int Extension(Seq::Id id, int end) const;
+    double Identity() const { return identity_ / 100; }
+    double Identity_100() const { return identity_; }
 
 	Read a_;    // query
 	Read b_;    // target

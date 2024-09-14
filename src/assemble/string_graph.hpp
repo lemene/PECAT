@@ -19,6 +19,13 @@
 namespace fsa {
 class ReadVariants;
 
+
+struct Position {
+    Seq::Id ctg;
+    int start;
+    int end;
+};
+
 class SgGraph {
 public:
     SgGraph(class AsmDataset &asmdata) : asmdata_(asmdata) {}
@@ -319,9 +326,14 @@ public:
     void TestGraph();
     void InsertLoopNode(LoopNode* n);
     void InsertCrossNode(CrossNode* n);
+
+    void tcode_AnalysePath();
+    void MakeLinkMatrix();
 protected:
 
     std::vector<std::list<PathEdge*>> paths_;
+    std::vector<std::vector<Position>> path_at_asm_;
+    
     std::unordered_map<std::string,  void (PathGraph::*)()> simplifications_;
 
 public:
