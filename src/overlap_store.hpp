@@ -461,7 +461,7 @@ public:
         bool Empty() const { return ols.size() == 0; }
         size_t Size() const { return index.size(); }
         size_t Size(size_t i) const { return index[i][1] - index[i][0]; }
-        const Overlap* Get(size_t i, size_t j) { return ols[index[i][0]+j]; }
+        const Overlap* Get(size_t i, size_t j) const { return ols[index[i][0]+j]; }
 
         void Sort(double opt_ohwt);
         std::vector<double> GetWeight(double opt_ohwt);

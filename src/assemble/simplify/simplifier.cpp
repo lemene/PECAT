@@ -296,28 +296,28 @@ bool Simplifier::TestCrossExtends(const std::list<const SgEdge*> in0_2_out0, con
 std::pair<const Overlap*, double> Simplifier::ReplaceHighQualityOverlap(const Overlap* ol, double threshold) {
 
     std::pair<const Overlap*, double> nol = {nullptr, 0.0};
-    auto dup0 = ori_graph_.GetAsmData().dup_groups_.find(ol->a_.id);
-    if (dup0 != ori_graph_.GetAsmData().dup_groups_.end()) {
-        auto dup00 = dup0->second.find(ol->b_.id);
-        if (dup00 != dup0->second.end()) {
-            
+    auto group = ori_graph_.GetAsmData().grouper_.Get(ol->a_.id);
+    for (size_t i = 0; i < group.Size(); ++i) {
+        auto o = group.Get(i, 0);
+        if (o->GetOtherRead(ol->a_.id).id == ol->b_.id) {
             Debug("dup: %s %s, %zd\n", QueryStringById(ol->a_.id).c_str(), 
-                QueryStringById(ol->b_.id).c_str(), dup00->second.size());
+                QueryStringById(ol->b_.id).c_str(), group.Size(i));
+
             auto loc = ol->Location(0);
-            assert(loc == Overlap::Loc::Right || loc == Overlap::Loc::Left);
-            for (auto o : dup00->second) {
-                Debug("dup loc: %s %s %d, %d\n", QueryStringById(o->a_.id).c_str(), 
-                    QueryStringById(o->b_.id).c_str(), loc, o->Location(0));
-                if (o->Location(0) == loc) {
-                    auto qual = static_cast<StringGraph&>(ori_graph_).GetOverlapQuality(*o);
-                    Debug("dup qual: %s (%d, %d) - %s (%d, %d) %f > %f\n", QueryStringById(o->a_.id).c_str(), o->a_.start, o->a_.end,
-                        QueryStringById(o->b_.id).c_str(), o->b_.start, o->b_.end, qual, threshold);
+            for (size_t j = 0; j < group.Size(i); ++j) {
+                auto dup = group.Get(i, j);
+                if (dup->Location(0) == loc) {
+                    auto qual = static_cast<StringGraph&>(ori_graph_).GetOverlapQuality(*dup);
+                    Debug("dup qual: %s (%d, %d) - %s (%d, %d) %f > %f\n", QueryStringById(dup->a_.id).c_str(), dup->a_.start, dup->a_.end,
+                        QueryStringById(dup->b_.id).c_str(), dup->b_.start, dup->b_.end, qual, threshold);
                     if (qual >= threshold) {
-                        nol.first = o;
+                        nol.first = dup;
                         nol.second = qual;
                         break;
                     }
                 }
+
+            
             }
         }
     }

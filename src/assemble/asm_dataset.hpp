@@ -37,13 +37,16 @@ public:
 
     void Purge();
     void FilterLowQuality();
-    void FilterLowQuality(int id, const std::unordered_map<int, const Overlap*> &group, std::unordered_set<const Overlap*> &ignored);
+    void FilterLowQuality(int id, const OverlapGrouper::Group& group,std::unordered_set<const Overlap*>& ignored);
     double GetOverlapQuality0(const Overlap &ol);
     double GetOverlapQuality1(const Overlap &ol) { return is_ol_accurate ? ol.Identity() : GetOverlapQuality0(ol); }
 
     void GroupOverlaps();
-    void FilterDuplicate();
     void GroupAndFilterDuplicate();
+
+    // Extend the overlaps to ends and remove overhangs. 
+    // e. (start, end, len):before: (10, 10000, 20000) <-> (1000, 10000, 10010) 
+    //                     :after:  (0, 10010, 20000) <-> (990, 10010, 10010)
     void ExtendOverlapToEnd();
 
     void FilterContained();
@@ -53,7 +56,7 @@ public:
     void ModifyEnd(const Overlap &o, int maxoh);
 
     /** \return (type mincov maxcov) */
-    std::array<int, 3> AnalyzeCoverage(int id, const std::unordered_map<int, const Overlap*>& group);
+    void AnalyzeCoverage(int id, const OverlapGrouper::Group& group, ReadStatInfo &rinfo);
     int AnalyzeCoverageType(const std::vector<int>& cov, bool log=false);
 
     void CoverageConfidencePoints(const std::vector<int>& cov, bool log=false);
@@ -80,10 +83,12 @@ public:
     std::unordered_set<const Overlap*> GetBackOverlaps(Seq::Id tid, int end) const ;
 
     const Overlap* QueryOverlap(Seq::Id a, Seq::Id b) const {
-        auto iter0  = groups_.find(a);
-        if (iter0 != groups_.end()) {
-            auto iter1 = iter0->second.find(b);
-            return iter1 != iter0->second.end() ? iter1->second : (Overlap*)nullptr;
+        auto group = grouper_.Get(a);
+        for (size_t i = 0; i < group.Size(); ++i) {
+            auto ol = group.Get(i, 0);
+            if (ol->GetOtherRead(a).id == b) {
+                return ol;
+            }
         }
         return nullptr;
     }
@@ -92,8 +97,6 @@ public:
 
     std::unordered_set<Seq::Id> ReservedReads();
 
-    /* */
-    void Check_Group() const;
     /** Record internal state and variables */
     void Dump() const;      
     void DumpOverlaps(const std::string &fname) const;
@@ -148,31 +151,34 @@ public:
     void TestOverlapIdentity();
    
     bool HasDup(int qid, int tid) const  {
-        auto it = dup_groups_.find(tid);
-        if (it != dup_groups_.end()) {
-            return it->second.find(qid) != it->second.end();
-        } else {
-            return false;
+        auto group = grouper_.Get(qid);
+        for (size_t i = 0; i < group.Size(); ++i) {
+            auto ol = group.Get(i, 0);
+            if (ol->GetOtherRead(qid).id == tid) {
+                return group.Size(i) > 1;
+            }
         }
+        return false;
     }
 
-    const std::vector<const Overlap*>& GetDup(int qid, int tid) const {
-        static std::vector<const Overlap*> empty;
-        auto it = dup_groups_.find(tid);
-        if (it != dup_groups_.end()) {
-
-            auto itit = it->second.find(qid) ;
-            if (itit != it->second.end() ) {
-                return itit->second;
+    std::vector<const Overlap*> GetDup(int qid, int tid) const {
+        std::vector<const Overlap*> dups;
+        auto group = grouper_.Get(qid);
+        for (size_t i = 0; i < group.Size(); ++i) {
+            auto ol = group.Get(i, 0);
+            if (ol->GetOtherRead(qid).id == tid) {
+                for (size_t j = 0; j < group.Size(i); ++j) {
+                    dups.push_back(group.Get(i, j));
+                }
             }
         } 
-        return empty;
+        return dups;
 
     }
 
     AsmOptions& opts_;
-    std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
-    std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> dup_groups_;
+    //std::unordered_map<int, std::unordered_map<int, const Overlap*>> groups_;
+    //std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> dup_groups_;
     std::unordered_map<Seq::Id, ReadStatInfo> read_infos_;
 
     StatReadInfo sread_info_;

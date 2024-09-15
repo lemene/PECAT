@@ -62,7 +62,7 @@ public:
 
     bool SameDirect() const { return a_.strand == b_.strand; }
     size_t AlignedLength() const { return (a_.end - a_.start + b_.end - b_.start) / 2;  }
-    size_t AlignedSize() const { return identity_ * AlignedLength(); }
+    size_t AlignedSize() const { return Identity() * AlignedLength(); }
     
     size_t IdealAlignedLength() const { 
         if (SameDirect()) {
@@ -135,6 +135,7 @@ public:
     int Extension(Seq::Id id, int end) const;
     double Identity() const { return identity_ / 100; }
     double Identity_100() const { return identity_; }
+    void UpdateIdentity(size_t alsize) { identity_ = 100.0*alsize / AlignedLength(); }
 
 	Read a_;    // query
 	Read b_;    // target
