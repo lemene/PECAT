@@ -36,8 +36,13 @@ public:
     void LoadOverlaps(const std::string &fname);
 
     void Purge();
+
     void FilterLowQuality();
-    void FilterLowQuality(int id, const OverlapGrouper::Group& group,std::unordered_set<const Overlap*>& ignored);
+    void FilterLowQuality(int id, const OverlapGrouper::Group& group, std::vector<const Overlap*>& ignored);
+
+    void FilterOverhang();
+    void FilterOverhang(Seq::Id id, const OverlapGrouper::Group& group, std::unordered_set<const Overlap*>& ignored);
+
     double GetOverlapQuality0(const Overlap &ol);
     double GetOverlapQuality1(const Overlap &ol) { return is_ol_accurate ? ol.Identity() : GetOverlapQuality0(ol); }
 
@@ -48,12 +53,12 @@ public:
     // e. (start, end, len):before: (10, 10000, 20000) <-> (1000, 10000, 10010) 
     //                     :after:  (0, 10010, 20000) <-> (990, 10010, 10010)
     void ExtendOverlapToEnd();
+    void ExtendOverlapToEnd(const Overlap &o, int maxoh);
 
     void FilterContained();
     bool IsContained(const Overlap& o, std::array<int, 2> &rel);
     void FilterCoverage();
 
-    void ModifyEnd(const Overlap &o, int maxoh);
 
     /** \return (type mincov maxcov) */
     void AnalyzeCoverage(int id, const OverlapGrouper::Group& group, ReadStatInfo &rinfo);

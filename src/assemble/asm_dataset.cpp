@@ -24,10 +24,12 @@ void AsmDataset::Purge() {
     
     GroupAndFilterDuplicate();
 
+    //FilterOverhang();
+
+
     if (is_ol_accurate) FilterLowQuality();
 
     ExtendOverlapToEnd();
-
     FilterCoverage();
 
     EstimateGenomeSize();
@@ -96,6 +98,134 @@ double AsmDataset::CalcLocalOverhangThreshold(std::vector<std::array<double,2>> 
 void AsmDataset::FilterLowQuality() {
     LOG(INFO)("Filter low-quality overlaps");
 
+    
+    std::mutex mutex;
+    std::unordered_set<const Overlap*> exist;
+    auto combine_func = [this, &mutex, &exist](std::vector<const Overlap*> &flt) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto o : flt) {
+            if (exist.find(o) != exist.end()) {
+                SetOlReason(*o, OlReason::Simple());
+            } else {
+                exist.insert(o);
+            }
+        }
+    };
+
+
+    std::atomic<size_t> index {0};
+    auto work_func = [this, &index, combine_func](size_t tid) {
+        std::vector<const Overlap*> flt;
+        for (size_t i = index.fetch_add(1); i < rd_store_.Size(); i = index.fetch_add(1)) {
+            FilterLowQuality(i, grouper_.Get(i), flt);
+        }
+        combine_func(flt);
+    };
+
+    MultiThreadRun(opts_.thread_size, work_func);
+    //MultiThreadRun(1, work_func);
+}
+
+void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, std::vector<const Overlap*>& ignored) {
+
+    const int WIN_SIZE = 4000;      // param: 
+    const int MIN_COV = 30;         // param;
+
+    auto& rinfo = read_infos_[id];
+    assert(rinfo.len > 0);
+    const size_t win_count = std::max(1, (rinfo.len + WIN_SIZE / 2) / WIN_SIZE);
+    const size_t win_size = (rinfo.len + win_count - 1 ) /  win_count;
+
+    std::vector<std::vector<std::array<double,2>>> winidents(win_count);
+
+    // collect target read information: 
+    for (size_t i = 0; i < group.Size(); ++i) {
+        for (size_t j = 0; j < group.Size(i); ++j) {
+            auto &ol = *group.Get(i, j);
+
+            if (IsReserved(ol)) {
+                auto &tr = ol.GetRead(id);
+
+                size_t s = (tr.start + win_size / 2 ) / win_size;
+                size_t e = (tr.end + win_size / 2 ) / win_size;
+                bool end0 = s * win_size >= tr.start;
+                bool end1 = e * win_size <= tr.end;
+                assert(e >= s && s >= 0 && e <= winidents.size());
+
+                for (size_t iw = s; iw < e; ++iw) {
+                    assert(iw >= 0 && iw < winidents.size());
+                    if (iw == s && end0) {
+                        winidents[iw].push_back({ ol.Identity(), 0.5});
+                    } else if (iw + 1 == e && end1) {
+                        winidents[iw].push_back({ ol.Identity(), 0.5});
+                    } else {
+                        winidents[iw].push_back({ ol.Identity(), 1 + 1.0*(e-s) / win_count});
+                    }
+                } 
+
+                // std::for_each(winidents.begin()+s, winidents.begin()+e, [&ol, s, e](std::vector<std::array<double,2>>& v) {
+                //     v.push_back({ ol.Identity(), double(e-s)});
+                // });  
+                
+                if (rd_store_.QueryNameById(id) == opts_.debug_name) {
+                    LOG(INFO)("add idt: %s: (%zd, %zd) %.04f", rd_store_.QueryNameById(ol.GetOtherRead(id).id).c_str(), s, e, ol.Identity());
+                }
+            }
+        }
+    }
+
+    std::vector<double> identity_threshold(winidents.size());
+    std::transform(winidents.begin(), winidents.end(), identity_threshold.begin(), [this, id](std::vector<std::array<double,2>>& ident) {
+        std::sort(ident.begin(), ident.end(), [](std::array<double,2>& a, std::array<double,2>& b) { return a[0] > b[0]; });
+        if (ident.size() >= MIN_COV) {
+
+            double median, mad;
+            ComputeMedianAbsoluteDeviation(std::vector<std::array<double,2>>(ident.begin(), ident.begin()+MIN_COV),  median, mad);
+            if (rd_store_.QueryNameById(id) == opts_.debug_name) {
+                LOG(INFO)("filter_low_quality: size=%zd %0.04f, %0.04f, %0.04f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
+                for (size_t i = 0; i <ident.size(); ++i) {
+                    LOG(INFO)("detial: %zd = %.04f", i, ident[i][0]);
+                }
+            }
+            return std::max(opts_.filter0.min_identity /100, median-6*1.4826*mad);
+
+        } else {
+            return ident.size() > 0 ? std::max(opts_.filter0.min_identity /100, ident.back()[0]) : opts_.filter0.min_identity /100;
+        }
+    });
+
+    rinfo.identity_threshold = identity_threshold;
+
+    auto check_ol_identity = [win_size, this, id](size_t start, size_t end, double ident, const std::vector<double>& thresholds) {
+
+        size_t s = (start + win_size / 2) / win_size;
+        size_t e = (end + win_size / 2) / win_size;
+        assert (s >= 0 && s <= e && e <= thresholds.size());
+
+        return e > s && ident >= std::accumulate(thresholds.begin()+s, thresholds.begin()+e, 0.0) / (e - s);
+    };
+
+    for (size_t i = 0; i < group.Size(); ++i) {
+        for (size_t j = 0; j < group.Size(i); ++j) {
+            auto &ol = *group.Get(i, j);
+
+            if (IsReserved(ol)) {
+                auto &tr = ol.GetRead(id);
+                
+                if (!check_ol_identity(tr.start, tr.end, ol.Identity(), identity_threshold)) {
+                    ignored.push_back(&ol);
+                }
+
+            }
+        }
+    }
+    
+}
+
+
+void AsmDataset::FilterOverhang() {
+    LOG(INFO)("Filter overlaps with long overhang");
+
     std::mutex mutex;
     auto combine_func = [this, &mutex](std::unordered_set<const Overlap*> &flt) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -108,7 +238,7 @@ void AsmDataset::FilterLowQuality() {
     auto work_func = [this, &index, combine_func](size_t tid) {
         std::unordered_set<const Overlap*> flt;
         for (size_t i = index.fetch_add(1); i < rd_store_.Size(); i = index.fetch_add(1)) {
-            FilterLowQuality(i, grouper_.Get(i), flt);
+            FilterOverhang(i, grouper_.Get(i), flt);
         }
         combine_func(flt);
     };
@@ -116,20 +246,15 @@ void AsmDataset::FilterLowQuality() {
     MultiThreadRun(opts_.thread_size, work_func);
 }
 
-void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, std::unordered_set<const Overlap*>& ignored) {
-
-    const int WIN_SIZE = 4000;      // param: 
+void AsmDataset::FilterOverhang(Seq::Id id, const OverlapGrouper::Group& group, std::unordered_set<const Overlap*>& ignored) {
     const int MIN_COV = 30;         // param;
 
     auto& rinfo = read_infos_[id];
-    const size_t win_count = (rinfo.len + WIN_SIZE / 2) / WIN_SIZE;
-    const size_t win_size = (rinfo.len + win_count - 1 ) /  win_count;
 
-    std::vector<std::vector<double>> winidents(win_count);
     std::vector<double> lohs;
     std::vector<double> rohs;
 
-    // collect target read information: 
+    // collect overhang information: 
     for (size_t i = 0; i < group.Size(); ++i) {
         for (size_t j = 0; j < group.Size(i); ++j) {
             auto &ol = *group.Get(i, j);
@@ -137,18 +262,6 @@ void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, st
             if (IsReserved(ol)) {
                 auto &tr = ol.GetRead(id);
 
-                size_t s = (tr.start + win_size / 2 ) / win_size;
-                size_t e = (tr.end + win_size / 2 ) / win_size;
-
-                assert(e >= s);
-                std::for_each(winidents.begin()+s, winidents.begin()+e, [&ol](std::vector<double>& v) {
-                    v.push_back(ol.identity_);
-                });  
-                
-                if (rd_store_.QueryNameById(id) == opts_.debug_name) {
-                    LOG(INFO)("add idt: %s: (%zd, %zd) %.02f", rd_store_.QueryNameById(ol.GetOtherRead(id).id).c_str(), s, e, ol.identity_);
-                }
-                
                 auto oh = ol.Overhang2();
                 if (tr.id == ol.a_.id) {    
                     if (oh[0] & 0x1) {
@@ -169,26 +282,6 @@ void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, st
         }
     }
 
-    std::vector<double> identity_threshold(winidents.size());
-    std::transform(winidents.begin(), winidents.end(), identity_threshold.begin(), [this, id](std::vector<double>& ident) {
-        if (ident.size() >= MIN_COV) {
-            std::sort(ident.begin(), ident.end(), [](double a, double b) { return a > b; });
-
-            double median, mad;
-            ComputeMedianAbsoluteDeviation(ident,  median, mad);
-            if (rd_store_.QueryNameById(id) == opts_.debug_name) {
-                LOG(INFO)("filter_low_quality: size=%zd %0.02f, %0.02f, %0.02f",ident.size(), median, mad, std::max(opts_.filter0.min_identity, median-6*1.4826*mad));
-                for (size_t i = 0; i <ident.size(); ++i) {
-                    LOG(INFO)("detial: %zd = %.02f", i, ident[i]);
-                }
-            }
-            return std::max(opts_.filter0.min_identity, median-6*1.4826*mad);
-
-
-        } else {
-            return opts_.filter0.min_identity;
-        }
-    });
 
     auto calc_oh_threshold = [this](std::vector<double>& ohs) -> double {
         if (ohs.size() > MIN_COV) {
@@ -202,38 +295,6 @@ void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, st
     };
     rinfo.overhang_l_threshold = calc_oh_threshold(lohs);
     rinfo.overhang_r_threshold = calc_oh_threshold(rohs);
-    rinfo.identity_threshold = identity_threshold;
-
-    auto area_threshold = [win_size](const std::vector<double>& idents, int start, int end) {
- 
-        size_t s = (start + win_size / 2) / win_size;
-        size_t e = (end + win_size / 2) / win_size;
-        assert (s >= 0 && s <= e && e <= idents.size());
-
-        size_t count = 0;
-        double sum = 0;
-        for (auto i = s; i< e; ++i) {
-            if (idents[i] > 0) {
-                count ++;
-                sum += idents[i];
-            }
-        }
-
-        return sum / count;
-    };
-
-    for (size_t i = 0; i < group.Size(); ++i) {
-        for (size_t j = 0; j < group.Size(i); ++j) {
-            auto &ol = *group.Get(i, j);
-
-            if (IsReserved(ol)) {
-                auto &tr = ol.GetRead(id);
-                if (ol.identity_ < area_threshold(identity_threshold, tr.start, tr.end)) {
-                    ignored.insert(&ol);
-                }
-            }
-        }
-    }
 }
 
 void AsmDataset::DumpOverlaps(const std::string &fname) const {
@@ -246,7 +307,7 @@ void AsmDataset::DumpOverlaps(const std::string &fname) const {
 }
 
 
-void AsmDataset::ModifyEnd(const Overlap &oldone, int maxoh) {
+void AsmDataset::ExtendOverlapToEnd(const Overlap &oldone, int maxoh) {
     if (oldone.Location(0) != Overlap::Loc::Abnormal) return;
     if (oldone.Location(maxoh) == Overlap::Loc::Abnormal) return;
 
@@ -351,7 +412,6 @@ void AsmDataset::FilterContained() {
 
 void AsmDataset::FilterCoverage() {
     LOG(INFO)("Check Coverage");
-
 
     std::atomic<size_t> index { 0 };
     auto work_func = [this, &index](size_t tid) {
@@ -473,7 +533,7 @@ void AsmDataset::ExtendOverlapToEnd() {
                 auto oh = o.Overhang();
                 int th = std::max(oh[0], oh[1]);
                 if (th > 0) {
-                    ModifyEnd(o, th);
+                    ExtendOverlapToEnd(o, th);
                 }
             }
         }
@@ -1050,7 +1110,7 @@ std::unordered_set<const Overlap*> AsmDataset::GetBackOverlaps(Seq::Id tid, int 
 void AsmDataset::ReplaceOverlapInGroup(const Overlap* new_ol, const Overlap* old_ol) {
     assert(new_ol->a_.id == old_ol->a_.id && new_ol->b_.id == old_ol->b_.id);
 
-    LOG(WARNING)("todo ");
+    LOG(WARNING)("todo "); 
 
     //groups_[new_ol->a_.id][new_ol->b_.id] = new_ol;
     //groups_[new_ol->b_.id][new_ol->a_.id] = new_ol;
@@ -1271,7 +1331,7 @@ void AsmDataset::EstimateGenomeSize() {
 
 void AsmDataset::TestOverlapIdentity() {
 
-    size_t count = std::min<size_t>(10, ol_store_.Size());
+    size_t count = std::min<size_t>(20, ol_store_.Size());
 
     std::vector<const Overlap*> ols(count, nullptr);
 
@@ -1281,11 +1341,11 @@ void AsmDataset::TestOverlapIdentity() {
     
     std::generate(ols.begin(), ols.end(), [this, &u, &e](){ return &ol_store_.Get(u(e)); });
 
-    double diff = 0.0;
+    double diff = 1;
     for (const auto o : ols) {
-        diff += std::abs(GetOverlapQuality0(*o) - o->Identity());
+        diff = std::min(diff, std::abs(GetOverlapQuality0(*o) - o->Identity()));
     }
-    is_ol_accurate = diff / count < 0.005;
+    is_ol_accurate = diff < 0.005;
 
     if (is_ol_accurate) {
         LOG(INFO)("The identity of overlaps is accurate %.02f", diff / count);

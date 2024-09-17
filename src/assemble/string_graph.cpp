@@ -1684,14 +1684,12 @@ void PathGraph::tcode_AnalysePath() {
     auto rvs = asmdata_.GetReadVariants();
     if (rvs != nullptr) {
         for (const auto& path : paths_) {
-            LOG(INFO)("tcode_AnalysePath");
             std::vector<Position> position;
             
             for (const auto& e : path) {
                 for (size_t i = 0; i < e->SimplePathSize(); ++i) {
                     auto sp = e->GetSimplePath(i);
                     for (const auto& be : sp) {
-                        LOG(INFO)("read %s", asmdata_.QueryNameById(be->read_).c_str());
                         auto vs = rvs->GetVariants(be->read_);
                         if (vs != nullptr) {
                             std::array<size_t, 2> range = { 10000000000L, 0};
@@ -1707,7 +1705,6 @@ void PathGraph::tcode_AnalysePath() {
                 }
             }
 
-            LOG(INFO)("position: %zd", position.size());
             std::sort(position.begin(), position.end(), [](const Position &a, const Position &b) {
                 return (a.ctg < b.ctg) || 
                        (a.ctg == b.ctg && a.start < b.start) || 
@@ -1718,7 +1715,6 @@ void PathGraph::tcode_AnalysePath() {
                 std::vector<Position> ins;
                 Position p = position[0];
                 for (size_t i = 0; i < position.size(); ++i) {
-                    LOG(INFO)("%d, %d, %d", position[i].ctg, position[i].start, position[i].end);
                     if (position[i].ctg == p.ctg) {
                         if (p.end > position[i].start) {
                             p.end = std::max(p.end, position[i].end);
@@ -1732,9 +1728,7 @@ void PathGraph::tcode_AnalysePath() {
                     }
                 }
                 ins.push_back(p);
-                LOG(INFO)("position: %zd, %zd", position.size(), ins.size());
                 for (size_t i = 0; i < ins.size(); ++i) {
-                    LOG(INFO)("- %d, %d, %d", ins[i].ctg, ins[i].start, ins[i].end);
                     if (ins[i].end - ins[i].start > 100000) {
                         p_in_asm.push_back(ins[i]);
                     }

@@ -14,6 +14,8 @@ public:
     virtual bool ParseParameters(const std::vector<std::string> &params);
 
     virtual void Running();
+
+    std::unordered_set<BaseEdge*> SimplifyNode(BaseNode *n);
     
     StringGraph& graph_;   
     size_t fuzz_ { 500 };

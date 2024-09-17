@@ -857,14 +857,16 @@ void OverlapGrouper::BuildIndex(size_t thread_size, const std::unordered_set<int
         return (a->a_.id < b->a_.id) || 
                (a->a_.id == b->a_.id && a->b_.id < b->b_.id) ||
                (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() > b->AlignedSize()) ||
-               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect());
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect())||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && a->AlignedSize() == b->AlignedSize() && !(a->SameDirect() && !b->SameDirect()) && a < b);
     });
 
     std::sort(sorted_.begin() + sorted_.size()/2, sorted_.end(), [](const Overlap* a, const Overlap *b) { 
         return (a->b_.id < b->b_.id) || 
                (a->b_.id == b->b_.id && a->a_.id < b->a_.id) ||
                (a->b_.id == b->b_.id && a->a_.id == b->a_.id && a->AlignedSize() > b->AlignedSize()) ||
-               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect()) ;
+               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect()) || 
+               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && a->AlignedSize() == b->AlignedSize() && !(a->SameDirect() && !b->SameDirect()) && a < b);
     });
 
     assert( sorted_.size() == 2*ol_store_.Size());
