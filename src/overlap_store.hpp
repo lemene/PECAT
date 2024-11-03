@@ -452,6 +452,8 @@ public:
     OverlapGrouper(OverlapStore& ols) : ol_store_(ols) { }
 
     void BuildIndex(size_t thread_size, const std::unordered_set<int>& read_ids);
+    void BuildIndex(size_t thread_size, const std::unordered_set<int>& read_ids, int (*compare)(const Overlap&, const Overlap&));
+    
 
     void ClusterReads(const std::vector<Seq::Id>& reads);
 

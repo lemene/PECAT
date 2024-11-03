@@ -267,7 +267,7 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
     //LOG(INFO)("Start correcting");
     auto group = dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
-    LOG(INFO)("groupsize(%s) = %zd", dataset_.QueryStringById(id).c_str(), group.Size());
+    //LOG(INFO)("groupsize(%s) = %zd", dataset_.QueryStringById(id).c_str(), group.Size());
     
 
     const DnaSeq& target = dataset_.read_store_.GetSeq(id);

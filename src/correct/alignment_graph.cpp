@@ -1333,7 +1333,7 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
     selected_.clear();
     for (size_t i = 0; i < scores_.size(); ++i) {
         const auto &s = scores_[i];
-        if (s.Weight() >= th_all) {
+        if (s.Weight() > th_all) {
             selected_.insert(i);
             all_selected.insert(i);
             DEBUG_printf("sel(all): %zd %f\n", i, s.Weight());
@@ -1342,10 +1342,10 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
         if (win_count > 1) {
             for (size_t j = 0; j < windows.size(); ++j) {
                 if (is_enough_overlap(s.tstart, s.tend, windows[j][0], windows[j][1])) {
-                    if (s.block_scores[j].Weight() >= segths[j]) {
+                    if (s.block_scores[j].Weight() > segths[j]) {
                         selected_.insert(i);
                         DEBUG_printf("sel(%zd): %zd %f\n", j, i, s.block_scores[j].Weight());
-                    } else if (s.block_scores[j].Weight() < 0 && s.all_cross >= 10) {
+                    } else if (s.block_scores[j].Weight() < 0 && s.all_cross >= 4) {
                         excluded.insert(i);
                     }
                 }

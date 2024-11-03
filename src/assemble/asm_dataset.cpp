@@ -387,18 +387,49 @@ void AsmDataset::FilterContained() {
     };
     
     auto work_func = [&](size_t tid) {
+        std::unordered_set<const Overlap*> ignored;
+        
         for (size_t i = index.fetch_add(1); i < ol_store_.Size(); i = index.fetch_add(1)) {
             const Overlap& o = ol_store_.Get(i);
 
             if (IsReserved(o)) {
                 auto loc = o.Location(0);
+                Seq::Id contained = Seq::NID;
+                Seq::Id containing = Seq::NID;
                 if (loc == Overlap::Loc::Equal) {
-                    set_contained(std::max(o.a_.id, o.b_.id), std::min(o.a_.id, o.b_.id));
+                    contained = std::max(o.a_.id, o.b_.id);
+                    containing = std::min(o.a_.id, o.b_.id);
                 } else if (loc == Overlap::Loc::Contained) {
-                    set_contained(o.a_.id, o.b_.id);
+                    contained = o.a_.id;
+                    containing = o.b_.id;
                 } else if (loc == Overlap::Loc::Containing) {
-                    set_contained(o.b_.id, o.a_.id);
+                    contained = o.b_.id;
+                    containing = o.a_.id;
                 }
+                if (containing != Seq::NID && contained != Seq::NID) {
+                    auto contained_others = GetOverlapReads(contained);
+                    auto containing_others = GetOverlapReads(containing);
+
+                    bool contain_all = true;
+                    for (auto i : contained_others) {
+                        if (containing_others.find(i) == containing_others.end()) {
+                            contain_all = false;
+                            break;
+                        }
+                    }
+
+                    if (contain_all) {
+                        set_contained(contained, containing);
+                    } else {
+                        ignored.insert(&o);
+                    }
+
+                }
+                
+
+            }
+            for (auto o : ignored) {
+                SetOlReason(*o, OlReason::Simple());
             }
         }
     };
@@ -502,7 +533,11 @@ double AsmDataset::GetOverlapQuality0(const Overlap &ol) {
 
 void AsmDataset::GroupOverlaps() {
     LOG(INFO)("Group overlaps");
-    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<Seq::Id>());  // TODO
+    grouper_.BuildIndex(opts_.thread_size, std::unordered_set<Seq::Id>(), [](const Overlap &a, const Overlap &b) {
+        if (a.Identity() > b.Identity()) return 1;
+        else if (a.Identity() == b.Identity()) return 0;
+        else return -1;
+    }); 
 }
 
 void AsmDataset::GroupAndFilterDuplicate() {
@@ -974,8 +1009,10 @@ std::unordered_set<Seq::Id> AsmDataset::GetOverlapReads(Seq::Id tid) const {
     if (!group.Empty()) {
         for (size_t i = 0; i < group.Size(); ++i) {
             auto &o = *group.Get(i, 0);
-            auto &qread = o.GetOtherRead(tid);
-            nearby.insert(qread.id);
+            if (IsReserved(o)) {
+                auto &qread = o.GetOtherRead(tid);
+                nearby.insert(qread.id);
+            }
         }
     }
     return nearby;

@@ -60,8 +60,13 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
     size_t hiclen = hic_store.GetSeqLength(hic_store.GetIdRange()[0]);
     LOG(INFO)("hiclen: %zd",hiclen);
     
+    
+    auto filter = [](Overlap &o) {
+        return o.Identity()*o.AlignedLength() > 0.95*o.a_.len;
+    };
+    
     OverlapStore ols_store(string_pool_);
-    ols_store.Load(fn_paf, "", 1);
+    ols_store.Load(fn_paf, "", 4, filter);
     LOG(INFO)("ols_store.Load: %zd",ols_store.Size());
 
     for (size_t i = 0; i < ols_store.Size(); ++i) {

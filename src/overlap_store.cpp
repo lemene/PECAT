@@ -904,6 +904,66 @@ void OverlapGrouper::BuildIndex(size_t thread_size, const std::unordered_set<int
     index_[gp_id_tgt].by_target[1] = sorted_.size();
 }
 
+void OverlapGrouper::BuildIndex(size_t thread_size, const std::unordered_set<int>& read_ids, int (*compare)(const Overlap&, const Overlap&)) {
+
+    sorted_.assign(ol_store_.Size()*2, nullptr);
+
+    for (size_t i = 0; i < ol_store_.Size(); ++i)  {
+        auto ol = &ol_store_.Get(i);
+        sorted_[i] = ol;
+        sorted_[i+ol_store_.Size()] = ol;
+    }
+    std::sort(sorted_.begin(), sorted_.begin() + sorted_.size()/2, [compare](const Overlap* a, const Overlap *b) { 
+        return (a->a_.id < b->a_.id) || 
+               (a->a_.id == b->a_.id && a->b_.id < b->b_.id) ||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && compare(*a, *b) > 0 )||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && compare(*a, *b) == 0 && a->SameDirect() && !b->SameDirect())||
+               (a->a_.id == b->a_.id && a->b_.id == b->b_.id && compare(*a, *b) == 0 && !(a->SameDirect() && !b->SameDirect()) && a < b);
+    });
+
+    std::sort(sorted_.begin() + sorted_.size()/2, sorted_.end(), [compare](const Overlap* a, const Overlap *b) { 
+        return (a->b_.id < b->b_.id) || 
+               (a->b_.id == b->b_.id && a->a_.id < b->a_.id) ||
+               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && compare(*a, *b) > 0) ||
+               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && compare(*a, *b) == 0 && a->SameDirect() && !b->SameDirect()) || 
+               (a->b_.id == b->b_.id && a->a_.id == b->a_.id && compare(*a, *b) == 0 && !(a->SameDirect() && !b->SameDirect()) && a < b);
+    });
+
+    assert( sorted_.size() == 2*ol_store_.Size());
+    if (sorted_.size() == 0) return;
+
+    auto gp_s_qry = 0;
+    auto gp_id_qry = sorted_[gp_s_qry]->a_.id;
+    for (size_t i = 0; i < sorted_.size()/2; ++i) {
+        if (gp_id_qry != sorted_[i]->a_.id) {
+            auto &idx = index_[gp_id_qry];
+            idx.by_qurey[0] = gp_s_qry;
+            idx.by_qurey[1] = i;    // group_end
+
+            gp_s_qry = i;
+            gp_id_qry = sorted_[gp_s_qry]->a_.id;
+        }
+    }
+    index_[gp_id_qry].by_qurey[0] = gp_s_qry;
+    index_[gp_id_qry].by_qurey[1] = sorted_.size() / 2;
+
+    auto gp_s_tgt = sorted_.size() / 2;             // group start position in target.
+    auto gp_id_tgt = sorted_[gp_s_tgt]->b_.id;      // group id in target
+
+    for (size_t i = sorted_.size()/2; i < sorted_.size(); ++i) {
+        if (gp_id_tgt != sorted_[i]->b_.id) {
+            auto &idx = index_[gp_id_tgt];
+            idx.by_target[0] = gp_s_tgt;
+            idx.by_target[1] = i;
+
+            gp_s_tgt = i;
+            gp_id_tgt = sorted_[gp_s_tgt]->b_.id;
+        }
+    }
+    index_[gp_id_tgt].by_target[0] = gp_s_tgt;
+    index_[gp_id_tgt].by_target[1] = sorted_.size();
+}
+
 OverlapGrouper::Group OverlapGrouper::Get(int id) const {
     Group group(id);
     auto &ols = group.ols;
