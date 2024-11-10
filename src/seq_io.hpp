@@ -135,5 +135,51 @@ protected:
     GzFileWriter out_;
 };
 
+class SeqInBlock {
+public:
+    struct Item {
+        std::array<const char*,2> head;
+        std::array<const char*,2> sub_head;
+        std::array<const char*,2> seq;
+        std::array<const char*,2> quality;
+    };
+
+    SeqInBlock(const char* b, const char* e) : begin_(b), end_ (e), index_(b) {
+    }
+
+    virtual bool Next(Item& item) = 0;
+
+protected:
+    const char* begin_;
+    const char* end_;
+    const char* index_;
+};
+
+
+class FastaInBlock : public SeqInBlock {
+public:
+    FastaInBlock(const char* b, const char* e)  : SeqInBlock(b, e) {
+    }
+
+    virtual bool Next(Item& item);
+
+protected:
+    bool GetHead(Item &item);
+    bool GetSeq(Item &item);
+};
+
+template<typename F>
+void ForEachInFasta(const std::string& fname, F func) {
+    GzFileReader reader(fname);
+    const size_t block_size = 1000000;
+    std::vector<char> block(block_size);
+
+    if (reader.Valid()) {
+        size_t bs = reader.GetBlock(block, "\n");
+
+
+    }
+}
+
 } // namespace fsa {
 

@@ -13,7 +13,6 @@ ContigPhaser::ContigPhaser(Seq::Id ctg, const PhsDataset& dataset, PhsOptions &o
  : ctg_(ctg), dataset_(dataset), rd_store_(dataset_.rd_store_), ol_store_(dataset_.ol_store_), opts_(opts) {
 
     // 
-    Phase();
 }
 
 void ContigPhaser::Phase() {
@@ -30,6 +29,26 @@ void ContigPhaser::Phase() {
         GetVariantsFromSnps(read_infos_, variants_);
     }
     
+    FindVariantsInReads(read_infos_, variants_);
+    ClassifyReads(read_infos_);
+}
+
+void ContigPhaser::Call() {
+
+    variants_.assign(GetReadStore().GetSeqLength(ctg_), Variant());
+
+    read_infos_ = CollectReads(ctg_);
+
+    FindVariantsInContig(ctg_, read_infos_, variants_);
+    ConfirmVariants(variants_);
+    ScanContig();
+}
+
+void ContigPhaser::DetectConsistent() {
+    
+    variants_.assign(GetReadStore().GetSeqLength(ctg_), Variant());
+    read_infos_ = CollectReads(ctg_);
+    GetVariantsFromSnps(read_infos_, variants_);
     FindVariantsInReads(read_infos_, variants_);
     ClassifyReads(read_infos_);
 }
@@ -260,7 +279,7 @@ void ContigPhaser::ConfirmVariants(std::vector<Variant> &vars) {
 }
 
 void ContigPhaser::GetVariantsFromSnps(const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars) {
-    auto snp = dataset_.snps_.find(ctg_);
+    const auto& snp = dataset_.snp_store_.Get(ctg_);
 
     for (auto &iter : read_infos) {
         const Overlap& o = *(iter.second.o);
@@ -272,14 +291,13 @@ void ContigPhaser::GetVariantsFromSnps(const std::unordered_map<ReadOffset, Read
         }
     }
 
-    if (snp != dataset_.snps_.end()) {
-        for (const auto& s : snp->second) {
-            if (opts_.cov_opts_.Effective(vars[s.first].counts[9])) {
-                vars[s.first].var[0] = s.second[0];
-                vars[s.first].var[1] = s.second[1];
-            }
+    for (const auto& s : snp) {
+        if (opts_.cov_opts_.Effective(vars[s.first].counts[9])) {
+            vars[s.first].var[0] = s.second[0];
+            vars[s.first].var[1] = s.second[1];
         }
     }
+    
 }
 
 
@@ -646,6 +664,18 @@ void ContigPhaser::DumpVariants(std::ostream& of) const {
                 of << " " << variants_[i].counts[j];
             }
             of << " " << variants_[i].Valid() << "\n";
+        }
+    }
+}
+
+void ContigPhaser::SaveVariantInVcf(std::ostream& of) const {
+    const auto & cname = dataset_.rd_store_.QueryNameById(ctg_);
+    for (size_t i=0; i<variants_.size(); ++i) {
+        if (variants_[i].Valid()) {
+            // ctg38   233     .       A       C       0.61    LowQual F       GT:GQ:DP:AF     1/1:0:6:0.1667
+            of << cname << "\t" << i + 1 << "\t.\t" 
+                << "ACGT"[variants_[i].var[0]] << "\t" << "ACGT"[variants_[i].var[1]] << "\t"
+                << "5.0" << "\tPASS\tF\tGT\t0/1\n"; 
         }
     }
 }

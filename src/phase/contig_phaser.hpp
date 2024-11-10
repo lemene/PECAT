@@ -20,6 +20,8 @@ public:
     ContigPhaser(Seq::Id ctg, const PhsDataset& dataset, PhsOptions &opts);
 
     void Phase();
+    void Call();
+    void DetectConsistent();
 
     std::unordered_map<ReadOffset, ReadInfo> CollectReads(Seq::Id ctg);
     void FindVariantsInContig(Seq::Id c, const std::unordered_map<ReadOffset, ReadInfo>& read_infos, std::vector<Variant> &vars);
@@ -34,6 +36,7 @@ public:
     void ScanContig();
 
     void DumpVariants(std::ostream& of) const;
+    void SaveVariantInVcf(std::ostream& of) const;
     void DumpReadInfos(std::ostream& of) const;
     void DumpInconsistent(std::ostream& of) const;
     void DumpConsistent(std::ostream& of) const;

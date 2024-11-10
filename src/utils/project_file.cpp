@@ -79,7 +79,7 @@ void PrjContigTiles::Load(const std::string& fname) {
 }
 
 
-void PrjVariants::Load(const std::string& fname) {
+void SnpStore::Load(const std::string& fname) {
 
     GzFileReader reader(fname);
 
@@ -115,4 +115,54 @@ void PrjVariants::Load(const std::string& fname) {
         LOG(WARNING)("Failed to open file: %s", fname.c_str());
     }
 }
+
+void SnpStore::LoadFromVcf(const std::string &fname) {
+    GzFileReader vcf(fname);
+
+    size_t count = 0;
+    auto line = vcf.GetNoEmptyLine();
+    for (auto line = vcf.GetNoEmptyLine(); !line.empty(); line = vcf.GetNoEmptyLine()) {
+        if (line[0] == '#') continue;
+        const int CHROM = 0;
+        const int POS = 1;
+        const int REF = 3;
+        const int ALT = 4;
+        const int FILTER = 6;
+        const int SAMPLE = 9;
+        auto its = SplitStringBySpace(line);
+        assert(its.size() >= 10);
+        std::array<uint8_t,2> bases = {(uint8_t)-1, (uint8_t)-1};
+        if (its[FILTER] == "PASS" && its[SAMPLE].size() >= 3) {
+
+            if (its[SAMPLE].find("0/1") == 0 ) {
+                if (its[REF].size() == 1 && its[ALT].size() == 1) {
+                    bases[0] = DnaSeq::Serial(its[REF][0]);
+                    bases[1] = DnaSeq::Serial(its[ALT][0]);
+                    count ++;
+                }
+
+            } else if (its[SAMPLE].find("1/2") == 0) {
+                if (its[ALT].size() == 3) { //A,C
+                    bases[0] = DnaSeq::Serial(its[ALT][0]);
+                    bases[1] = DnaSeq::Serial(its[ALT][2]);
+                    count ++;
+                }
+            } else {
+                // pass
+            }
+        }
+
+        if (bases[0] != (uint8_t)-1) {
+            auto id = string_pool_.QueryIdByString(its[CHROM]);
+            auto pos = std::stoi(its[POS]) - 1;
+            if (bases[0] > bases[1]) std::swap(bases[0], bases[1]);
+
+            variants_[id][pos] = bases;
+        }
+
+        
+    }
+    LOG(INFO)("Load SNPs: count = %zd", count);
+}
+
 }

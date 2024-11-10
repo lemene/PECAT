@@ -6,57 +6,30 @@
 
 namespace fsa {
 
-void HicReadInfos::Build(const std::string& fn_hic1, const std::string& fn_paf1, const std::string& fn_hic2, const std::string& fn_paf2) {
-    size_t sp_offset = string_pool_.Size();
-    BuildOne(fn_hic1, fn_paf1, 0, sp_offset);
-    BuildOne(fn_hic2, fn_paf2, 1, sp_offset);
-}
 
-void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t ihic, size_t sp_offset) {
-    assert(ihic == 0 || ihic == 1);
-
-    ReadStore hic_store(string_pool_, sp_offset);
-    hic_store.Load(fn_hic);
-
-    LOG(INFO)("Id range: %zd, %zd",hic_store.GetIdRange()[0], hic_store.GetIdRange()[1]);
-    size_t hiclen = hic_store.GetSeqLength(hic_store.GetIdRange()[0]);
-    LOG(INFO)("hiclen: %zd", hiclen);
-    
-    OverlapStore ols_store(string_pool_);
-    ols_store.Load(fn_paf, "", 1);
-    LOG(INFO)("ols_store.Load: %zd",ols_store.Size());
-
-    for (size_t i = 0; i < ols_store.Size(); ++i) {
-        const auto &o = ols_store.Get(i);
-        
-        // filter low-quality mapping
-        if (o.AlignedLength() < hiclen*0.9) continue;
-
-        auto &info = infos_[o.a_.id];
-        info.hic[ihic].push_back({(uint32_t)o.b_.id, (uint32_t)o.b_.start});
-    }
-    
-}
-
-void HicReadInfos::Build(const std::string& fn_hic1, const std::string& fn_paf1, const std::string& fn_hic2, const std::string& fn_paf2, const std::string &fn_vars) {
-    PrjVariants vars(string_pool_);
+void HicReadInfos::Build(const std::string& fn_hic1, const std::string& fn_paf1, 
+                         const std::string& fn_hic2, const std::string& fn_paf2, 
+                         const std::string &fn_vars, size_t thread_size) {
+    SnpStore vars(string_pool_);
+    //vars.LoadFromVcf(fn_vars);
     vars.Load(fn_vars);
+    
 
     size_t sp_offset = string_pool_.Size();
-    BuildOne(fn_hic1, fn_paf1, 0, sp_offset, vars);
-    BuildOne(fn_hic2, fn_paf2, 1, sp_offset, vars);
+    LOG(INFO)("Scan HiC1");
+    BuildOne(fn_hic1, fn_paf1, 0, sp_offset, vars, thread_size);
+    LOG(INFO)("Scan HiC2");
+    BuildOne(fn_hic2, fn_paf2, 1, sp_offset, vars, thread_size);
 }
 
-void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t ihic, size_t sp_offset, const PrjVariants &vars) {
+void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf, size_t ihic, size_t sp_offset, const SnpStore &vars, size_t thread_size) {
     assert(ihic == 0 || ihic == 1);
-
+    std::mutex mutex;
     ReadStore hic_store(string_pool_, sp_offset);
     hic_store.Load(fn_hic);
 
     LOG(INFO)("Id range: %zd, %zd",hic_store.GetIdRange()[0], hic_store.GetIdRange()[1]);
     
-    auto s = hic_store.GetSeq(hic_store.GetIdRange()[0]);
-    LOG(INFO)("hiclen: %zd",s.Size());
     size_t hiclen = hic_store.GetSeqLength(hic_store.GetIdRange()[0]);
     LOG(INFO)("hiclen: %zd",hiclen);
     
@@ -65,38 +38,71 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
         return o.Identity()*o.AlignedLength() > 0.95*o.a_.len;
     };
     
-    OverlapStore ols_store(string_pool_);
-    ols_store.Load(fn_paf, "", 4, filter);
-    LOG(INFO)("ols_store.Load: %zd",ols_store.Size());
+    OverlapStore ol_store(string_pool_);
+    ol_store.Load(fn_paf, "", thread_size, filter);
+    LOG(INFO)("ols_store.Load: %zd",ol_store.Size());
 
-    for (size_t i = 0; i < ols_store.Size(); ++i) {
-        const auto &o = ols_store.Get(i);
-        // filter low-quality mapping
-        if (o.AlignedLength() < hiclen*0.9) continue;
-        auto &info = infos_[o.a_.id].hic[ihic];
+    auto combine_func = [this, &mutex, ihic](const std::vector<std::pair<Seq::Id, HicReadMapping>>& hic_maps) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto &&i : hic_maps) {
+            infos_[i.first].hic[ihic].push_back(std::move(i.second));
+        }
+    };
 
-        info.push_back({(uint32_t)o.b_.id, (uint32_t)o.b_.start});
+    std::atomic<size_t> index { 0 };
+    auto work_func = [&](int tid) {
 
-        size_t ctg_off = 0;
-        size_t rd_off = 0;
-        const auto &rd = hic_store.GetSeq(o.a_.id); 
-        const auto& ctgvar = vars.Get(o.b_.id);
-        const int C = 3;
-        if (ctgvar.empty()) continue;
+        std::vector<std::pair<Seq::Id, HicReadMapping>> hic_maps;
+
+        for (size_t i = index.fetch_add(1); i < ol_store.Size(); i = index.fetch_add(1)) {
+            const auto &ol = ol_store.Get(i);
+
+            // filter low-quality mapping
+            if (ol.AlignedLength() < hiclen*0.9) continue;
+            hic_maps.push_back(std::make_pair(ol.a_.id, GetMappingInfo(ol, hic_store, vars)));
+
+            if (hic_maps.size() > 10000) {
+                combine_func(hic_maps);
+                hic_maps.clear();
+            }
+            //printf("XXX(%zd): tid=%d, hic_maps.size()=%zd\n", i, tid, hic_maps.size());
+        }
+        if (hic_maps.size() > 0) {
+            combine_func(hic_maps);
+            hic_maps.clear();
+        }
+    };
     
-        for (const auto &d : o.detail_) {
+    MultiThreadRun(thread_size, work_func);
+}
+
+
+HicReadMapping HicReadInfos::GetMappingInfo(const Overlap& ol, const ReadStore& hic_store, const class SnpStore &vars) {
+    HicReadMapping info;
+    info.ctg = ol.b_.id;
+    info.offset = ol.b_.start;
+
+    size_t ctg_off = 0;
+    size_t rd_off = 0;
+    const auto &rd = hic_store.GetSeq(ol.a_.id); 
+    const auto& ctgvar = vars.Get(ol.b_.id);
+    const int C = 3;
+
+    if (!ctgvar.empty()) {
+        
+        for (const auto &d : ol.detail_) {
             switch (d.type) {
             case 'M':
                 if (d.len >= C) {
                     for (int i=C/2; i<d.len-C/2; ++i) {
-                        size_t ctg_i = o.b_.strand == 0 ? o.b_.start+ctg_off+i : o.b_.end-ctg_off-i-1;
-                        size_t rd_i = o.a_.strand == 0 ? o.a_.start+rd_off+i : o.a_.end-rd_off-i-1;
+                        size_t ctg_i = ol.b_.strand == 0 ? ol.b_.start+ctg_off+i : ol.b_.end-ctg_off-i-1;
+                        size_t rd_i = ol.a_.strand == 0 ? ol.a_.start+rd_off+i : ol.a_.end-rd_off-i-1;
 
                         auto snp = ctgvar.find(ctg_i);
                         if (snp != ctgvar.end()) {
-                            uint8_t rd_b = o.SameDirect() ? rd[rd_i] : 3 - rd[rd_i];
+                            uint8_t rd_b = ol.SameDirect() ? rd[rd_i] : 3 - rd[rd_i];
                             if (rd_b == snp->second[0] || rd_b == snp->second[1]) {
-                                info.back().alleles.push_back({{(uint32_t)o.b_.id, (uint32_t)ctg_i}, rd_b});
+                                info.alleles.push_back({{(uint32_t)ol.b_.id, (uint32_t)ctg_i}, rd_b});
                             }
                         }
                     }
@@ -119,7 +125,9 @@ void HicReadInfos::BuildOne(const std::string& fn_hic, const std::string& fn_paf
                 LOG(ERROR)("Not support cigar type '%c'.", d.type);
             }
         }
+    
     }
+    return info;
 }
 
 void HicReadInfos::Save(const std::string& fname) const {

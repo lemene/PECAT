@@ -1,4 +1,4 @@
-#include "read_haplotype.hpp"
+#include "contig_call.hpp"
 
 #include <unordered_set>
 #include <iostream>
@@ -7,60 +7,47 @@
 #include "overlap_store.hpp"
 #include "utility.hpp"
 #include "contig_phaser.hpp"
-//#include "local_phaser.hpp"
 
 namespace fsa {
     
-bool ReadHaplotype::ParseArgument(int argc, const char* const argv[]) {
+bool ContigCall::ParseArgument(int argc, const char* const argv[]) {
     return GetArgumentParser().ParseArgument(argc, argv);
 }
 
 
-void ReadHaplotype::Usage() {
+void ContigCall::Usage() {
     std::cout << GetArgumentParser().Usage();
 }
 
-ArgumentParser ReadHaplotype::GetArgumentParser() {
+ArgumentParser ContigCall::GetArgumentParser() {
     ArgumentParser ap;
     opts_.SetArguments(ap);
     return ap;
 }
 
 
-void ReadHaplotype::CheckArguments() {
+void ContigCall::CheckArguments() {
     opts_.CheckArguments();
 }
 
 
-void ReadHaplotype::Running() {
+void ContigCall::Running() {
     dataset_.Load();
     
     FindVariants();
 }
 
-void ReadHaplotype::FindVariants() {
+void ContigCall::FindVariants() {
 
     std::mutex mutex;
 
     std::ofstream of_vars(opts_.Varaints());
-    std::ofstream of_rdinfos(opts_.Readinfos());
-    std::ofstream of_phased(opts_.Inconsistent());
-    std::ofstream of_consistent(opts_.Consistent());
     
-    auto dump_func = [&](std::ostringstream &oss_vars, std::ostringstream &oss_rdinfos, std::ostringstream &oss_phased, std::ostringstream &oss_consistent) {
+    auto dump_func = [&](std::ostringstream &oss_vars) {
         std::lock_guard<std::mutex> lock(mutex);
 
         of_vars << oss_vars.str();
         oss_vars.str("");
-
-        of_rdinfos << oss_rdinfos.str();
-        oss_rdinfos.str("");
-
-        of_phased << oss_phased.str();
-        oss_phased.str("");
-
-        of_consistent << oss_consistent.str();
-        oss_consistent.str("");
     };
 
     std::vector<Seq::Id> contigs_list = dataset_.GetSortedContigs();
@@ -70,9 +57,6 @@ void ReadHaplotype::FindVariants() {
     auto work_func = [&](size_t i) {
         opts_.curr_thread_size.fetch_add(1);
         std::ostringstream oss_vars;
-        std::ostringstream oss_rdinfos;
-        std::ostringstream oss_phased;
-        std::ostringstream oss_consistent;
 
         size_t curr = index.fetch_add(1);
         while (curr < contigs_list.size()) {
@@ -82,14 +66,11 @@ void ReadHaplotype::FindVariants() {
 
             ContigPhaser phaser(c, dataset_, opts_);
             
-            phaser.Phase();
-            phaser.DumpReadInfos(oss_rdinfos);
-            phaser.DumpInconsistent(oss_phased);
-            phaser.DumpVariants(oss_vars);
-            phaser.DumpConsistent(oss_consistent);
+            phaser.Call();
+            phaser.SaveVariantInVcf(oss_vars);
             LOG(INFO)("End Contig %s", dataset_.QueryNameById(c).c_str());
             curr = index.fetch_add(1);
-            dump_func(oss_vars, oss_rdinfos, oss_phased, oss_consistent);
+            dump_func(oss_vars);
         }
         opts_.curr_thread_size.fetch_add(-1);
     };
