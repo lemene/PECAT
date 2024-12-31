@@ -152,8 +152,12 @@ public:
 
     double CalcLocalOverhangThreshold(std::vector<std::array<double,2>> &overhang);
 
+    /**  */
     void EstimateGenomeSize();
     void TestOverlapIdentity();
+    void EstimateCoverage();
+    double EstimateCoverage(const std::unordered_map<Seq::Id, ReadStatInfo>& rinfos);
+    void ClusterBundle(const std::unordered_set<Seq::Id> &bundle);
    
     bool HasDup(int qid, int tid) const  {
         auto group = grouper_.Get(qid);
@@ -200,6 +204,7 @@ public:
 
     size_t mean_of_read_length { 0 };
     bool is_ol_accurate { false };
+    double average_coverage_ { 0.0 };
 };
 
 }

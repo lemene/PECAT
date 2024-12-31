@@ -1117,11 +1117,16 @@ bool PathGraph::HasBridgeJunction(const LinearPath& path, int max_depth) {
     auto start = path.path[0];
     for (auto ie : start->InNode()->out_edges_) {
         if (ie == start) continue;
-        std::list<SgNode*> nodes = GetEgoNodes(ie->OutNode(), max_depth, path.length*3, path.nodesize*3);
+        std::list<SgNode*> nodes = GetEgoNodes(ie->OutNode(), max_depth, path.length*3, std::max(30, path.nodesize*3));
         locals.insert(nodes.begin(), nodes.end());
     }
 
-    return locals.find(path.path.back()->OutNode()) == locals.end();
+    if (locals.find(path.path.back()->OutNode()) == locals.end()) {
+        std::list<SgNode*> nodes = GetEgoNodes(path.path.back()->OutNode(), max_depth, path.length*3, std::max(30, path.nodesize*3));
+        return std::find(nodes.begin(), nodes.end(), path.path.front()->InNode()) == nodes.end();
+    } 
+
+    return false;
 }
 
 

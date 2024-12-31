@@ -86,6 +86,9 @@ fsa_ol_refine_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_refine_src))
 fsa_kmer_bin_src = ./prog/fsa_kmer_bin.cpp ./kmer/kmer_bin.cpp
 fsa_kmer_bin_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_kmer_bin_src))
 
+fsa_sam_tools_src = ./prog/fsa_sam_tools.cpp ./sam_tools.cpp
+fsa_sam_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_sam_tools_src))
+
 ifeq ($(BUILDDEBUG), 1)
 	CFLAGS =  -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
 	CXXFLAGS = -std=c++11 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
@@ -102,16 +105,16 @@ obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
 	$(fsa_rd_haplotype_obj) $(fsa_rd_consistent_obj) $(fsa_ctg_call_obj) \
 	$(fsa_ol_tools_obj) $(fsa_rd_tools_obj) $(fsa_misc_tools_obj) \
 	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_ctg_polish_obj) $(fsa_kmer_bin_obj) \
-	$(fsa_ctg_correct_obj)
+	$(fsa_ctg_correct_obj) $(fsa_sam_tools_obj)
 
 
 dep:=$(patsubst %.o,%.d, $(obj))
 
 # fsa_ctg_polish
 bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
-      fsa_rd_haplotype fsa_ol_tools fsa_rd_tools \
+      fsa_rd_haplotype fsa_ol_tools fsa_rd_tools fsa_sam_tools\
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
-	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_correct
+	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_correct 
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
 
@@ -172,6 +175,9 @@ $(BUILD_BIN_DIR)/fsa_ol_refine: $(fsa_ol_refine_obj) $(BUILD_BIN_DIR)/libfsa.a
 $(BUILD_BIN_DIR)/fsa_kmer_bin: $(fsa_kmer_bin_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
+
+$(BUILD_BIN_DIR)/fsa_sam_tools: $(fsa_sam_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
+	g++ $^ -o $@ $(LDFLAGS)
 
 %.o:%.c
 	gcc $(CFLAGS) -c -MMD -MP -MF "$(@:%.o=%.d)" -MT "$(@:%.o=%.o)" -o "$@" "$<"

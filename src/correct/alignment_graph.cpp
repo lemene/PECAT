@@ -1299,7 +1299,7 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
 
         return ol1 > ol0 && ((ol1 - ol0)*2 > (w1 - w0) || (ol1 - ol0)*2 > r1 - r0);
     };
-
+    assert(scores_.size() > 0);
     std::unordered_set<Seq::Id> added;
     for (size_t i = 0; i < scores_.size(); ++i) {
         const auto &s = scores_[i];
@@ -1321,10 +1321,13 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
     std::vector<double> segths(segscores.size());
     if (win_count > 1) {
         for (size_t i = 0; i < segths.size(); i++) {
-            segths[i] = std::max(0.0, FindScoreThreshold3(segscores[i])-0.000001);
+            std::sort(segscores[i].begin(), segscores[i].end());
+            segths[i] = std::max(0.0, FindScoreThreshold3(segscores[i]));
             DEBUG_printf("th(%zd): %f\n", i, segths[i]);
         }
     }
+
+    std::sort(score_all.begin(), score_all.end());
     double th_all = std::max(0.0, FindScoreThreshold3(score_all));
     DEBUG_printf("th(all): %f\n", th_all);
     
@@ -1393,62 +1396,73 @@ double AlignmentGraph::QueryInfos::FindScoreThreshold3(const std::vector<double>
 
     // parameters b w
     const double b = 0.01;
-    const int w = 10;
+    const int w = 5;
     int n = int(2 / b) + 1;     // all scores are in range [-1,1]
     std::vector<int> hist(n, 0);
 
+    if (score.size() == 0) return 0.0;
     for (auto s : score) {
         assert(s >= -1 && s <= 1);
         hist[int((s + 1) / b)] += 1;
     }
+    for (size_t i = 0; i < hist.size(); ++i) {
+        DEBUG_printf("score_threshold:hist: %zd = %d\n", i, hist[i]);
+    }
 
     std::vector<int> smoothed(hist.size()-w+1, 0);
     smoothed[0] = std::accumulate(hist.begin(), hist.begin()+w, 0);
-    for (size_t i=1; i + w <hist.size(); ++i) {
-        smoothed[i] = smoothed[i-1] - hist[i-1] + hist[i-1+w];
+    for (size_t i = w; i < hist.size(); ++i) {
+        smoothed[i-w+1] = smoothed[i-w] - hist[i-w] + hist[i];
+    }
+    for (size_t i = 0; i < smoothed.size(); ++i) {
+        DEBUG_printf("score_threshold:smoothed: %zd = %d\n", i, smoothed[i]);
     }
 
+    // parameters for detecting the first peak and trough
     const int LOW = 4;
     const double DIFF = 0.25; 
-    const int WIDTH = 40;
+    const int WIDTH = 10;
+
     int state = 0;
-    int ps = 0;
-    int accu = std::accumulate(hist.end()-w+1, hist.end(), 0);
+    size_t peak = 0;
+    size_t tough = 0;
+
+    auto clearly_larger = [DIFF, LOW](int a, int b) {
+        return a - b >= std::max<int>(a * DIFF, LOW);
+    };
+
+    int mk = smoothed.size() - 1;
     for (int i = smoothed.size() - 1 ; i > -1; --i) {
-        //printf("line: %zd, %zd, %d, %d\n", i, smoothed[i], ps, smoothed[ps]);
-        accu += hist[i];
-        if (state == 0) {
-            if (smoothed[i] >= LOW) { // SKIP smoothed[i] is small
-                // found starting point
-                ps = i;
+        if (state == 0) {   // finding the first peak
+            if (clearly_larger(smoothed[mk], smoothed[i])) {    // leave the peak
+                DEBUG_printf("score_threshold:peak: %zd, %zd\n", mk, i);
                 state = 1;
-                //printf("start: %zd\n", i);
+                peak = mk;
+                mk = i;
+            } else {
+                if (smoothed[i] > smoothed[mk]) {
+                    mk = i;
+                }
             }
-        } else if (state == 1) {
-            if (smoothed[ps] - smoothed[i] >= std::max<int>(smoothed[ps] * DIFF, LOW) && std::abs(i-ps) >= WIDTH / 2 ) {
-                // Found peak
-                //printf("peak: %zd, %zd\n", ps, i);
+        } else if (state == 1) { // finding the first trough
+            if (clearly_larger(smoothed[i], smoothed[mk])) {    // leave the trough
+                DEBUG_printf("score_threshold:troughs: %zd, %zd\n", mk, i);
                 state = 2;
-                ps = i;
+                tough = mk;
             } else {
-                if (smoothed[i] > smoothed[ps]) {
-                    ps = i;
+                if (smoothed[i] < smoothed[mk]) {
+                    mk = i;
                 }
             }
-        } else if (state == 2) {        // find troughs
-            if (smoothed[i] - smoothed[ps] >= std::max<int>(smoothed[ps] * DIFF, LOW)) {
-                //printf("troughs: %zd, %zd\n", ps, i);
-                break;
-            } else {
-                if (smoothed[i] < smoothed[ps] || (smoothed[i] <= smoothed[ps] && i >= 100) ) {
-                    ps = i;
-                }
-            }
+        } else {
+            assert(state == 2);
+            break;
         }
     }
     
-    return (ps+w/2)  * b - 1;
+    return (tough+w/2)  * b - 1;
 }
+
 
 size_t AlignmentGraph::QueryInfos::GetBlockSize() const {
     return std::accumulate(scores_.begin(), scores_.end(), 0, [](size_t a, const Score& b) {

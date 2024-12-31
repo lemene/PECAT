@@ -277,7 +277,7 @@ bool BridgeSimplifier::IsAmbiguousPath(const std::vector<SgEdge*>& path) {
     int minlen = std::max(0, path_core_length(path))*2; // TODO how to determine the threshold
 
     //int minlen = graph_.PathLength(path) * 2;      // TODO how to determine the threshold
-    int minnode = (path.size()+1) * 2;
+    int minnode = std::max<int>(30, (path.size()+1) * 2);
 
     assert(path.front()->InNode()->InDegree() == 1 && path.front()->InNode()->OutDegree() == 2);
     std::array<bool, 2> in_node_has_long_edge = {false, false};
