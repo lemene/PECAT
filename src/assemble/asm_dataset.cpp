@@ -23,8 +23,6 @@ void AsmDataset::Purge() {
     
     GroupOverlaps();
     
-    GroupAndFilterDuplicate();
-
     //FilterOverhang();
 
     //if (is_ol_accurate) FilterLowQuality();
@@ -32,7 +30,10 @@ void AsmDataset::Purge() {
     EstimateCoverage();
 
     ExtendOverlapToEnd();
+
     FilterCoverage();
+
+    FilterDuplicate();
 
     EstimateGenomeSize();
 
@@ -540,21 +541,28 @@ double AsmDataset::GetOverlapQuality0(const Overlap &ol) {
 void AsmDataset::GroupOverlaps() {
     LOG(INFO)("Group overlaps");
     grouper_.BuildIndex(opts_.thread_size, std::unordered_set<Seq::Id>(), [](const Overlap &a, const Overlap &b) {
-        if (a.Identity() > b.Identity()) return 1;
-        else if (a.Identity() == b.Identity()) return 0;
+        if (a.AlignedSize() > b.AlignedSize()) return 1;
+        else if (a.AlignedSize() == b.AlignedSize()) return 0;
         else return -1;
     }); 
 }
 
-void AsmDataset::GroupAndFilterDuplicate() {
+void AsmDataset::FilterDuplicate() {
     LOG(INFO)("Group overlaps and remove duplicated");
 
     for (size_t rid = 0; rid < rd_store_.Size(); ++rid) {
         auto group = grouper_.Get(rid);
         for (size_t i = 0; i < group.Size(); ++i) {
-            for (size_t j = 1; j < group.Size(i); ++j) {
-                    
-                SetOlReason(*group.Get(i,j), OlReason::Duplicate());
+            bool found = false;
+            for (size_t j = 0; j < group.Size(i); ++j) {
+                const Overlap &ol = *group.Get(i,j);
+                if (IsReserved(ol)) {
+                    if (!found) {
+                        found = true;
+                    } else {
+                        SetOlReason(ol, OlReason::Duplicate());
+                    }
+                }
             }
         }
     }
@@ -1502,6 +1510,7 @@ void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
     for (auto rid : bundle) {
         auto rseq = rd_store_.GetSeq(rid);
         auto kmers = kc.CountAll(rseq);
+        rd_kmers[rid] = std::vector<std::tuple<size_t, KmerId>>();
         for (size_t i = 0; i < kmers.size(); ++i) {
             const auto &k = kmers[i];
             auto mink = std::min(k[0], k[1]);
@@ -1581,12 +1590,7 @@ void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
                         
                         if (jac < 0.5) {
                             ignored.insert(ol);
-                            SetOlReason(*ol, OlReason::Consistency(0));
                         }
-                    } else if (ord_kmer != rd_kmers.end() && rd_kmer == rd_kmers.end() || ord_kmer == rd_kmers.end() && rd_kmer != rd_kmers.end()) {
-                        auto jac = 0.0;
-                        ignored.insert(ol);
-                        SetOlReason(*ol, OlReason::Consistency(1));
                     }
                 }
             }

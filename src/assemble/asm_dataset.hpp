@@ -47,7 +47,7 @@ public:
     double GetOverlapQuality1(const Overlap &ol) { return is_ol_accurate ? ol.Identity() : GetOverlapQuality0(ol); }
 
     void GroupOverlaps();
-    void GroupAndFilterDuplicate();
+    void FilterDuplicate();
 
     // Extend the overlaps to ends and remove overhangs. 
     // e. (start, end, len):before: (10, 10000, 20000) <-> (1000, 10000, 10010) 
