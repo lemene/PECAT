@@ -75,8 +75,8 @@ void ReadCorrect::Correct() {
                         LOG(WARNING)("Failed to correct read(%s)", dataset_.read_store_.QueryNameById(tid).c_str());
                     }
                 }
+                worker.Clear();
             }
-            worker.Clear();
             
             if (oss_cread.tellp() > (int)flush_block) {
                 combine_func(oss_cread, oss_scores, worker.stat_info);
@@ -264,10 +264,8 @@ bool CheckLocalDistance(const Alignment &al, const std::vector<int> thresholds) 
 }
 
 bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
-    //LOG(INFO)("Start correcting");
     auto group = dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
-    //LOG(INFO)("groupsize(%s) = %zd", dataset_.QueryStringById(id).c_str(), group.Size());
     
 
     const DnaSeq& target = dataset_.read_store_.GetSeq(id);
@@ -279,11 +277,10 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
 
     std::vector<Alignment> first_als;
     
-    DEBUG_printf("groupsize = %zd\n", group.Size());
+    DEBUG_printf("start_correcting tid = %s(%d), groupsize = %zd\n", dataset_.QueryStringById(id).c_str(), id, group.Size());
     for (size_t i = 0; i < std::min<size_t>(1000, group.Size()); ++i) {
         
         auto al = GetAlignmentWithCache(id, group, i, wrk);
-        //LOG(INFO)("the i = %zd", i);
 
         if (al.Valid()) { 
             first_als.push_back(al);
@@ -293,7 +290,7 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
         if (opts_.cands_opts_.IsEndCondition(coverage)) break;
     }
     
-    //LOG(INFO)("alignsize = %zd", first_als.size());
+    DEBUG_printf("alignsize = %zd, %zd\n", first_als.size(), wrk.aligned_.size());
 
 
     if (first_als.size() > 0) {
@@ -325,13 +322,10 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
         for (auto &al : wrk.aligned_) { al.Rearrange(); }
         {
             TimeCounter::Mark m(tc_graph);
-        //LOG(INFO)("build graph");
         wrk.graph_.Build(target, range, wrk.aligned_);
-                //LOG(INFO)("Consensus");
         wrk.graph_.Consensus();
         }
         
-    //LOG(INFO)("End correcting");
         return true;
     }
     }
@@ -365,13 +359,6 @@ Alignment ReadCorrect::GetAlignmentWithCache(Seq::Id tid, const CrrDataset::OlGr
     }}
     return al;
 }
-
-        // DEBUG_printf("alignment(%s-%s): r = %d, q = (%zd %zd %zd),  d=%d, t = (%zd %zd %zd), d=%zd,%f,  %zd\n", 
-        //     dataset_.QueryStringById(qread.id).c_str(), dataset_.QueryStringById(tread.id).c_str(),
-        //     r_local,
-        //     al_local.query_start, al_local.query_end, al_local.QuerySize(), ol->SameDirect(),
-        //     al_local.target_start, al_local.target_end, al_local.TargetSize(), al_local.distance, al_local.Identity(), al_local.local_distances.size());
-
 
 Alignment ReadCorrect::GetAlignmentOnes(Seq::Id tid, const CrrDataset::OlGroup& group, size_t ig, Worker& wrk) {
 
@@ -409,7 +396,6 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
     const auto& qread = ol.GetOtherRead(tid);
     Alignment al(tread.id, qread.id);
     al.strand = ol.SameDirect() ? 0 : 1;
-    //LOG(INFO)("start %s", dataset_.QueryStringById(tid).c_str());
     al.query = &dataset_.read_store_.GetSeq(ol.a_.id);
     al.target = &dataset_.read_store_.GetSeq(ol.b_.id);
     
@@ -424,7 +410,6 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
     } else {
         
         TimeCounter::Mark m(tc_al_ava);
-        // return GetAlignmentFromBases();
         std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
 
         // TODO target 由调用者设置，可能存在不一致，需要优化。
@@ -634,7 +619,6 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     const auto& qseq = dataset_.read_store_.GetSeq(qread.id);
     const auto& tseq = dataset_.read_store_.GetSeq(tread.id);
     
-
     assert(CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP);
     auto pair = static_cast<const Mapping::Pair&>(ol);
 
@@ -643,10 +627,6 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     // the query position is at reverse-complement sequence
     al.query_start = ol.SameDirect() ? qread.start : qread.len - qread.end;
     al.query_end = ol.SameDirect() ? qread.end : qread.len - qread.start;
-    // printf("GetAlignmentFromMapping1: %d %d %d - %d %d %d\n", 
-    //     qread.start, qread.end, qread.end, 
-    //     tread.start, tread.end, tread.end);
-
 
     const char* ACGT = "ACGT";
     size_t it = al.target_start;
@@ -681,10 +661,6 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     }
     assert(it == al.target_end);
     assert(iq == al.query_end - al.query_start);
-    // printf("%s - %s %d %d\nq:%s\nt:%s\n", dataset_.QueryStringById(qread.id).c_str(),
-    //  dataset_.QueryStringById(tread.id).c_str(),
-    //  pair.query->SameDirect(), pair.target->SameDirect(), al.aligned_query.c_str(), al.aligned_target.c_str());
-    //fflush(stdout);
 
     if (ol.SameDirect()) {
         TimeCounter::Mark m(tc_al_head_tail);

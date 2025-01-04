@@ -8,7 +8,7 @@ TARGET_DIR=../build/bin
 PLGD_PM = $(wildcard ./plgd/Plgd/*.pm) $(wildcard ./plgd/Plgd/Grid/*.pm)  $(wildcard ./plgd/Plgd/Job/*.pm)
 TARGET_PLGD_PM = $(patsubst ./plgd/Plgd/%, ${TARGET_DIR}/Plgd/%, $(PLGD_PM))
 
-thirdparty: pigz pldg libksw2 mbio
+thirdparty: pigz pldg libksw2 mbio htslib
 
 pldg: ${TARGET_PLGD_PM}
 	echo ${TARGET_PLGD_PM}
@@ -29,8 +29,6 @@ ${TARGET_DIR}/../pigz-2.4/pigz: ./pigz/pigz-2.4.tar.gz
 	tar -xzf $< -C ${TARGET_DIR}/.. || exit 255
 	cd ${TARGET_DIR}/../pigz-2.4 && make
 
-
-
 libksw2: ${TARGET_DIR}/libksw2.a
 
 
@@ -45,6 +43,13 @@ mbio:
 	cp -rf ./mbio/mbio ${TARGET_DIR}/mbio 
 	cp -rf  ./mbio/scripts ${TARGET_DIR}/scripts
 
+htslib: ./htslib/libhts.a
+	cd libhts
+	autoreconf -i
+	./configure
+	make
+	cd -
+	
 clean:
 	rm -rf ${TARGET_DIR}/Plgd 
 	rm -f ${TARGET_DIR}/pigz

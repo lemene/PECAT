@@ -347,16 +347,6 @@ void PTransitiveSimplifier::RemoveSmallLoops() {
 	}
 		}
 	}
-
-	// for (auto r : removed) {
-	// 	Debug("remove_small_loops: %s\n", r->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
-
-	// 	auto pe = static_cast<PathEdge*>(const_cast<SgEdge*>(r));
-	// 	if (!pe->IsReduced()) {
-	// 		pe->Reduce("small_loops", true);
-	// 		graph_.ReverseEdge(pe)->Reduce("small_loops", true);
-	// 	}
-	// }
 }
 
 } // namespace fsa

@@ -17,6 +17,7 @@ void CrrDataset::Load() {
     if (!opts_.rd_2_ref_fname_.empty()) {
         rd_2_ref_.Load(opts_.rd_2_ref_fname_);
         mapping_.BuildIndex();
+        LOG(INFO)("Load rd_2_ref size = %zd", rd_2_ref_.Size());
     }
 
     std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 

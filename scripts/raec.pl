@@ -19,9 +19,8 @@ use Env qw(PATH);
 
 use strict;
 
-package FsaPipeline;
-
-our @ISA = qw(Plgd::Pipeline);  
+package RaecPipeline;
+our @ISA = qw(FsaPipeline);  
 
 sub new { 
     my ($cls, $default) = @_; 
@@ -35,6 +34,7 @@ sub initialize($$) {
     my ($self, $fname) = @_;
     $self->SUPER::initialize($fname);
 }
+
 
 sub job_get_unmaped_reads($$$$$$) {
     my ($self, $name, $reads, $rd_2_ref, $unmapped, $wrkdir) = @_;
@@ -107,8 +107,8 @@ sub getjob_correct_with_reference($$$$$$) {
     my $opts_correct = $options->[3];
 
     # map reads to reference
-    my $rd_2_ref = "$wrkdir/rd_2_ref.paf";
-    my $job_rd_2_ref = $self->getjob_map_read_to_reference($name, $rreads, $ref, 
+    my $rd_2_ref = "$wrkdir/rd_2_ref.bam";
+    my $job_rd_2_ref = $self->getjob_map_read_to_ref_sam($name, $rreads, $ref, 
         $rd_2_ref, $opts_rd_2_ref, $wrkdir);
 
     # 
@@ -139,16 +139,20 @@ sub run_correct($) {
     my ($self) = @_;
 
     my $name = "crr";
-    my $wrkdir = $self->get_project_folder();
+    my $wrkdir = $self->get_work_folder("1-correct");
     mkdir $wrkdir;
 
-    my $rreads = Cwd::abs_path($self->get_config("reads"));
+    my $is_gz = $self->get_config("compress");
+    my $wrkdir_prp = $self->get_work_folder("0-prepare");
+
+    my $rreads = $is_gz ? "$wrkdir_prp/prepared_reads.fasta.gz" : "$wrkdir_prp/prepared_reads.fasta";
+    my $creads = $is_gz ? "$wrkdir/corrected_reads.fasta.gz" : "$wrkdir/corrected_reads.fasta";
     my $ref = Cwd::abs_path($self->get_config("reference"));
-    my $creads = "$wrkdir/corrected.fasta";
-    my $opts_rd_2_ref = $self->get_config("opts_rd_2_ref");
-    my $opts_rd_2_rd = $self->get_config("opts_rd_2_rd");
-    my $opts_rd_2_rd_flt = $self->get_config("opts_rd_2_rd_flt");
-    my $opts_correct = $self->get_config("opts_correct");
+
+    my $opts_rd_2_ref = $self->get_config("corr_rd2ref_options");
+    my $opts_rd_2_rd = $self->get_config("corr_rd2rd_options");
+    my $opts_rd_2_rd_flt = $self->get_config("corr_filter_options");
+    my $opts_correct = $self->get_config("corr_correct_options");
 
     $self->run_jobs($self->getjob_correct_with_reference($name, $rreads, $ref, $creads, 
         [$opts_rd_2_ref, $opts_rd_2_rd, $opts_rd_2_rd_flt, $opts_correct], $wrkdir));
@@ -187,13 +191,15 @@ my @defaultConfig = (
 );
 
 
-my $pipeline = FsaPipeline->new(\@defaultConfig);
+my $pipeline = RaecPipeline->new(\@defaultConfig);
 
 
 sub cmd_correct($) {
     my ($fname) = @_;
 
     $pipeline->initialize($fname);
+
+    $pipeline->run_prepare();
     $pipeline->run_correct();
 }
 

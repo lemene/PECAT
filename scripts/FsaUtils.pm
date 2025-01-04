@@ -1,7 +1,72 @@
 
 use strict;
 
+use Plgd::Pipeline;
+
 package FsaPipeline;
+our @ISA = qw(Plgd::Pipeline);  
+
+
+sub new { 
+    my ($cls, $default) = @_; 
+    my $self = $cls->SUPER::new($default); 
+
+    bless $self, $cls; 
+    return $self; 
+} 
+
+
+# copy reads to project and filter out some reads
+sub getjob_prepare($$$$$) {
+    my ($self, $name, $workDir, $ifile, $ofile) = @_;
+
+    mkdir $workDir;
+    
+    my $isGz = ($ofile =~ /\.gz$/);
+    my $ofileTemp = $ofile;
+    $ofileTemp =~ s/\.gz//;
+
+    my $binPath = $self->get_env("BinPath");
+    my $threads = $self->get_config("THREADS");
+
+    my $minLength = $self->get_config("PREP_MIN_LENGTH") + 0;
+    my $baseSize = ($self->get_config("PREP_OUTPUT_COVERAGE") + 0) * ($self->get_config("GENOME_SIZE") + 0);
+    my $id2name = ::dirname($ofile) . "/id2name.gz";
+
+    my $job = $self->newjob(
+        name => "${name}_job",
+        ifiles => [$ifile],
+        ofiles => [$ofile],
+        gfiles => [$ofile],
+        mfiles => [],
+        threads => 1,
+        cmds => ["$binPath/fsa_rd_tools longest  $ifile $ofileTemp --base_size $baseSize --min_length $minLength --id2name $id2name"],
+        msg => "preparing reads",
+    );
+
+    # if ($isGz) {
+    #     push @{$job->cmds}, "$binPath/pigz -f -p $threads $ofileTemp";
+    # }
+
+    return $job
+
+}
+
+
+sub run_prepare($) {
+    my ($self) = @_;
+
+    my $name = "prp";
+    my $wrkdir = $self->get_work_folder("0-prepare");
+
+    my $ifile = $self->get_config("reads");
+
+    my $isGz = $self->get_config("compress");
+    my $ofile = $isGz ? "$wrkdir/prepared_reads.fasta.gz" : "$wrkdir/prepared_reads.fasta";
+
+    $self->run_jobs($self->getjob_prepare($name, $wrkdir, $ifile, $ofile));
+}
+
 
 sub getjob_make_softlink($$$$) {
     my ($self, $name, $ifile, $ofile) = @_;
@@ -213,6 +278,22 @@ sub getjob_map_read_to_reference($$$$$$$$) {
     );
 
     return $job;
+}
+
+sub getjob_map_read_to_ref_sam($$$$$$$$) {
+    my ($self, $name, $reads, $ref, $rd_2_ref, $options, $wrkdir) = @_;
+
+    my $threads = $self->get_config("threads");
+    my $job = $self->newjob(
+        name => "${name}_rd_2_ref",
+        ifiles => [$reads, $ref],
+        ofiles => [$rd_2_ref],
+        gfiles => [$rd_2_ref],
+        mfiles => [],
+        cmds => ["minimap2 -t $threads $options $ref $reads -a | samtools sort -@ $threads > $rd_2_ref",
+                 "samtools index -@ $threads $rd_2_ref"],
+        msg => "mapping reads to reference(sam), ${name}",
+    );
 }
 
 sub job_map_hic_reads_to_contigs($$$$$$) {

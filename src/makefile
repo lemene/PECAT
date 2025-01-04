@@ -90,14 +90,14 @@ fsa_sam_tools_src = ./prog/fsa_sam_tools.cpp ./sam_tools.cpp
 fsa_sam_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_sam_tools_src))
 
 ifeq ($(BUILDDEBUG), 1)
-	CFLAGS =  -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
-	CXXFLAGS = -std=c++11 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
+	CFLAGS =  -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
+	CXXFLAGS = -std=c++11 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 else
-	CFLAGS =  -Wall -O3  -D_FILE_OFFSET_BITS=64 -I. -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
-	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2
+	CFLAGS =  -Wall -O3  -D_FILE_OFFSET_BITS=64 -I. -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2 -I ../thirdparty/htslib
+	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 endif
 
-LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt 
+LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt ../thirdparty/htslib/libhts.a
 
 
 obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \

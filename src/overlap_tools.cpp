@@ -934,18 +934,10 @@ void Program_Location::Running() {
     MultiThreadRun((size_t)thread_size_, work_func);
 }
 
+#include <htslib/sam.h>
 
 void Program_Test::Running() {
-    OverlapStore ol_store;
-    ol_store.Load(ifname_);
-    Mapping mapping(ol_store);
-    mapping.BuildIndex();
-    auto ols = mapping.QueryOverlaps(rname_);
-    printf("ols: %zd\n", ols.size());
-    for (const auto ol : ols) {
-        printf("-\n%s\n%s\n", ol.query->ToM4Line().c_str(), ol.target->ToM4Line().c_str());
-        printf("x\n%s\n", ol.ToM4Line().c_str());
-    }
+    samFile *in = sam_open(ifname_.c_str(), "r");
 }
 
 } // namespace fsa

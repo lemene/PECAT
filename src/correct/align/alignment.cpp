@@ -10,6 +10,7 @@ void Alignment::Swap() {
     std::swap(target_start, query_start);
     std::swap(target_end, query_end);
     std::swap(aligned_target, aligned_query);
+    std::swap(tid, qid);
 
     if (strand) {
         std::swap(target_start, target_end);

@@ -10,3 +10,6 @@
 [submodule "thirdparty/mbio"]
 	path = thirdparty/mbio
 	url = https://github.com/lemene/mbio.git
+[submodule "thirdparty/htslib"]
+	path = thirdparty/htslib
+	url = https://github.com/samtools/htslib.git
