@@ -44,11 +44,10 @@ mbio:
 	cp -rf  ./mbio/scripts ${TARGET_DIR}/scripts
 
 htslib: ./htslib/libhts.a
-	cd libhts
-	autoreconf -i
-	./configure
-	make
-	cd -
+    
+
+./htslib/libhts.a:
+	cd htslib && autoreconf -i && ./configure && make
 	
 clean:
 	rm -rf ${TARGET_DIR}/Plgd 

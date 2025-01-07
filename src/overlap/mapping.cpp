@@ -222,7 +222,8 @@ void Mapping::Pair::ToOverlap() {
             case 'I':
                 qcurr += d.len;
                 break;
-
+            case 'S':
+                break;
             default:
                 LOG(ERROR)("Not support cigar type '%c'.", d.type);
             }

@@ -887,6 +887,7 @@ void Program_Location::Running() {
     OverlapStore ol_store;
     
     ol_store.Load(ifname_, "", std::min<size_t>(8, thread_size_));
+    LOG(INFO)("Load mappings %zd", ol_store.Size());
     QueryGrouper grouper(ol_store);
     grouper.BuildIndex();
 
@@ -895,7 +896,6 @@ void Program_Location::Running() {
     std::mutex mutex_combine;
     auto combine_func = [&mutex_combine,&mapped_writer, &ol_store](std::unordered_set<Seq::Id> &mapped) {
         std::lock_guard<std::mutex> lock(mutex_combine);
-        //LOG(INFO)("SZ %zd", mapped.size());
         for (auto r : mapped) {
             mapped_writer << ol_store.GetStringPool().QueryStringById(r) << "\n";
         }
@@ -937,7 +937,8 @@ void Program_Location::Running() {
 #include <htslib/sam.h>
 
 void Program_Test::Running() {
-    samFile *in = sam_open(ifname_.c_str(), "r");
+    OverlapStore ol_store;
+    ol_store.Load(ifname_);
 }
 
 } // namespace fsa

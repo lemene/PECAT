@@ -85,13 +85,13 @@ sub getjob_correct_all_reads() {
 
     return $self->newjob(
         name => "${name}_correct",
-        ifiles => [$rreads],
+        ifiles => [$rreads, $unmapped, $rd_2_ref],
         ofiles => [$creads],
         gfiles => [$creads],
         mfiles => [],
         cmds => ["$bin_path/fsa_rd_correct $unmapped $rreads $creads --output_directory=$wrkdir --thread_size=$threads " . 
                     "--infos_fname $creads.infos $options --rd_2_ref $rd_2_ref"],
-        msg => "correcting reads, $name"
+        msg => "correcting reads0, $name"
     );
 }
 

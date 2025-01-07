@@ -405,13 +405,10 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
     } else if (CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP) {
         TimeCounter::Mark m(tc_al_map);
         GetAlignmentFromMapping1(tid, ol, wrk, al);
-        
         al.CheckAlignment();
     } else {
-        
         TimeCounter::Mark m(tc_al_ava);
         std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-
         // TODO target 由调用者设置，可能存在不一致，需要优化。
         wrk.aligner_.Align(dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  
         

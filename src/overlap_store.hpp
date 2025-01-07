@@ -10,6 +10,9 @@
 #include <sstream>
 #include <iostream>
 
+#include <htslib/sam.h>
+
+
 #include "overlap.hpp"
 #include "./utils/logger.hpp"
 #include "utils/string_pool.hpp"
@@ -118,6 +121,9 @@ public:
     void LoadFileTxtMt(const std::string &fname, C check, size_t thread_size);
     template<typename C>
     void LoadFileTxtFast(const std::string &fname, C check, size_t thread_size);
+
+    template<typename C>
+    void LoadFileBam(const std::string &fname, C check, size_t thread_size);
 
     // TODO ugly, only for sam
     void PreLoad(Reader &reader, std::vector<std::string>& done);
@@ -384,6 +390,8 @@ void OverlapStore::Load(const std::string &fname, const std::string &type, size_
         LoadFileMt(fname, &OverlapStore::FromSamLine, check, thread_size);
     } else if (t == "txt") {
         LoadFileTxtMt(fname, check, thread_size);
+    } else if (t == "bam") {
+        LoadFileBam(fname, check, thread_size);
     } else {
         LOG(ERROR)("Failed to recognize overlap files type: %s", t.c_str());
     }
@@ -402,6 +410,8 @@ void OverlapStore::LoadFast(const std::string &fname, const std::string &type, s
         LoadFileFast(fname, &OverlapStore::FromSamLine, check, thread_size);
     } else if (t == "txt") {
         LoadFileTxtFast(fname, check, thread_size);
+    } else if (t == "bam") {
+        LoadFileBam(fname, check, thread_size);
     } else {
         LOG(ERROR)("Failed to recognize overlap files type: %s", t.c_str());
     }
@@ -445,6 +455,108 @@ void OverlapStore::LoadFileTxtFast(const std::string &fname, C check, size_t thr
         }
     };
     MultiThreadRun(std::max<size_t>(1, thread_size / load_threads), work_func);
+}
+
+template<typename C>
+void OverlapStore::LoadFileBam(const std::string &fname, C check, size_t thread_size) {
+
+    samFile *in = hts_open(fname.c_str(), "r");
+    
+    if (in != nullptr) {
+    
+        std::unordered_map<Seq::Id, size_t> reflen;
+        bam_hdr_t *header = sam_hdr_read(in);
+        if (header != nullptr) {
+            for (int i = 0; i < header->n_targets; i++) {
+                auto id = string_pool_.GetIdByString(header->target_name[i]);
+                reflen[id] = header->target_len[i];
+            }
+        } else {
+            LOG(ERROR)("Error reading BAM header: %s", fname.c_str());
+        }
+
+        bam1_t *b = bam_init1();  // 初始化 BAM 记录
+        while (sam_read1(in, header, b) >= 0) {
+            Overlap ol;
+
+            if ((b->core.flag & BAM_FSECONDARY) || (b->core.flag & BAM_FSUPPLEMENTARY)) continue; 
+            ol.a_.id = string_pool_.GetIdByString(bam_get_qname(b));
+            int tid = b->core.tid;
+            if (tid >= 0 && tid < header->n_targets) {
+                ol.b_.id = string_pool_.GetIdByString(header->target_name[tid]);
+            } else {
+                continue;
+            }
+
+            ol.a_.len = b->core.l_qseq;
+            ol.a_.strand = bam_is_rev(b) ? 1 : 0;
+
+            ol.b_.len = reflen[ol.b_.id];
+            ol.b_.strand = 0;
+            ol.b_.start = b->core.pos;
+
+            uint32_t *cigar = bam_get_cigar(b);
+            int rpos = 0;
+            int qpos = 0;
+            int match = 0;
+            for(int i=0; i < b->core.n_cigar;++i){
+                int icigar = cigar[i];
+                int n = bam_cigar_oplen(icigar);
+                char t = bam_cigar_opchr(icigar);
+                ol.detail_.push_back({n, t});
+                switch (t) {
+                    
+                case '=':
+                case 'M':
+                    match += n;
+                    rpos += n;
+                    qpos += n;
+                    break;
+                case 'X':
+                    rpos += n;
+                    qpos += n;
+                    break;
+                case 'I':
+                    qpos += n;
+                    break;
+                case 'D':
+                    rpos += n;
+                    break;
+                default:
+                    //LOG(ERROR)("Not support %c", t);
+                    break;
+                }
+            }
+            ol.b_.end = ol.b_.start + rpos;
+            ol.identity_ = match * 2.0 / (qpos + rpos);
+
+            assert (b->core.n_cigar >= 1);
+            if (bam_cigar_opchr(cigar[0]) == 'S' && ol.a_.strand == 0) {
+                ol.a_.start = bam_cigar_oplen(cigar[0]);
+                ol.a_.end = ol.a_.start + qpos;
+            } else if (bam_cigar_opchr(cigar[b->core.n_cigar-1]) == 'S'  && ol.a_.strand == 1) {
+                ol.a_.start = bam_cigar_oplen(cigar[b->core.n_cigar-1]);
+                ol.a_.end = ol.a_.start + qpos;
+            } else {
+                ol.a_.start = 0;
+                ol.a_.end = ol.a_.start + qpos;
+            }
+            assert(0 <= ol.a_.start && ol.a_.start < ol.a_.end && ol.a_.end <= ol.a_.len);
+            assert(0 <= ol.b_.start && ol.b_.start < ol.b_.end && ol.a_.end <= ol.b_.len);
+
+            if (check(ol)) {
+                overlaps_.Add(ol);
+            }
+
+        }
+        
+
+        bam_destroy1(b);
+        bam_hdr_destroy(header);
+
+        hts_close(in);
+    }
+
 }
 
 class OverlapGrouper {
