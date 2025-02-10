@@ -124,6 +124,12 @@ public:
 
     template<typename C>
     void LoadFileBam(const std::string &fname, C check, size_t thread_size);
+    template<typename C>
+    void LoadFileBamFast(const std::string &fname, C check, size_t thread_size);
+
+
+    template<typename C>
+    void LoadFileBam(const std::string &fname, C check, size_t thread_size, const std::vector<Bed>& beds);
 
     // TODO ugly, only for sam
     void PreLoad(Reader &reader, std::vector<std::string>& done);
@@ -200,14 +206,6 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
                 o.b_.id = id2id[o.b_.id];
             }
         }
-        // TODO 
-        // std::vector<Overlap> v_ols;
-        // v_ols.reserve(sz);
-        // for (auto& o : ols) {
-        //     if (check(o)) {
-        //         v_ols.push_back(o);
-        //     }
-        // }
         {
             std::lock_guard<std::mutex> lock(mutex_comb);
             //overlaps_.Insert(v_ols, v_ols.size());
@@ -237,7 +235,7 @@ void OverlapStore::LoadFileMt(const std::string &fname, F lineToOl, C check, siz
             if (r > 0) {
                 ols[ol_size++] = o;
             } else if (r < 0) {
-                LOG(ERROR)("Failed to convert line to overlap \n   %s", line.c_str());
+                LOG(ERROR)("Failed to convert line to overlap \n    %s\n    %s", line.c_str(), fname.c_str());
             } else {
                 // r == 0 pass
             }
@@ -411,7 +409,7 @@ void OverlapStore::LoadFast(const std::string &fname, const std::string &type, s
     } else if (t == "txt") {
         LoadFileTxtFast(fname, check, thread_size);
     } else if (t == "bam") {
-        LoadFileBam(fname, check, thread_size);
+        LoadFileBamFast(fname, check, thread_size);
     } else {
         LOG(ERROR)("Failed to recognize overlap files type: %s", t.c_str());
     }
@@ -460,8 +458,300 @@ void OverlapStore::LoadFileTxtFast(const std::string &fname, C check, size_t thr
 template<typename C>
 void OverlapStore::LoadFileBam(const std::string &fname, C check, size_t thread_size) {
 
-    samFile *in = hts_open(fname.c_str(), "r");
+    std::mutex mutex;
+    std::atomic<size_t> index { 0 };
+
+    auto combine_func = [&mutex, this](std::vector<Overlap> &ols, size_t sz, StringPool::TempNameId &ni) {
+        if (ni.names_to_ids.size() > 0) {
+            auto id2id = string_pool_.MergeNameId(ni);
+            ni.names_to_ids.clear();
+            for (size_t i=0; i<sz; ++i) {
+                auto& o = ols[i];
+                o.a_.id = id2id[o.a_.id];
+                o.b_.id = id2id[o.b_.id];
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            overlaps_.Insert(ols, sz);
+        }
+    };
     
+    auto work_func = [combine_func, &index, check, this, &fname](int tid) {
+
+        samFile *in = hts_open(fname.c_str(), "r");
+        assert(in != nullptr);
+        
+        bam_hdr_t *header = sam_hdr_read(in);
+        assert(header != nullptr);
+        auto idx = sam_index_load2(in, fname.c_str(), (fname+".bai").c_str());
+        assert(idx != nullptr);
+
+        const size_t max_overlap_size = 100000;
+        std::vector<Overlap> ols;
+        ols.reserve(max_overlap_size);
+        thread_local StringPool::TempNameId ni;
+
+        for (size_t tgtid = index.fetch_add(1); tgtid < header->n_targets; tgtid = index.fetch_add(1)) {
+
+            hts_itr_t* itr = sam_itr_queryi(idx, tgtid, 0, header->target_len[tgtid]);
+            bam1_t *b = bam_init1();
+            
+            while (sam_itr_next(in, itr, b) >= 0) {
+                Overlap ol;
+
+                //if ((b->core.flag & BAM_FSECONDARY) || (b->core.flag & BAM_FSUPPLEMENTARY)) continue; 
+                ol.a_.id = ni.GetIdByName(bam_get_qname(b));
+                int tid = b->core.tid;
+                if (tid >= 0 && tid < header->n_targets) {
+                    ol.b_.id = ni.GetIdByName(header->target_name[tid]);
+                } else {
+                    continue;
+                }
+
+                ol.a_.len = b->core.l_qseq;
+                ol.a_.strand = bam_is_rev(b) ? 1 : 0;
+
+                ol.b_.len = header->target_len[tgtid];
+                ol.b_.strand = 0;
+                ol.b_.start = b->core.pos;
+
+                uint32_t *cigar = bam_get_cigar(b);
+                int rpos = 0;
+                int qpos = 0;
+                int match = 0;
+                int clip = 0;
+                for(int i=0; i < b->core.n_cigar;++i){
+                    int icigar = cigar[i];
+                    int n = bam_cigar_oplen(icigar);
+                    char t = bam_cigar_opchr(icigar);
+                    ol.detail_.push_back({n, t});
+                    switch (t) {
+                        
+                    case '=':
+                    case 'M':
+                        match += n;
+                        rpos += n;
+                        qpos += n;
+                        break;
+                    case 'X':
+                        rpos += n;
+                        qpos += n;
+                        break;
+                    case 'I':
+                        qpos += n;
+                        break;
+                    case 'D':
+                        rpos += n;
+                        break;
+                    case 'S':
+                    case 'H':
+                        clip += n;
+                        break;
+                    default:
+                        //LOG(ERROR)("Not support %c", t);
+                        break;
+                    }
+                }
+                ol.b_.end = ol.b_.start + rpos;
+                ol.identity_ = match * 2.0 / (qpos + rpos);
+
+                ol.a_.len = clip+qpos;
+
+                assert (b->core.n_cigar >= 1);
+                char cigar0 = bam_cigar_opchr(cigar[0]);
+                char cigar1 = bam_cigar_opchr(cigar[b->core.n_cigar-1]);
+    
+                if ((cigar0 == 'S' || cigar0 == 'H') && ol.a_.strand == 0) {
+                    ol.a_.start = bam_cigar_oplen(cigar[0]);
+                    ol.a_.end = ol.a_.start + qpos;
+                } else if ((cigar1 == 'S' || cigar1 == 'H')  && ol.a_.strand == 1) {
+                    ol.a_.start = bam_cigar_oplen(cigar[b->core.n_cigar-1]);
+                    ol.a_.end = ol.a_.start + qpos;
+                } else {
+                    ol.a_.start = 0;
+                    ol.a_.end = ol.a_.start + qpos;
+                }
+                assert(0 <= ol.a_.start && ol.a_.start < ol.a_.end && ol.a_.end <= ol.a_.len);
+                assert(0 <= ol.b_.start && ol.b_.start < ol.b_.end && ol.a_.end <= ol.b_.len);
+
+                if (check(ol)) {
+                    ols.push_back(ol);
+                    if (ols.size() >= max_overlap_size) {
+                        combine_func(ols, ols.size(), ni);
+                        ols.clear();
+                    }
+                }
+
+            }
+            bam_destroy1(b);
+
+
+        }
+        if (ols.size() > 0) {
+            combine_func(ols, ols.size(), ni);
+            ols.clear();
+        }
+
+        bam_hdr_destroy(header);
+        hts_close(in);
+    };
+
+        
+    MultiThreadRun(thread_size, work_func);
+}
+
+template<typename C>
+void OverlapStore::LoadFileBam(const std::string &fname, C check, size_t thread_size, const std::vector<Bed> &beds) {
+
+    std::mutex mutex;
+    std::atomic<size_t> index { 0 };
+
+    auto combine_func = [&mutex, this](std::vector<Overlap> &ols, size_t sz, StringPool::TempNameId &ni) {
+        if (ni.names_to_ids.size() > 0) {
+            auto id2id = string_pool_.MergeNameId(ni);
+            ni.names_to_ids.clear();
+            for (size_t i=0; i<sz; ++i) {
+                auto& o = ols[i];
+                o.a_.id = id2id[o.a_.id];
+                o.b_.id = id2id[o.b_.id];
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            overlaps_.Insert(ols, sz);
+        }
+    };
+    
+    auto work_func = [combine_func, &index, check, this, &fname, &beds](int tid) {
+
+        samFile *in = hts_open(fname.c_str(), "r");
+        assert(in != nullptr);
+        
+        bam_hdr_t *header = sam_hdr_read(in);
+        assert(header != nullptr);
+        auto idx = sam_index_load2(in, fname.c_str(), (fname+".bai").c_str());
+        assert(idx != nullptr);
+
+        const size_t max_overlap_size = 100000;
+        std::vector<Overlap> ols;
+        ols.reserve(max_overlap_size);
+        thread_local StringPool::TempNameId ni;
+
+        for (size_t i = index.fetch_add(1); i < beds.size(); i = index.fetch_add(1)) {
+            size_t tgtid = sam_hdr_name2tid(header, beds[i].target.c_str());
+            hts_itr_t* itr = sam_itr_queryi(idx, tgtid, beds[i].start, beds[i].end);
+            bam1_t *b = bam_init1();
+            
+            while (sam_itr_next(in, itr, b) >= 0) {
+                Overlap ol;
+
+                //if ((b->core.flag & BAM_FSECONDARY) || (b->core.flag & BAM_FSUPPLEMENTARY)) continue; 
+                ol.a_.id = ni.GetIdByName(bam_get_qname(b));
+                int tid = b->core.tid;
+                if (tid >= 0 && tid < header->n_targets) {
+                    ol.b_.id = ni.GetIdByName(header->target_name[tid]);
+                } else {
+                    continue;
+                }
+
+                ol.a_.len = b->core.l_qseq;
+                ol.a_.strand = bam_is_rev(b) ? 1 : 0;
+
+                ol.b_.len = header->target_len[tgtid];
+                ol.b_.strand = 0;
+                ol.b_.start = b->core.pos;
+
+                uint32_t *cigar = bam_get_cigar(b);
+                int rpos = 0;
+                int qpos = 0;
+                int match = 0;
+                int clip = 0;
+                for(int i=0; i < b->core.n_cigar;++i){
+                    int icigar = cigar[i];
+                    int n = bam_cigar_oplen(icigar);
+                    char t = bam_cigar_opchr(icigar);
+                    ol.detail_.push_back({n, t});
+                    switch (t) {
+                        
+                    case '=':
+                    case 'M':
+                        match += n;
+                        rpos += n;
+                        qpos += n;
+                        break;
+                    case 'X':
+                        rpos += n;
+                        qpos += n;
+                        break;
+                    case 'I':
+                        qpos += n;
+                        break;
+                    case 'D':
+                        rpos += n;
+                        break;
+                    case 'S':
+                    case 'H':
+                        clip += n;
+                        break;
+                    default:
+                        //LOG(ERROR)("Not support %c", t);
+                        break;
+                    }
+                }
+                ol.b_.end = ol.b_.start + rpos;
+                ol.identity_ = match * 2.0 / (qpos + rpos);
+
+                ol.a_.len = clip+qpos;
+
+                assert (b->core.n_cigar >= 1);
+                char cigar0 = bam_cigar_opchr(cigar[0]);
+                char cigar1 = bam_cigar_opchr(cigar[b->core.n_cigar-1]);
+    
+                if ((cigar0 == 'S' || cigar0 == 'H') && ol.a_.strand == 0) {
+                    ol.a_.start = bam_cigar_oplen(cigar[0]);
+                    ol.a_.end = ol.a_.start + qpos;
+                } else if ((cigar1 == 'S' || cigar1 == 'H')  && ol.a_.strand == 1) {
+                    ol.a_.start = bam_cigar_oplen(cigar[b->core.n_cigar-1]);
+                    ol.a_.end = ol.a_.start + qpos;
+                } else {
+                    ol.a_.start = 0;
+                    ol.a_.end = ol.a_.start + qpos;
+                }
+                assert(0 <= ol.a_.start && ol.a_.start < ol.a_.end && ol.a_.end <= ol.a_.len);
+                assert(0 <= ol.b_.start && ol.b_.start < ol.b_.end && ol.a_.end <= ol.b_.len);
+
+                if (check(ol)) {
+                    ols.push_back(ol);
+                    if (ols.size() >= max_overlap_size) {
+                        combine_func(ols, ols.size(), ni);
+                        ols.clear();
+                    }
+                }
+
+            }
+            bam_destroy1(b);
+
+
+        }
+        if (ols.size() > 0) {
+            combine_func(ols, ols.size(), ni);
+            ols.clear();
+        }
+
+        bam_hdr_destroy(header);
+        hts_close(in);
+    };
+
+        
+    MultiThreadRun(thread_size, work_func);
+}
+
+
+template<typename C>
+void OverlapStore::LoadFileBamFast(const std::string &fname, C check, size_t thread_size) {
+
+    samFile *in = hts_open(fname.c_str(), "r");
     if (in != nullptr) {
     
         std::unordered_map<Seq::Id, size_t> reflen;
@@ -475,85 +765,137 @@ void OverlapStore::LoadFileBam(const std::string &fname, C check, size_t thread_
             LOG(ERROR)("Error reading BAM header: %s", fname.c_str());
         }
 
-        bam1_t *b = bam_init1();  // 初始化 BAM 记录
-        while (sam_read1(in, header, b) >= 0) {
-            Overlap ol;
+        auto idx = sam_index_load2(in, fname.c_str(), (fname+".bai").c_str());
 
-            if ((b->core.flag & BAM_FSECONDARY) || (b->core.flag & BAM_FSUPPLEMENTARY)) continue; 
-            ol.a_.id = string_pool_.GetIdByString(bam_get_qname(b));
-            int tid = b->core.tid;
-            if (tid >= 0 && tid < header->n_targets) {
-                ol.b_.id = string_pool_.GetIdByString(header->target_name[tid]);
-            } else {
-                continue;
-            }
 
-            ol.a_.len = b->core.l_qseq;
-            ol.a_.strand = bam_is_rev(b) ? 1 : 0;
+        std::mutex mutex;
+        std::mutex mutex_gen;
+        std::atomic<size_t> index { 0 };
+        auto gen_func = [&mutex_gen,&idx, &header](size_t tgtid) {
+            std::lock_guard<std::mutex> lock(mutex_gen);
+            hts_itr_t* itr = sam_itr_queryi(idx, tgtid, 0, header->target_len[tgtid]);
+            return itr;
 
-            ol.b_.len = reflen[ol.b_.id];
-            ol.b_.strand = 0;
-            ol.b_.start = b->core.pos;
-
-            uint32_t *cigar = bam_get_cigar(b);
-            int rpos = 0;
-            int qpos = 0;
-            int match = 0;
-            for(int i=0; i < b->core.n_cigar;++i){
-                int icigar = cigar[i];
-                int n = bam_cigar_oplen(icigar);
-                char t = bam_cigar_opchr(icigar);
-                ol.detail_.push_back({n, t});
-                switch (t) {
-                    
-                case '=':
-                case 'M':
-                    match += n;
-                    rpos += n;
-                    qpos += n;
-                    break;
-                case 'X':
-                    rpos += n;
-                    qpos += n;
-                    break;
-                case 'I':
-                    qpos += n;
-                    break;
-                case 'D':
-                    rpos += n;
-                    break;
-                default:
-                    //LOG(ERROR)("Not support %c", t);
-                    break;
-                }
-            }
-            ol.b_.end = ol.b_.start + rpos;
-            ol.identity_ = match * 2.0 / (qpos + rpos);
-
-            assert (b->core.n_cigar >= 1);
-            if (bam_cigar_opchr(cigar[0]) == 'S' && ol.a_.strand == 0) {
-                ol.a_.start = bam_cigar_oplen(cigar[0]);
-                ol.a_.end = ol.a_.start + qpos;
-            } else if (bam_cigar_opchr(cigar[b->core.n_cigar-1]) == 'S'  && ol.a_.strand == 1) {
-                ol.a_.start = bam_cigar_oplen(cigar[b->core.n_cigar-1]);
-                ol.a_.end = ol.a_.start + qpos;
-            } else {
-                ol.a_.start = 0;
-                ol.a_.end = ol.a_.start + qpos;
-            }
-            assert(0 <= ol.a_.start && ol.a_.start < ol.a_.end && ol.a_.end <= ol.a_.len);
-            assert(0 <= ol.b_.start && ol.b_.start < ol.b_.end && ol.a_.end <= ol.b_.len);
-
-            if (check(ol)) {
-                overlaps_.Add(ol);
-            }
-
-        }
+        };
+        auto combine_func = [&mutex, this](std::vector<Overlap> &ols, size_t sz) {
+            std::lock_guard<std::mutex> lock(mutex);
+            overlaps_.Insert(ols, sz);
+        };
         
+        auto work_func = [gen_func, combine_func, &idx, &header, &in, &index, check, this](int tid) {
+            
+            const size_t max_overlap_size = 100000;
+            std::vector<Overlap> ols;
+            ols.reserve(max_overlap_size);
 
-        bam_destroy1(b);
+            for (size_t tgtid = index.fetch_add(1); tgtid < header->n_targets; tgtid = index.fetch_add(1)) {
+                
+
+                //hts_itr_t* itr = sam_itr_queryi(idx, tgtid, 0, header->target_len[tgtid]);
+                hts_itr_t* itr = gen_func(tgtid);
+                bam1_t *b = bam_init1();
+                
+                while (sam_itr_next(in, itr, b) >= 0) {
+                    Overlap ol;
+
+                    //if ((b->core.flag & BAM_FSECONDARY) || (b->core.flag & BAM_FSUPPLEMENTARY)) continue; 
+                    ol.a_.id = string_pool_.GetIdByString(bam_get_qname(b));
+                    int tid = b->core.tid;
+                    if (tid >= 0 && tid < header->n_targets) {
+                        ol.b_.id = string_pool_.GetIdByString(header->target_name[tid]);
+                    } else {
+                        continue;
+                    }
+
+                    ol.a_.len = b->core.l_qseq;
+                    ol.a_.strand = bam_is_rev(b) ? 1 : 0;
+
+                    ol.b_.len = header->target_len[tgtid];
+                    ol.b_.strand = 0;
+                    ol.b_.start = b->core.pos;
+
+                    uint32_t *cigar = bam_get_cigar(b);
+                    int rpos = 0;
+                    int qpos = 0;
+                    int match = 0;
+                    int clip = 0;
+                    for(int i=0; i < b->core.n_cigar;++i){
+                        int icigar = cigar[i];
+                        int n = bam_cigar_oplen(icigar);
+                        char t = bam_cigar_opchr(icigar);
+                        ol.detail_.push_back({n, t});
+                        switch (t) {
+                            
+                        case '=':
+                        case 'M':
+                            match += n;
+                            rpos += n;
+                            qpos += n;
+                            break;
+                        case 'X':
+                            rpos += n;
+                            qpos += n;
+                            break;
+                        case 'I':
+                            qpos += n;
+                            break;
+                        case 'D':
+                            rpos += n;
+                            break;
+                        case 'S':
+                        case 'H':
+                            clip += n;
+                            break;
+                        default:
+                            //LOG(ERROR)("Not support %c", t);
+                            break;
+                        }
+                    }
+                    ol.b_.end = ol.b_.start + rpos;
+                    ol.identity_ = match * 2.0 / (qpos + rpos);
+
+                    ol.a_.len = clip+qpos;
+
+                    assert (b->core.n_cigar >= 1);
+                    char cigar0 = bam_cigar_opchr(cigar[0]);
+                    char cigar1 = bam_cigar_opchr(cigar[b->core.n_cigar-1]);
+        
+                    if ((cigar0 == 'S' || cigar0 == 'H') && ol.a_.strand == 0) {
+                        ol.a_.start = bam_cigar_oplen(cigar[0]);
+                        ol.a_.end = ol.a_.start + qpos;
+                    } else if ((cigar1 == 'S' || cigar1 == 'H')  && ol.a_.strand == 1) {
+                        ol.a_.start = bam_cigar_oplen(cigar[b->core.n_cigar-1]);
+                        ol.a_.end = ol.a_.start + qpos;
+                    } else {
+                        ol.a_.start = 0;
+                        ol.a_.end = ol.a_.start + qpos;
+                    }
+                    assert(0 <= ol.a_.start && ol.a_.start < ol.a_.end && ol.a_.end <= ol.a_.len);
+                    assert(0 <= ol.b_.start && ol.b_.start < ol.b_.end && ol.a_.end <= ol.b_.len);
+
+                    if (check(ol)) {
+                        ols.push_back(ol);
+                        if (ols.size() >= max_overlap_size) {
+                            combine_func(ols, ols.size());
+                            ols.clear();
+                        }
+                    }
+
+                }
+                bam_destroy1(b);
+
+
+            }
+            if (ols.size() > 0) {
+                combine_func(ols, ols.size());
+                ols.clear();
+            }
+
+        };
+
+            
+            MultiThreadRun(thread_size, work_func);
         bam_hdr_destroy(header);
-
         hts_close(in);
     }
 

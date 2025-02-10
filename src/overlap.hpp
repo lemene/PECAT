@@ -175,6 +175,12 @@ std::array<int, N> Overlap::Mapping(const Read& a, const Read& b, const std::arr
     return apos;
 }
 
+struct Bed {
+    std::string target;
+    size_t start;
+    size_t end;
+};
+
 } // namespace fsa {
 
 #endif  // FSA_OVERLAP_HPP

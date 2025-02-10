@@ -530,7 +530,6 @@ void ContigPhaser::ClassifyReads(std::unordered_map<ReadOffset, ReadInfo>& read_
             std::lock_guard<std::mutex> lock(mutex);
             add_map_items(inconsistent_, inconsistent);
             add_map_items(consistent_, consistent);
- 
         };
 
         auto work_func = [this, &index, &groups, &read_list, &read_infos, combine_func, add_map_items, it](size_t thread_id) {
@@ -540,13 +539,12 @@ void ContigPhaser::ClassifyReads(std::unordered_map<ReadOffset, ReadInfo>& read_
             if (thread_id > 0) opts_.curr_thread_size.fetch_add(1);
 
             for (size_t i = index.fetch_add(1); i < read_list.size(); i = index.fetch_add(1)) {
-                //if (dataset_.QueryNameById(read_list[i].first.id) != "978867" ) continue;
                 auto ig = groups.find(read_list[i].first);
            
                 if (ig == groups.end() || ig->second.size() == 0) continue;
 
-                LocalPhaser phaser(opts_.phase_opts_, ig->first, ig->second, read_infos, rd_store_, it+1 != opts_.phase_opts_.number_of_iteration);
-                phaser.Run();
+                LocalPhaser phaser(opts_.phase_opts_, ig->first, ig->second, read_infos, rd_store_);
+                phaser.Run(it+1 != opts_.phase_opts_.number_of_iteration);
                 add_map_items(consistent, phaser.GetConsistent());
                 add_map_items(inconsistent, phaser.GetInconsistent());
                 

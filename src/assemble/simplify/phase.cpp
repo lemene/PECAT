@@ -72,16 +72,17 @@ std::vector<std::vector<BaseNode*>> PhaseCrossSimplifier::CollectCross() {
 
 
         if (curr->OutDegree() == 2) {
-            auto rn = graph_.ReverseNode(n);
-            if (check_extend(curr, length*2, cand.size()*2) && check_extend(rn, length*2, cand.size()*2) &&
-                IsOutEdgeInconsistent(curr->OutEdge<BaseEdge>(0), curr->OutEdge<BaseEdge>(1), 3, graph_.GetAsmData().GetInconsistentOverlaps()) &&
-                IsOutEdgeInconsistent(rn->OutEdge<BaseEdge>(0), rn->OutEdge<BaseEdge>(1), 3, graph_.GetAsmData().GetInconsistentOverlaps()))
-
-            cands.push_back(cand);
-            done.insert(cand.front()->Id());
-            done.insert(BaseNode::ReverseId(cand.front()->Id()));
-            done.insert(cand.back()->Id());
-            done.insert(BaseNode::ReverseId(cand.back()->Id()));
+            //auto rn = graph_.ReverseNode(n);
+            // if (check_extend(curr, length*2, cand.size()*2) && check_extend(rn, length*2, cand.size()*2) &&
+            //     IsOutEdgeInconsistent(curr->OutEdge<BaseEdge>(0), curr->OutEdge<BaseEdge>(1), 3, graph_.GetAsmData().GetInconsistentOverlaps()) &&
+            //     IsOutEdgeInconsistent(rn->OutEdge<BaseEdge>(0), rn->OutEdge<BaseEdge>(1), 3, graph_.GetAsmData().GetInconsistentOverlaps()))
+            if (check_extend(curr, 0, 1)) {
+                cands.push_back(cand);
+                done.insert(cand.front()->Id());
+                done.insert(BaseNode::ReverseId(cand.front()->Id()));
+                done.insert(cand.back()->Id());
+                done.insert(BaseNode::ReverseId(cand.back()->Id()));
+            }
         }
     }
 
@@ -92,16 +93,16 @@ std::vector<std::vector<BaseNode*>> PhaseCrossSimplifier::CollectCross() {
 void PhaseCrossSimplifier::Running() {
     assert(rvs_ != nullptr);
 
-    for (size_t _ = 0; _ < 3; _++) {
+    for (size_t _ = 0; _ < 1; _++) {
 
-    std::vector<std::vector<BaseNode*>> cands = CollectCross();
+        std::vector<std::vector<BaseNode*>> cands = CollectCross();
 
-    for (auto &cand : cands) {
-        CrossPhaser phaser(*this, cand);
-        if (phaser.Phase()) {
-            ReplaceCross(cand, phaser.paths);
+        for (auto &cand : cands) {
+            CrossPhaser phaser(*this, cand);
+            if (phaser.Phase()) {
+                ReplaceCross(cand, phaser.paths);
+            }
         }
-    }
     } // for (size_t _ = 0; _ < 3; _++) {
 }
 
@@ -469,18 +470,24 @@ void PhasePath::Debug(const char* const format, ...) const {
 
 CrossPhaser::CrossPhaser(PhaseCrossSimplifier& owner, const std::vector<BaseNode*> cand)
  : owner_(owner), cand_(cand) {
+    
 }
 
 bool CrossPhaser::Phase() {
-
     auto& cand = cand_;
 
     if ((int)cand.size() > owner_.max_cand_size) return false;
     Debug("cand(%zd): %s->%s\n", cand.size(), owner_.graph_.GetAsmData().QueryNameById(cand.front()->ReadId()).c_str(),
         owner_.graph_.GetAsmData().QueryNameById(cand.back()->ReadId()).c_str());
 
+    // collect start points
     for (auto e : cand.back()->GetOutEdges()) {
         ends.push_back(e->OutNode());
+    }
+
+    // collect end points
+    for (auto e : cand.front()->GetInEdges()) {
+        starts.push_back(e->InNode());
     }
 
     Debug("start dophase\n");

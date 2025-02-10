@@ -28,6 +28,10 @@ public:
                                           const DnaSeq &tseq, const std::vector<int> &al_t_2_ref);
 protected:
         void ToOverlap();
+        std::vector<std::array<int,2>> CollectAnchors(const std::vector<int>& aligned_query, const std::vector<int>& aligned_target);
+        std::vector<std::array<int,2>> CollectCandidateAnchors(int N, const std::vector<int>& aligned_query, const std::vector<int>& aligned_target);
+        std::vector<double> CalculateAnchorDistance(const std::vector<std::array<int,2>>& anchors);
+        void PrintAnchorDistance(const std::vector<std::array<int,2>>& anchors);
 
         std::vector<uint8_t> RealignBlock(
             const DnaSeq &qseq, const std::vector<int> &al_q_2_ref, 
@@ -40,6 +44,7 @@ public:
         std::vector<int> aligned_query; 
         size_t start {0};
         size_t end {0};
+        std::vector<std::array<int,2>> anchors;
     };
 
     std::vector<Pair> QueryOverlaps(const std::string &name) const;

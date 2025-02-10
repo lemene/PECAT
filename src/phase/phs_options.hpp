@@ -32,7 +32,7 @@ public:
 
         // kmean sse
 
-        int     number_of_iteration { 2 };
+        int     number_of_iteration { 1 };
         int     min_support_count { 6 };
         double  min_support_rate { 0.66 };
 

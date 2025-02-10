@@ -20,6 +20,7 @@ void CoverageOptions::From(const std::string& str) {
         } else if (kv[0] == "hvc") {
             valid_range[1] = std::stoi(kv[1]);
         } else if (kv[0] == "lr") {
+            rate[0] = std::stod(kv[1]);
         } else if (kv[0] == "hr") {
             rate[1] = std::stod(kv[1]);
         } else {
@@ -48,6 +49,7 @@ void Variant::Comfirm(const CoverageOptions& covopts) {
 
     if (covopts.Effective(cov)) {
         int threshold = covopts.Threshold(cov);
+        threshold = 6;
         std::vector<int> ok;
         for (size_t j=0; j<9; ++j) {
             if (counts[j] >= threshold) {

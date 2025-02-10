@@ -25,7 +25,7 @@ void AsmDataset::Purge() {
     
     //FilterOverhang();
 
-    //if (is_ol_accurate) FilterLowQuality();
+    if (is_ol_accurate) FilterLowQuality();
 
     EstimateCoverage();
 
@@ -125,7 +125,6 @@ void AsmDataset::FilterLowQuality() {
     };
 
     MultiThreadRun(opts_.thread_size, work_func);
-    //MultiThreadRun(1, work_func);
 }
 
 void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, std::vector<const Overlap*>& ignored) {
@@ -462,42 +461,42 @@ void AsmDataset::FilterCoverage() {
     auto avg_cov = EstimateCoverage(read_infos_);
     LOG(INFO)("The avarage coverage is %.02f", avg_cov);
     
-    std::unordered_set<Seq::Id> done;
-    for (const auto &i : read_infos_) {
-        if (done.find(i.first) != done.end()) continue;
-        if (i.second.minmax_coverage[1] >= avg_cov * 4 ) {
-            std::unordered_set<Seq::Id> group {i.first};
+    // std::unordered_set<Seq::Id> done;
+    // for (const auto &i : read_infos_) {
+    //     if (done.find(i.first) != done.end()) continue;
+    //     if (i.second.minmax_coverage[1] >= avg_cov * 4 ) {
+    //         std::unordered_set<Seq::Id> group {i.first};
             
-            std::vector<Seq::Id> check_list { i.first };
-            size_t index = 0;
-            while (index < check_list.size()) {
-                auto id = check_list[index];
-                index++;
-                auto ols = grouper_.Get(id);
-                if (!ols.Empty()) {
-                    for (size_t i = 0; i < ols.Size(); ++i) {
-                        auto ol = ols.Get(i, 0);
-                        auto oid = ol->GetOtherRead(id).id;
-                        if (group.find(oid) == group.end()) {
-                            if (read_infos_[oid].minmax_coverage[1] >= 90) {
-                                check_list.push_back(oid);
-                                group.insert(oid);
-                            }
-                        }
-                    }
-                }
-            }
+    //         std::vector<Seq::Id> check_list { i.first };
+    //         size_t index = 0;
+    //         while (index < check_list.size()) {
+    //             auto id = check_list[index];
+    //             index++;
+    //             auto ols = grouper_.Get(id);
+    //             if (!ols.Empty()) {
+    //                 for (size_t i = 0; i < ols.Size(); ++i) {
+    //                     auto ol = ols.Get(i, 0);
+    //                     auto oid = ol->GetOtherRead(id).id;
+    //                     if (group.find(oid) == group.end()) {
+    //                         if (read_infos_[oid].minmax_coverage[1] >= 90) {
+    //                             check_list.push_back(oid);
+    //                             group.insert(oid);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
 
-            LOG(INFO)("Group: %zd", group.size());
-            for (auto i : group) {
-                DUMPER["data"]("g %zd %s %d\n", group.size(), rd_store_.QueryNameById(i).c_str(), read_infos_[i].minmax_coverage[1]);
-            }
-            ClusterBundle(group);
+    //         //LOG(INFO)("Group: %zd", group.size());
+    //         for (auto i : group) {
+    //             DUMPER["data"]("g %zd %s %d\n", group.size(), rd_store_.QueryNameById(i).c_str(), read_infos_[i].minmax_coverage[1]);
+    //         }
+    //         //ClusterBundle(group);
             
-            done.insert(group.begin(), group.end());
+    //         done.insert(group.begin(), group.end());
 
-        }
-    }
+    //     }
+    //}
 
     auto threshold = CalcCoverageThreshold();
     int mincov = opts_.min_coverage < 0 ? threshold[0] : opts_.min_coverage;
@@ -550,17 +549,29 @@ void AsmDataset::GroupOverlaps() {
 void AsmDataset::FilterDuplicate() {
     LOG(INFO)("Group overlaps and remove duplicated");
 
+    auto better = [](const Overlap* a, const Overlap *b) {
+        assert(a != nullptr && b != nullptr);
+        return a->Identity() > b->Identity() || 
+               a->Identity() ==  b->Identity() && a->AlignedSize() > b->AlignedSize();
+    };
+
     for (size_t rid = 0; rid < rd_store_.Size(); ++rid) {
         auto group = grouper_.Get(rid);
         for (size_t i = 0; i < group.Size(); ++i) {
-            bool found = false;
+            const Overlap* best = nullptr;
             for (size_t j = 0; j < group.Size(i); ++j) {
                 const Overlap &ol = *group.Get(i,j);
                 if (IsReserved(ol)) {
-                    if (!found) {
-                        found = true;
+                    if (best != nullptr) {
+                        if (better(&ol, best)) {
+                            SetOlReason(*best, OlReason::Duplicate());
+                            best = &ol;
+                        } else {
+                            SetOlReason(ol, OlReason::Duplicate());
+                        }
+
                     } else {
-                        SetOlReason(ol, OlReason::Duplicate());
+                        best = &ol;
                     }
                 }
             }
@@ -1482,10 +1493,10 @@ double AsmDataset::EstimateCoverage(const std::unordered_map<Seq::Id, ReadStatIn
 
 void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
     // 统计所有kmer
-    
+    const int klen = 15;
     LOG(INFO)("Start counting kmer count");
     std::unordered_map<KmerId, size_t> kmer_counts;
-    KmerCount kc(19);
+    KmerCount kc(klen);
     for (auto rid : bundle) {
         auto rseq = rd_store_.GetSeq(rid);
         auto kmers = kc.CountAll(rseq);
@@ -1519,7 +1530,7 @@ void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
             }
         }
     }
-    LOG(INFO)("End count read kmer");
+    LOG(INFO)("End count read kmer, %d", klen);
 
     auto jaccard = [](const std::unordered_set<KmerId>& a, const std::unordered_set<KmerId>& b) {
         size_t comm = 0;
@@ -1531,12 +1542,12 @@ void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
         return comm * 1.0 / (a.size() + b.size() - comm);
     };
 
-    auto get_kmers = [](const std::vector<std::tuple<size_t, KmerId>>& kmers, int start, int end) {
+    auto get_kmers = [klen](const std::vector<std::tuple<size_t, KmerId>>& kmers, int start, int end) {
         std::unordered_set<KmerId> kset;
 
         for (auto& i : kmers) {
-            if (std::get<0>(i) > start + 19) {
-                if (std::get<0>(i) < end - 19) {
+            if (std::get<0>(i) > start + klen) {
+                if (std::get<0>(i) < end - klen) {
                     kset.insert(std::get<1>(i));
                 } else {
                     break;

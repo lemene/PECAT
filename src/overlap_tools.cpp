@@ -907,7 +907,6 @@ void Program_Location::Running() {
         for (size_t i = index.fetch_add(1); i < grouper.QuerySize(); i = index.fetch_add(1)) {
             auto rs = grouper.GetQuery(i);
             auto ol = grouper.GetOverlap(rs[0]);
-            //LOG(INFO)("%s %zd %zd", ol_store.QueryNameById(ol->a_.id).c_str(), rs[0], rs[1]);
             std::vector<uint16_t> cov(ol->a_.len+1, 0);
             for (size_t irs = rs[0]; irs < rs[1]; ++irs) {
                 auto ol = grouper.GetOverlap(irs);
@@ -920,8 +919,8 @@ void Program_Location::Running() {
                 cov[icov] += cov[icov-1];
             }
             auto csize = std::count_if(cov.begin(), cov.end(), [](uint16_t c) { return c > 0; });
-            //LOG(INFO)("csize=%zd qlen=%zd", csize, ol->QueryLength());
-            if (csize >= 0.85 * ol->QueryLength()) {
+
+            if (csize >= 0.90 * ol->QueryLength()) {
                 mapped.insert(ol->a_.id);
             } else {
                 //printf("%s\n", ol_store.ToPafLine1(ol).c_str());

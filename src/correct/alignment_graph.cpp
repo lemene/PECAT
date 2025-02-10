@@ -472,7 +472,7 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
         DEBUG_printf("vvv %zd %d %d %d %d\n", range.size(), (*mx)[0].col, (*mx)[1].col, seg.begin.col, seg.end.col);
         cns = ReconstructPath(GetBestPath((*mx)[1], (*mx)[0]));
         true_range_[1] = (*mx)[0].col;
-        true_range_[0] = (*mx)[1].col;
+        true_range_[0] = (*mx)[1].col < 0 ? 0 : (*mx)[1].col;
         DEBUG_printf("true_range: %zd %zd\n", true_range_[0], true_range_[1]);
     }
     return cns;
@@ -1348,7 +1348,7 @@ void AlignmentGraph::QueryInfos::SelectReads3(size_t min_sel, const std::array<s
                     if (s.block_scores[j].Weight() > segths[j]) {
                         selected_.insert(i);
                         DEBUG_printf("sel(%zd): %zd %f\n", j, i, s.block_scores[j].Weight());
-                    } else if (s.block_scores[j].Weight() < 0 && s.all_cross >= 4) {
+                    } else if (s.block_scores[j].Weight() < segths[j] && s.all_cross >= 4) {
                         excluded.insert(i);
                     }
                 }

@@ -24,7 +24,7 @@ public:
         double percent { 0.95 };             // p Percentage of filled matrix
         double overhang_weight   { 0.0 };                // w overhang的比重
         int max_number { 200 };             // 
-        int coverage { 80 };                    // 需要多少层数据
+        int coverage { 40 };                    // 需要多少层数据
     };
     
     void SetArguments(ArgumentParser &ap);

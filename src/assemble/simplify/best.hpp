@@ -91,21 +91,39 @@ public:
         auto ascore = a[1] * snp_weight_ - a[2];
         auto bscore = b[1] * snp_weight_ - b[2];
 
+        int cmp_snp = 0;
         if (bscore >= 0) {
-            return ascore - bscore >= std::max<double>(th_count, std::abs(bscore)*th_rate[0]);
+            if (ascore - bscore >= std::max<double>(th_count, std::abs(bscore)*th_rate[0])) {
+                cmp_snp = 1;
+            } else if (bscore - ascore>= std::max<double>(th_count, std::abs(ascore)*th_rate[0])) {
+                cmp_snp = -1;
+            } else {
+                cmp_snp = 0;
+            }
         } else {
-            return ascore - bscore >= std::max<double>(th_count, std::abs(bscore)*th_rate[1]);
+            if (ascore - bscore >= std::max<double>(th_count, std::abs(bscore)*th_rate[1])) {
+                cmp_snp = 1;
+            } else if (bscore - ascore >= std::max<double>(th_count, std::abs(ascore)*th_rate[1])) {
+                cmp_snp = -1;
+            } else {
+                cmp_snp = 0;
+            }
         }
 
-        // auto rate_score = [](const EdgeScore &a) {
-        //     auto s = a[1] + a[2];
-        //     return s > 0 ? 1.0*a[2] / s : 0.0;
-        // };
-        // size_t count = th_count;
-        // double rate = th_rate[0];
-        // auto arscore = rate_score(a);
-        // auto brscore = rate_score(b);
-        // return a[2] + count < b[2] && arscore * rate < brscore;
+        int cmp_err = 0;
+        double err_a = 100 - a[3]*1.0 / 1000000;
+        double err_b = 100 - b[3]*1.0 / 1000000;
+        if (err_a * 5 < err_b) {
+            cmp_err = 1;
+        } else if (err_a > err_b*5) {
+            cmp_err = -1;
+        } else {
+            cmp_err = 0;
+        }
+  
+
+        return cmp_snp > 0 || (cmp_snp == 0 && cmp_err > 0);
+
     }
     
     auto FindBestOutEdge(BaseNode* n) -> std::vector<BestItem>;

@@ -97,7 +97,7 @@ else
 	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 endif
 
-LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt ../thirdparty/htslib/libhts.a -lcurl -lssl   -lcrypto
+LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt ../thirdparty/htslib/libhts.a  
 
 
 obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \

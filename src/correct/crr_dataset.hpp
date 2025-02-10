@@ -68,7 +68,10 @@ public:
     OlGroup GetOverlaps(int id) const;
 protected:
     void LoadReadIds();
+    /** reads in  */
+    std::vector<Bed> CollectBedFromBam(const std::vector<Seq::Id>& read_ids);
     void LoadOverlaps();
+    void LoadMappings();
     void LoadReads();
     void EstimateParameters();
     

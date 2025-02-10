@@ -67,6 +67,8 @@ void ReadCorrect::Correct() {
         for (auto ids = dispatcher->Get(); ids.size() > 0; ids = dispatcher->Get()){
             worker.ResetCache(ids, ids.size());
             for (auto tid : ids) {
+                
+                //LOG(INFO)("START: %s", dataset_.QueryStringById(tid).c_str());
                 if (Correct(tid, worker)) {
                     if ( worker.GetCorrected().size() > 0) {
                         SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
@@ -76,6 +78,7 @@ void ReadCorrect::Correct() {
                     }
                 }
                 worker.Clear();
+                //LOG(INFO)("End: %s", dataset_.QueryStringById(tid).c_str());
             }
             
             if (oss_cread.tellp() > (int)flush_block) {
@@ -165,8 +168,10 @@ std::array<size_t,2> MostEffectiveCoverage(size_t tsize, const std::vector<Align
         }
      }
 
+    DEBUG_printf("cov(0): %d\n", coverage[0]);
     for (size_t i=1; i< coverage.size(); ++i) {
         coverage[i] += coverage[i-1];
+        DEBUG_printf("cov(%zd): %d\n", i, coverage[i]);
     }
 
 
@@ -267,7 +272,6 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
     auto group = dataset_.GetOverlaps(id);
     if (group.Empty()) return false;
     
-
     const DnaSeq& target = dataset_.read_store_.GetSeq(id);
     assert(target.Size() >= (size_t)opts_.filter0_.min_length); 
     group.Sort(opts_.cands_opts_.overhang_weight);
@@ -278,7 +282,8 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
     std::vector<Alignment> first_als;
     
     DEBUG_printf("start_correcting tid = %s(%d), groupsize = %zd\n", dataset_.QueryStringById(id).c_str(), id, group.Size());
-    for (size_t i = 0; i < std::min<size_t>(1000, group.Size()); ++i) {
+    //for (size_t i = 0; i < std::min<size_t>(1000, group.Size()); ++i) {
+    for (size_t i = 0; i < group.Size(); ++i) {
         
         auto al = GetAlignmentWithCache(id, group, i, wrk);
 
@@ -291,7 +296,6 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
     }
     
     DEBUG_printf("alignsize = %zd, %zd\n", first_als.size(), wrk.aligned_.size());
-
 
     if (first_als.size() > 0) {
     ////////
@@ -321,6 +325,7 @@ bool ReadCorrect::Correct(Seq::Id id, Worker& wrk) {
         DEBUG_printf("aligned_.size: %zd\n", wrk.aligned_.size());
         for (auto &al : wrk.aligned_) { al.Rearrange(); }
         {
+            
             TimeCounter::Mark m(tc_graph);
         wrk.graph_.Build(target, range, wrk.aligned_);
         wrk.graph_.Consensus();
@@ -373,18 +378,25 @@ Alignment ReadCorrect::GetAlignmentOnes(Seq::Id tid, const CrrDataset::OlGroup& 
         DEBUG_printf("subgroup(%zd) = %zd: %s <-> %s: %lld, %s\n", j, group.Size(ig), dataset_.QueryStringById(ol.a_.id).c_str(),
              dataset_.QueryStringById(ol.b_.id).c_str(), ol, ol.ToM4Line().c_str());
         Alignment al = GetAlignmentOne(tid, ol, wrk);
-        DEBUG_printf("check_global: %f > %f\n", al.Identity(), opts_.min_identity_);
+        DEBUG_printf("alignment(%s<->%s): (%d, %d, %d) - (%d, %d, %d) %f\n", dataset_.QueryStringById(ol.a_.id).c_str(), dataset_.QueryStringById(ol.b_.id).c_str(),
+            al.query_start, al.query_end, al.QuerySize(), al.target_start, al.target_end, al.TargetSize(), al.Identity());
+        
+        DEBUG_printf("q:%s\nt:%s\n", al.aligned_query.c_str(), al.aligned_target.c_str());
+        DEBUG_printf("check_global: %d, %f > %f\n", ExactFilter(al), al.Identity(), opts_.min_identity_);
         if (!ExactFilter(al) && al.Identity() >= opts_.min_identity_) {     
             al.ComputeDistance(opts_.local_window_size_);
             DEBUG_printf("check_local: %f > %f\n", al.MaxLocalIdentity_100(opts_.local_window_size_), opts_.min_local_identity_);
             if (al.MaxLocalIdentity_100(opts_.local_window_size_) >= opts_.min_local_identity_) {
                 // pass check
                 if (al_best.Identity() < al.Identity()) {
+                DEBUG_printf("exchange(%zd) = %zd: %s <-> %s\n", j, group.Size(ig), dataset_.QueryStringById(ol.a_.id).c_str(),
+                    dataset_.QueryStringById(ol.b_.id).c_str());
+                //if (al_best.AlignSize() < al.AlignSize()) {
                     al_best = al;
                 }
             }
         }
-        if (j >= 5) {
+        if (j >= 15) {
             break;
         }
     }
@@ -402,17 +414,15 @@ Alignment ReadCorrect::GetAlignmentOne(Seq::Id tid, const Overlap &ol, Worker& w
     if (ol.detail_.size() != 0) {
         TimeCounter::Mark m(tc_al_cigar);
         GetAlignmentFromCigar(tid, ol, al);
-    } else if (CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP) {
+    } else if (false && CrrDataset::OlGroup::GetType(ol) == CrrDataset::OlGroup::MAP) {
         TimeCounter::Mark m(tc_al_map);
         GetAlignmentFromMapping1(tid, ol, wrk, al);
-        al.CheckAlignment();
     } else {
         TimeCounter::Mark m(tc_al_ava);
         std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
         // TODO target 由调用者设置，可能存在不一致，需要优化。
         wrk.aligner_.Align(dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  
-        
-    } 
+    }
     return al;
 }
 
@@ -435,6 +445,7 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
         std::vector<std::pair<bool, uint16_t>> distances;
         std::vector<uint16_t> vdist;
         for (auto &al : als) {
+
             auto r = al.MaxLocalDistance(gp[0], gp[1]);
             distances.push_back(r);
             if (r.first) {
@@ -444,7 +455,7 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
         }
         
         size_t threshold = 1000;
-        size_t cov = 40;
+        size_t cov = 20;
         if (vdist.size() == 0) continue;
         if (vdist.size() <= 10) {
             auto m = ComputeMeanAbsoluteDeviation(vdist);
@@ -455,7 +466,17 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
             std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
             auto m = ComputeMedianAbsoluteDeviation(oks);
             threshold = m[0] + 3*1.4826*m[1];
-            DEBUG_printf("al_local_th median = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+            DEBUG_printf("al_local_th median1 = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
+            for (auto t : vdist) {
+                if (t > threshold) {
+                    if (t <= threshold + m[1]) {
+                        threshold = t;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            DEBUG_printf("al_local_th median2 = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
         }
 
         for (size_t i = 0; i < distances.size(); ++i) {
@@ -478,26 +499,24 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
 }
 
 std::vector<std::array<size_t, 2>> ReadCorrect::Worker::GroupPositions(const std::vector<size_t> &sorted_positions) {
+    const int half_win = owner_.opts_.local_window_size_ / 2;
     std::vector<std::array<size_t, 2>> groups;
+
+    if (sorted_positions.size() > 0) {
     //assert(sorted_positions.size() >= 1);
 
-    std::array<int, 2> curr = {-1, -1 };
-    for (auto p : sorted_positions) {
-        if (curr[0] == -1) {
-            curr = {p, p};
-        } else {
-            if (p - curr[1] < owner_.opts_.local_window_size_/2 && p - curr[0] <= owner_.opts_.local_window_size_) {
+        std::array<int, 2> curr = {sorted_positions[0], sorted_positions[0] };
+        for (auto p : sorted_positions) {
+
+            //if (p - curr[1] < half_win && p - curr[0] <= half_win*2) {
+            if (p - curr[1] < half_win) {
                 curr[1] = p;
             } else {
                 groups.push_back({curr[0], curr[1]});
                 curr = {p , p};
             }
-
         }
-    }
-    if (curr[0] != -1) {
-        groups.push_back({curr[0], curr[1]});
-        curr = {-1, -1};
+        groups.push_back({curr[0] - half_win, curr[1] + half_win});
     }
     return groups;
 }

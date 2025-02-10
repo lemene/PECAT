@@ -6,13 +6,14 @@
 
 namespace fsa {
 
+#define LOCAL_DEBUG(s) if (local_print_rubbish) s
 static thread_local bool local_print_rubbish = false;
 static thread_local const ReadStore* local_read_store = nullptr;
 
 LocalPhaser::LocalPhaser(const PhsOptions::PhaserOptions& opts, ReadOffset tid, const std::unordered_set<ReadOffset> &qids, 
     const std::unordered_map<ReadOffset, ReadInfo>& rdinfos,
-    const ReadStore &read_store, bool correct) 
- :  opts_(opts), rd_store_(read_store), correct_(correct) {
+    const ReadStore &read_store) 
+ :  opts_(opts), rd_store_(read_store) {
 
     local_print_rubbish = read_store.QueryNameById(tid.id) == opts_.debug;
     local_read_store = &read_store;
@@ -23,9 +24,7 @@ LocalPhaser::LocalPhaser(const PhsOptions::PhaserOptions& opts, ReadOffset tid, 
         mapper[target_->vars[i][0]] = i;
     }
 
-    for (const auto &m : mapper) {
-        DEBUG_local_printf("mapper: %d %d\n", m.first, m.second);
-    }
+    LOCAL_DEBUG(PrintInternalID(mapper));
 
     coverages_.assign(target_->vars.size(), 0);
     for (auto i : qids) {
@@ -536,11 +535,10 @@ std::vector<std::array<int,2>> LocalPhaser::Group::StatVars(const std::unordered
     return accu_vars;
 }
 
-void LocalPhaser::Run() {
+void LocalPhaser::Run2(bool correct) {
     
-    for (auto &q : queries_) {
-        PrintGroups("init", {Group(&q)});
-    }
+    LOCAL_DEBUG(PrintQuery(queries_));
+
     auto groups = Combine3(Divide(Group(queries_)));
 
     std::vector<size_t> inconsist;
@@ -554,7 +552,7 @@ void LocalPhaser::Run() {
         FindConsistent(groups[0]);
     }
 
-    if (correct_) {
+    if (correct) {
         if (inconsist.size() > 0) {
             CorrectTarget(groups, inconsist);
         } else {
@@ -563,23 +561,11 @@ void LocalPhaser::Run() {
     }
 }
 
+void LocalPhaser::Run(bool correct) {
+    LOCAL_DEBUG(PrintQuery(queries_));
 
-void LocalPhaser::Run2() {
-    
-    std::vector<Group> groups0;
-    for (const auto &q : queries_) {
-        groups0.push_back(Group(&q));
-    }
-        PrintGroups("groups0", groups0);
-    auto groups1 = MergeGroups(groups0, 0.8, 0.7, 1);
-        PrintGroups("groups1", groups1);
-    auto groups2 = MergeGroups(groups1, 0.7, 0.6, 2);
-    
-        PrintGroups("groups2", groups2);
-    auto groups3 = MergeGroups(groups2, 0.6, 0.5, 4);
-        PrintGroups("groups3", groups3);
+    auto groups = IdentifyConsistent();
 
-    auto groups = Combine(groups3);
     std::vector<size_t> inconsist;
     for (size_t i = 1; i < groups.size(); ++i) {
         if (groups[0].IsInconsistentWithGroup0(groups[i], opts_, coverages_)) {
@@ -587,9 +573,11 @@ void LocalPhaser::Run2() {
             inconsist.push_back(i);
         }
     }
-    FindConsistent(groups[0]);
+    if (inconsist.size() > 0) {
+        FindConsistent(groups[0]);
+    }
 
-    if (correct_) {
+    if (correct) {
         if (inconsist.size() > 0) {
             CorrectTarget(groups, inconsist);
         } else {
@@ -598,11 +586,95 @@ void LocalPhaser::Run2() {
     }
 }
 
+auto LocalPhaser::IdentifyConsistent() -> std::vector<Group> {
+    std::vector<Group> groups(1); 
+
+    std::unordered_set<const Query*> nogroups;
+    for (auto& q : queries_) {
+        nogroups.insert(&q);
+    } 
+
+    while (true) {
+            
+        // find 差异最大的reads
+        size_t maxdiff = 0;
+        const Query* max_query = nullptr;
+        for (auto q : nogroups) {
+            auto diff = q->Distance(target_in_queires_);
+            if (diff > maxdiff) {
+                max_query = q;
+            }
+        }
+
+        
+        if (max_query != nullptr /* && maxdiff > xxx */) {
+            LOCAL_DEBUG(PrintGroups("max_diff", {Group(max_query)}));
+
+            Group2 gp(max_query);
+            size_t osize = gp.Size();
+            // 计算中心点，计算差异位置
+            do {
+                osize = gp.Size();
+
+                struct Item {
+                    const Query* q;
+                    std::array<size_t,3> cmp;
+                };
+                std::vector<Item> items(nogroups.size());
+                std::transform(nogroups.begin(), nogroups.end(), items.begin(), [&gp, this](const Query* q) -> Item {
+                    return {q, gp.CompareInTarget(q, -1, opts_.min_support_rate) };
+                });
+
+                std::sort(items.begin(), items.end(), [](const Item& a, const Item &b) {
+                    return a.cmp[2] > b.cmp[2] || (a.cmp[2] == b.cmp[2] && a.cmp[0] < b.cmp[0] );
+                });
+                for (const auto &i : items) {
+                    const Query* q = i.q;
+
+                    if (!gp.Contain(q)) {
+                        // 1. 与分组相似度 大于 target 的相似度
+                        // 2. 与分组相似度需要大于 指定参数
+                        // 2. 与target的不一致点需要大于指定数目，并且大于指定比例
+                        //auto s = q->Stat(target_in_queires_);
+                        std::array<size_t,3> diff = gp.Compare(q, opts_.min_support_rate);
+                        std::array<size_t,3> diff_tgt = gp.CompareInTarget(q, -1, opts_.min_support_rate);
+
+                        double s_gp = Query::Similary(diff);
+                        double s_gp_tgt = Query::Similary(diff_tgt);
+                        double s_tgt = q->Similary(target_in_queires_);
+                        DEBUG_local_printf("sima; %.02f, %.02f, %.02f %zd\n", s_gp, s_gp_tgt, s_tgt, diff_tgt[2]);
+                        if (s_gp > 0.9 && s_gp_tgt > 0.9 && s_gp > s_tgt) {
+                            gp.Merge(q);
+                        }
+                    }
+                    
+                }
+
+            } while (osize != gp.Size());
+
+            for (auto q : gp.queries) {
+                nogroups.erase(q);
+            }
+            groups.push_back(Group(gp.queries));
+
+            DEBUG_local_printf("%zd\n", gp.Size());
+        } else {
+            break;
+        }
+    }
+    assert(nogroups.size() > 0);
+    
+    groups[0]= Group(nogroups);
+    
+
+    return groups;
+}
+
 auto LocalPhaser::Divide(const Group& g) -> std::vector<Group> {
     std::vector<Group> groups;
     std::list<Group> work({g});
     while (work.size() > 0) {
-        DEBUG_local_printf("working %zd %zd\n", work.size(), groups.size());
+        DEBUG_local_printf("dividing %zd %zd\n", work.size(), groups.size());
 
         const auto& w = work.front();
         auto sse = w.CalcGroupSSE(opts_);
@@ -1374,25 +1446,6 @@ PhaseItem LocalPhaser::GetMapItem(const ReadInfo& target, const ReadInfo& query)
 
 }
 
-void LocalPhaser::PrintGroups(const std::string& msg, const std::vector<Group>& groups) const {
-    
-    DEBUG_local_printf("------- %s\n", msg.c_str());
-    for (size_t i = 0; i < groups.size(); ++i) {
-        DEBUG_local_printf("group %zd(%zd): ", i, groups[i].queries.size());
-        for (auto q : groups[i].queries) {
-            DEBUG_local_printf("%s, ", rd_store_.QueryNameById(q->query->id).c_str());
-        }
-        //auto diffs = groups[i].StatDiffs(opts_.min_support_rate, opts_.min_support_count);
-        auto diffs = groups[i].StatDiffs();
-        DEBUG_local_printf("\n    diffs  =(%d,%d,%d):", diffs[0], diffs[1], diffs[2]);
-        for (auto v : groups[i].vars) {
-            DEBUG_local_printf("(%d,%d),", v.accu, v.cov);
-        }
-        DEBUG_local_printf("\n");
-    }
-    fflush(stdout);
-}
-
 auto LocalPhaser::MergeGroups(std::vector<Group> &groups, double similary, double coverage, int diff) -> std::vector<Group> {
     std::sort(groups.begin(), groups.end(), [](const Group &a, const Group &b) {
         auto sa = a.StatDiffs();
@@ -1460,6 +1513,50 @@ auto LocalPhaser::MergeGroups(std::vector<Group> &groups, double similary, doubl
     //printf("new %zd %zd\n", groups.size(), newgroups.size());
     DEBUG_local_printf("%zd %zd\n", groups.size(), newgroups.size());
     return newgroups;
+}
+
+
+LocalPhaser::Group2::Group2(const Query* q) : queries({q}), vars(q->vars.size()) {
+    for (size_t i = 0; i < q->vars.size(); ++i) {
+        auto v = q->vars[i];
+        if (v != 0) {
+            vars[i].accu = v;
+            vars[i].cov = 1;
+        }
+    }
+    assert(vars.size() > 0);
+}
+
+void LocalPhaser::PrintInternalID(const std::unordered_map<int, int>& mapper) {
+    for (const auto &m : mapper) {
+        DEBUG_local_printf("Internal ID: %d %d\n", m.first, m.second);
+    }
+}
+
+
+void LocalPhaser::PrintQuery(const std::vector<Query>& queries) {
+    for (auto &q : queries) {
+        PrintGroups("init", {Group(&q)});
+    }
+}
+
+
+void LocalPhaser::PrintGroups(const std::string& msg, const std::vector<Group>& groups) const {
+    
+    DEBUG_local_printf("------- %s\n", msg.c_str());
+    for (size_t i = 0; i < groups.size(); ++i) {
+        DEBUG_local_printf("group %zd(%zd): ", i, groups[i].queries.size());
+        for (auto q : groups[i].queries) {
+            DEBUG_local_printf("%s, ", rd_store_.QueryNameById(q->query->id).c_str());
+        }
+        auto diffs = groups[i].StatDiffs();
+        DEBUG_local_printf("\n    diffs  =(%d,%d,%d):", diffs[0], diffs[1], diffs[2]);
+        for (auto v : groups[i].vars) {
+            DEBUG_local_printf("(%d,%d),", v.accu, v.cov);
+        }
+        DEBUG_local_printf("\n");
+    }
+    fflush(stdout);
 }
 
 }   // namespace fsa {

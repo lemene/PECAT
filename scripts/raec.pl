@@ -77,22 +77,108 @@ sub getjob_align_unmapped_reads($$$$$$) {
     );
 }
 
+
 sub getjob_correct_all_reads() {
     my ($self, $name, $rreads, $rd_2_ref, $unmapped, $creads, $options, $wrkdir) = @_;
 
+    #my $isGz = ($corrected =~ /\.gz$/);
+    
+
+    my $readname = "$wrkdir/readname";
+
+    my $block_size = $self->get_config("corr_block_size");
     my $threads = $self->get_config("threads");
     my $bin_path = $self->get_env("BinPath");
+    my $block_info = "$wrkdir/block_info";
 
+    my $job_split = $self->newjob(
+        name => "${name}_split",
+        ifiles => [$rd_2_ref],
+        ofiles => [$block_info],
+        gfiles => [$block_info, "$readname.*"],
+        mfiles => [],
+        cmds => ["$bin_path/fsa_sam_tools group $rd_2_ref $readname.core.{}  --block_size $block_size  --thread_size $threads",
+                 "ls $readname.core.* > $block_info"],
+        msg => "spliting read names, $name",
+    );
+
+    
+    my $job_corr = $self->newjob(
+        prefunc => sub($) {
+            my ($job) = @_;
+            my $size = `wc -l $block_info`;
+            for (my $i=0; $i < $size; $i=$i+1) {
+
+                my $corr_sub = "$creads.$i";
+                
+                my $job_sub = $self->newjob(
+                    name => "${name}_correct_$i",
+                    ifiles => [$rreads, $block_info, $rd_2_ref, $unmapped],
+                    ofiles => [$corr_sub],
+                    gfiles => [$corr_sub],
+                    mfiles => ["$readname.core.$i"],
+                    cmds => ["$bin_path/fsa_rd_correct $unmapped $rreads $creads.$i --output_directory=$wrkdir --thread_size=$threads " . 
+                                " --read_name_fname=$readname.core.$i --infos_fname $creads.$i.infos $options --rd_2_ref $rd_2_ref"],
+                    msg => "correcting reads $i, $name"
+                );
+                push @{$job->{ofiles}}, $corr_sub;
+                push @{$job->{pjobs}}, $job_sub;
+            }
+
+        },
+        name => "${name}_correct_all",
+        ifiles => [$rreads, $block_info, $rd_2_ref, $unmapped],
+        ofiles => [],                   # prefunc
+        mfiles => [],
+        pjobs => [],                    # prefunc
+        msg => "correcting rawreads, $name",
+    );
+
+
+
+    my $job_cat = $self->newjob(
+        prefunc => sub($) {
+            my ($job) = @_;
+            my $size = `wc -l $block_info`;
+
+            my @curr_sub = ();
+            for (my $i=0; $i < $size; $i=$i+1) {
+                $curr_sub[$i] = "$creads.$i";
+            }
+
+            push @{$job->{ifiles}}, @curr_sub;
+            push @{$job->{cmds}}, "cat @curr_sub > $creads && rm @curr_sub";
+
+        },
+        name => "${name}_cat",
+        ifiles => [],      # prefunc
+        ofiles => [$creads], 
+        gfiles => [$creads], 
+        mfiles => [],
+        cmds => [],                     # prefunc
+        threads => 1,
+        msg => "cat corrected reads, $name",
+
+    );
+    
     return $self->newjob(
         name => "${name}_correct",
-        ifiles => [$rreads, $unmapped, $rd_2_ref],
-        ofiles => [$creads],
-        gfiles => [$creads],
-        mfiles => [],
-        cmds => ["$bin_path/fsa_rd_correct $unmapped $rreads $creads --output_directory=$wrkdir --thread_size=$threads " . 
-                    "--infos_fname $creads.infos $options --rd_2_ref $rd_2_ref"],
-        msg => "correcting reads0, $name"
-    );
+        ifiles => [$rreads],
+        ofiles => [$creads], # prefunc
+        mfiles => ["$readname.core.*"],
+        jobs => [$job_split, $job_corr, $job_cat],
+        msg => "correcting rawreads, $name");
+
+    # return $self->newjob(
+    #     name => "${name}_correct",
+    #     ifiles => [$rreads, $unmapped, $rd_2_ref],
+    #     ofiles => [$creads],
+    #     gfiles => [$creads],
+    #     mfiles => [],
+    #     cmds => ["$bin_path/fsa_rd_correct $unmapped $rreads $creads --output_directory=$wrkdir --thread_size=$threads " . 
+    #                 "--infos_fname $creads.infos $options --rd_2_ref $rd_2_ref"],
+    #     msg => "correcting reads0, $name"
+    # );
 }
 
 sub getjob_correct_with_reference($$$$$$) {
@@ -120,7 +206,7 @@ sub getjob_correct_with_reference($$$$$$) {
         [$opts_rd_2_rd, $opts_rd_2_rd_flt], $wrkdir);
 
     # correct
-    my $creads = "$wrkdir/corrected.fasta";
+    my $creads = "$wrkdir/corrected_reads.fasta";
     my $job_correct_reads = $self->getjob_correct_all_reads($name, $rreads, $rd_2_ref, $unmapped_overlaps, 
         $creads, $opts_correct, $wrkdir);
 
@@ -132,6 +218,42 @@ sub getjob_correct_with_reference($$$$$$) {
         jobs => [$job_rd_2_ref, $job_get_unmapped, $job_align_ummapped, $job_correct_reads],
         msg => "correcting reads assisting with reference, $name"
     );
+}
+
+
+sub run_align($) {
+    my ($self) = @_;
+ 
+    my $name = "al";
+    my $wrkdir = $self->get_work_folder("2-align");
+    
+    my $workdir_crr = $self->get_work_folder("1-correct");
+    my $isGz = $self->get_config("compress");
+
+    my $corrReads = $isGz ? "$workdir_crr/corrected_reads.fasta.gz" : "$workdir_crr/corrected_reads.fasta";
+    my $overlaps = "$wrkdir/overlaps.txt";
+
+    mkdir $wrkdir;
+
+    $self->run_jobs($self->jobRead2ReadParallelly($name, $wrkdir, $corrReads, $overlaps,
+                        [$self->get_config("ALIGN_RD2RD_OPTIONS"), $self->get_config("ALIGN_FILTER_OPTIONS")],  
+                        $self->get_config("ALIGN_BLOCK_SIZE")));
+}
+
+sub run_assemble1($) {
+    my ($self,) = @_;
+    
+    my $name = "asm1";
+    my $wrkdir = $self->get_work_folder("3-assemble");
+    
+    my $wrkdir_al = $self->get_work_folder("2-align");
+    my $workdir_crr = $self->get_work_folder("1-correct");
+    my $isGz = $self->get_config("compress");
+
+    my $reads = $isGz ? "$workdir_crr/corrected_reads.fasta.gz" : "$workdir_crr/corrected_reads.fasta";
+    my $overlaps = "$wrkdir_al/overlaps.txt";
+        
+    $self->runAssemble($name, $wrkdir, $reads, $overlaps, $self->get_config("ASM1_ASSEMBLE_OPTIONS"));
 }
 
 
@@ -204,6 +326,17 @@ sub cmd_correct($) {
 }
 
 
+sub cmd_assemble($) {
+    my ($fname) = @_;
+
+    cmd_correct($fname);
+
+    $pipeline->initialize($fname);
+    $pipeline->run_align();
+    $pipeline->run_assemble1();
+    
+}
+
 
 sub cmd_config($) {
     my ($fname) = @_;
@@ -230,6 +363,8 @@ sub main() {
 
         if ($cmd eq "correct") {
             cmd_correct($cfgfname);
+        } elsif ($cmd eq "assemble") {
+            cmd_assemble($cfgfname);
         } elsif ($cmd eq "test") {
             cmd_test($cfgfname);
         } elsif ($cmd eq "config") {

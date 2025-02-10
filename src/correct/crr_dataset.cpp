@@ -10,19 +10,24 @@ namespace fsa {
 void CrrDataset::Load() {
 
     LoadReadIds();
+
     LoadOverlaps();
-    LoadReads();
     
     // load mapping
     if (!opts_.rd_2_ref_fname_.empty()) {
-        rd_2_ref_.Load(opts_.rd_2_ref_fname_);
-        mapping_.BuildIndex();
-        LOG(INFO)("Load rd_2_ref size = %zd", rd_2_ref_.Size());
+        LoadMappings();
     }
 
-    std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
-        return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
-    });
+    LoadReads();
+
+    if (opts_.debug) {
+        read_store_.SaveIdToName("id_2_name");
+    }
+    
+    // 保持乱序，避免多线程同时纠错超长读数，使得内存报表
+    // std::sort(read_ids_.begin(), read_ids_.end(), [this](int a, int b) { 
+    //     return read_store_.GetSeqLength(a) > read_store_.GetSeqLength(b); 
+    // });
 
     grouper_.BuildIndex(opts_.thread_size, std::unordered_set<int>(read_ids_.begin(), read_ids_.end()));
     EstimateParameters();
@@ -51,6 +56,103 @@ void CrrDataset::LoadReadIds() {
     LOG(INFO)("read ids: %zd", read_ids_.size());
 }
 
+
+    
+
+
+std::vector<Bed> CrrDataset::CollectBedFromBam(const std::vector<Seq::Id>& read_ids) {
+    assert(!opts_.rd_2_ref_fname_.empty());
+
+    std::unordered_set<std::string> read_names;
+    for (auto i : read_ids) {
+        read_names.insert(string_pool_.QueryStringById(i));
+    }
+
+    std::vector<Bed> beds;
+
+    std::mutex mutex;
+    std::atomic<size_t> index { 0 };
+
+    auto combine_func = [&mutex, &beds](const std::string& target, const std::vector<std::array<size_t,2>>& ranges) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& r : ranges) {
+            beds.push_back({target, r[0], r[1]});
+        }
+    };
+
+    auto work_func = [&read_names, combine_func, &index, this](int tid) {
+
+        samFile *in = hts_open(opts_.rd_2_ref_fname_.c_str(), "r");
+        assert(in != nullptr);
+        
+        bam_hdr_t *header = sam_hdr_read(in);
+        assert(header != nullptr);
+        auto idx = sam_index_load2(in, opts_.rd_2_ref_fname_.c_str(), (opts_.rd_2_ref_fname_+".bai").c_str());
+        assert(idx != nullptr);
+
+        std::vector<std::array<size_t, 2>> ranges;
+        for (size_t tgtid = index.fetch_add(1); tgtid < header->n_targets; tgtid = index.fetch_add(1)) {
+
+            hts_itr_t* itr = sam_itr_queryi(idx, tgtid, 0, header->target_len[tgtid]);
+            bam1_t *b = bam_init1();
+            
+            while (sam_itr_next(in, itr, b) >= 0) {
+                if (read_names.find(bam_get_qname(b)) != read_names.end()) {                   
+                    size_t start = b->core.pos;
+                    size_t end = b->core.pos + bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
+                    
+                    bool done = false;
+                    for (auto &r : ranges) {
+                        if (end > r[0] && start < r[1]) {
+                            r[0] = std::min(start, r[0]);
+                            r[1] = std::max(end, r[1]);
+                            done = true;
+                            break;
+                        }
+                    }
+                    if (!done) {
+                        ranges.push_back({start, end});
+                    }
+                }
+
+            }
+            bam_destroy1(b);
+
+            std::sort(ranges.begin(), ranges.end(), [](const std::array<size_t, 2>& a, const std::array<size_t, 2> &b) {
+                return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]);
+            });
+
+            std::vector<std::array<size_t, 2>> new_ranges;
+            for (const auto& r0 : ranges) {
+                
+                bool done = false;
+                for (auto &r : new_ranges) {
+                    if (r0[1] > r[0] && r0[0] < r[1]) {
+                        r[0] = std::min(r0[0], r[0]);
+                        r[1] = std::max(r0[1], r[1]);
+                        done = true;
+                        break;
+                    }
+                }
+                if (!done) {
+                    new_ranges.push_back(r0);
+                }
+
+            }
+            
+            combine_func(header->target_name[tgtid], new_ranges);
+            
+        }
+        bam_hdr_destroy(header);
+        hts_close(in);
+        
+    };
+
+        
+    MultiThreadRun(opts_.thread_size, work_func);
+    return beds;
+}
+
 void CrrDataset::LoadOverlaps() {
     const std::string& fname = opts_.overlap_fname_;
     std::unordered_set<Seq::Id> ids(read_ids_.begin(), read_ids_.end());
@@ -64,6 +166,25 @@ void CrrDataset::LoadOverlaps() {
    
 }
 
+void CrrDataset::LoadMappings() {
+    assert(!opts_.rd_2_ref_fname_.empty());
+
+    if (!opts_.read_name_.empty() || !opts_.read_name_fname_.empty()) {
+        LOG(INFO)("Start collecting bed");
+        
+        auto beds = CollectBedFromBam(read_ids_);
+        LOG(INFO)("BED: %zd", beds.size());
+        rd_2_ref_.LoadFileBam(opts_.rd_2_ref_fname_, [](const Overlap &o){return true;}, opts_.thread_size, beds);
+    } else {
+        rd_2_ref_.LoadFileBam(opts_.rd_2_ref_fname_, [](const Overlap &o){return true;}, opts_.thread_size);
+    }
+
+    mapping_.BuildIndex();
+    LOG(INFO)("Load rd_2_ref size = %zd", rd_2_ref_.Size());
+    
+
+}
+
 void CrrDataset::LoadReads() {
 
     std::unordered_set<Seq::Id> ids;
@@ -72,12 +193,13 @@ void CrrDataset::LoadReads() {
         ids.insert(o.a_.id);
         ids.insert(o.b_.id);
     }
-    
-    if (opts_.rd_2_ref_fname_.empty()) {
-        read_store_.Load(opts_.rread_fname_, "", false, ids);
-    } else {
-        read_store_.Load(opts_.rread_fname_, "");
+
+    for (size_t i = 0; i < rd_2_ref_.Size(); ++i)  {
+        const Overlap& o = rd_2_ref_.Get(i);
+        ids.insert(o.a_.id);
     }
+    read_store_.Load(opts_.rread_fname_, "", false, ids);
+    LOG(INFO)("Load reads: %zd / %zd %zd", ids.size(), read_store_.Size(), rd_2_ref_.Size());
     
     if (read_ids_.empty()) {
         read_ids_.reserve(read_store_.Size());
@@ -102,7 +224,10 @@ std::vector<std::vector<Seq::Id>> CrrDataset::GroupReadIds() const {
     for (auto i : read_ids_) {
         if (done[i]) continue;
         
-        clu_ids_.push_back(std::vector<Seq::Id>());
+        if (clu_ids_.size() == 0 || clu_ids_.back().size() > 100) {
+            clu_ids_.push_back(std::vector<Seq::Id>());
+        }
+        
         auto& curr = clu_ids_.back();
         curr.push_back(i);
         done[i] = true;
@@ -188,15 +313,22 @@ void CrrDataset::EstimateParameters() {
 CrrDataset::OlGroup CrrDataset::GetOverlaps(Seq::Id id) const {
     OlGroup group(id); 
     group.map = mapping_.QueryOverlaps(id);
+    //LOG(INFO)("getols0: map %zd", group.map.size());
+    
     
     group.ava = grouper_.GetRelatedOverlaps(id);
     DEBUG_printf("get_ols: map=%zd, ava=%zd\n", group.map.size(), group.ava.size());
+    //LOG(INFO)("getols0: ava %zd", group.ava.size());
 
     group.ols.reserve(group.map.size() + group.ava.size());
     for (size_t i = 0; i < group.map.size(); ++i) {
         OlGroup::SetType(group.map[i], OlGroup::Type::MAP);
-        if (opts_.filter0_.Valid(group.map[i])) 
+        if (opts_.filter0_.Valid(group.map[i])) {
             group.ols.push_back({1, i});
+            //LOG(INFO)("ols(%s,%s): %s", read_store_.QueryNameById(group.map[i].a_.id).c_str(), 
+            //    read_store_.QueryNameById(group.map[i].b_.id).c_str(), group.map[i].ToM4Line().c_str());
+
+        }
     }
     for (size_t i = 0; i < group.ava.size(); ++i) {
         OlGroup::SetType(*group.ava[i], OlGroup::Type::AVA);

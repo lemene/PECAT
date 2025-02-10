@@ -45,9 +45,8 @@ mbio:
 
 htslib: ./htslib/libhts.a
     
-
 ./htslib/libhts.a:
-	cd htslib && autoreconf -i && ./configure && make
+	cd htslib && autoreconf -i && ./configure --disable-libcurl --disable-lzma --disable-bz2 -- && make
 	
 clean:
 	rm -rf ${TARGET_DIR}/Plgd 

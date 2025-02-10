@@ -116,9 +116,17 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     const size_t ACCEPT_ALIGNED_LEN = 10000;
     const size_t MAX_OVERHANG = 1000;
 
+    auto is_overlap_similar = [](const Overlap& a, const Overlap &b) {
+        if (a.SameDirect() != b.SameDirect()) return false;
+        if (std::abs(a.MappingToSource<1>({0})[0] - b.MappingToSource<1>({0})[0]) > 1000) return false;
+        return true;
+    };
+
     std::vector<Mapping::Pair> ols;
+    std::unordered_map<Seq::Id, std::vector<size_t>> qry_grp;
     auto tgt = queries_.find(id);
     if (tgt != queries_.end()) {
+        std::vector<std::array<const Overlap*, 2>> cands;   // 候选对
         
         for (size_t i = tgt->second[0]; i < tgt->second[1]; ++i) {
             auto range = query_ranges_[i];
@@ -128,9 +136,9 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                 if (ii == range[0]) continue;
 
                 auto qol = sorted_by_start_[ii];
-                const int offset = 3000;
                 if (qol->b_.end >= tol->b_.start && qol->b_.start <= tol->b_.end &&
                     std::min(qol->b_.end, tol->b_.end) >= std::max(qol->b_.start, tol->b_.start) + MIN_ALIGNED_LEN) {
+
 
                     auto expect_range = [](const Overlap* ol) -> std::array<int,2> {
                         auto exp_s = ol->b_.start - (ol->SameDirect() ?  ol->a_.start : (ol->a_.len - ol->a_.end) );
@@ -147,10 +155,13 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                     auto len_q_tr = std::min(qol->b_.end, exp_tr[1]) - std::max(qol->b_.start, exp_tr[0]);
                     auto len_qr_t = std::min(exp_qr[1], tol->b_.end) - std::max(exp_qr[0], tol->b_.start);
                     
+                    
+                    DEBUG_printf("Mapping id = %d <-> %d, %d %d %d\n\t%s\n\t%s\n", tol->a_.id, qol->a_.id, len_q_t, len_q_tr, len_qr_t,
+                        tol->ToM4Line().c_str(), qol->ToM4Line().c_str());
                     if (std::abs(len_q_tr - len_q_t) <= MAX_OVERHANG && std::abs(len_qr_t - len_q_t) <= MAX_OVERHANG) {
-
+                        bool valid = false;
                         if (len_q_t >= ACCEPT_ALIGNED_LEN) {
-                            ols.push_back({qol, tol});
+                            valid = true;
                         } else {
                             std::array<int,2> qoh = qol->SameDirect() ? std::array<int,2>({qol->a_.start, qol->a_.len - qol->a_.end})
                                                                     : std::array<int,2>({qol->a_.len - qol->a_.end, qol->a_.start});
@@ -158,10 +169,27 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                             std::array<int,2> toh = tol->SameDirect() ? std::array<int,2>({tol->a_.start, tol->a_.len - tol->a_.end})
                                                                     : std::array<int,2>({tol->a_.len - tol->a_.end, tol->a_.start});
 
+                            DEBUG_printf("Mapping id = %d <-> %d qoh=(%d,%d) toh=(%d,%d)\n", tol->a_.id, qol->a_.id, qoh[0], qoh[1], toh[0], toh[1]);
                             if (std::min(qoh[0], qoh[0]) <= MAX_OVERHANG && std::min(qoh[1], qoh[1]) < MAX_OVERHANG) {
-                                ols.push_back({qol, tol});
+                                valid = true;
                             }
                                                                     
+                        }
+                        if (valid) {
+                            ols.push_back({qol, tol});
+                            bool similar = false;
+                            for (auto iq : qry_grp[qol->a_.id]) {
+                                if (is_overlap_similar(ols.back(), ols[iq])) {
+                                    similar = true;
+                                    break;
+                                }
+                            }
+                            if (similar || qry_grp[qol->a_.id].size() > 30) {
+                                ols.pop_back();
+                            } else {
+                                qry_grp[qol->a_.id].push_back(ols.size()-1);
+                            }
+                            DEBUG_printf("Mapping id = %d <-> %d s=%d %d\n", tol->a_.id, qol->a_.id,similar, qry_grp[qol->a_.id].size() > 30);
                         }
                         
                     }
@@ -170,7 +198,9 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                 if (qol->b_.start > tol->b_.end) {
                     break;
                 }
+                if (ols.size() >= 30000) break;
             }
+            if (ols.size() >= 30000) break;
         }
 
     }
@@ -205,7 +235,6 @@ void Mapping::Pair::ToOverlap() {
                 
                 for (size_t i = 0; i < d.len; ++i) {
                     auto p = query->a_.strand == 0 ? (query->a_.start + qcurr + i) : (query->a_.end - qcurr - i-1);
-                    
                     aligned[query->b_.start + tcurr + i-als_start] = p;
                 }
                 qcurr += d.len;
@@ -223,6 +252,7 @@ void Mapping::Pair::ToOverlap() {
                 qcurr += d.len;
                 break;
             case 'S':
+            case 'H':
                 break;
             default:
                 LOG(ERROR)("Not support cigar type '%c'.", d.type);
@@ -233,26 +263,35 @@ void Mapping::Pair::ToOverlap() {
     align_cigar(query, aligned_query, als_start);
     align_cigar(target, aligned_target, als_start);
 
-    const size_t N = 4;
     start = std::max<size_t>(query->b_.start, target->b_.start) - als_start;
     end = std::min<size_t>(query->b_.end, target->b_.end) - als_start;
 
+    anchors = CollectAnchors(aligned_query, aligned_target);
 
-    for (; start + N < end; ++start) {
-        if (aligned_query[start] == -1 || aligned_target[start]== -1) continue;
-        if (std::abs(aligned_query[start] - aligned_query[start+N]) == N &&
-            std::abs(aligned_target[start] - aligned_target[start+N]) == N) {      
-            break;
-        }
+    if (anchors.size() > 0) {
+        start = anchors[0][0];
+        end = anchors.back()[1] + 1;
+    } else {
+        //assert(start == 0 && end == 0);
+        start = 0;
+        end = 0;
     }
 
-    for (; start + N < end; end--) {    
-        if (aligned_query[end-1] == -1 || aligned_target[end-1]== -1) continue;
-        if (std::abs(aligned_query[end-1] - aligned_query[end-1-N]) == N &&
-            std::abs(aligned_target[end-1] - aligned_target[end-1-N]) == N) {
-            break;
-        }
-    }
+    // for (; start + N < end; ++start) {
+    //     if (aligned_query[start] == -1 || aligned_target[start]== -1) continue;
+    //     if (std::abs(aligned_query[start] - aligned_query[start+N]) == N &&
+    //         std::abs(aligned_target[start] - aligned_target[start+N]) == N) {      
+    //         break;
+    //     }
+    // }
+
+    // for (; start + N < end; end--) {    
+    //     if (aligned_query[end-1] == -1 || aligned_target[end-1]== -1) continue;
+    //     if (std::abs(aligned_query[end-1] - aligned_query[end-1-N]) == N &&
+    //         std::abs(aligned_target[end-1] - aligned_target[end-1-N]) == N) {
+    //         break;
+    //     }
+    // }
     
     
     if (start < end && aligned_query[start] != -1 && aligned_target[start]!= -1 && 
@@ -292,6 +331,104 @@ void Mapping::Pair::ToOverlap() {
 
 }
 
+std::vector<std::array<int,2>> Mapping::Pair::CollectAnchors(const std::vector<int>& aligned_query, const std::vector<int>& aligned_target) {
+    
+    std::vector<std::array<int,2>> anchors;
+
+    const int N = 8;
+    std::vector<std::array<int,2>> cands = CollectCandidateAnchors(N, aligned_query, aligned_target);
+    DEBUG_printf("anchors: candidate %zd\n", cands.size());
+
+    if (cands.size() > 0) {
+        auto longest = std::max_element(cands.begin(), cands.end(), [](const std::array<int,2>& a, const std::array<int,2>& b) {
+            return a[1] - a[0] < b[1] - b[0];
+        });
+
+        assert(longest != cands.end());
+        DEBUG_printf("anchors: longest = %d - %d\n", (*longest)[0], (*longest)[1]);
+
+        auto diff_rate = [&aligned_query, &aligned_target](int s, int e) {
+            assert(aligned_query[s] != -1 && aligned_query[e] != -1 && aligned_target[s] != -1 && aligned_target[e] != -1);
+            
+            int szq = std::abs(aligned_query[e] - aligned_query[s]);
+            int szt = std::abs(aligned_target[e] - aligned_target[s]);
+            //DEBUG_printf("anchors: %d %d %.02f\n", szq, szt, std::abs(szq - szt)*1.0 / (e - s));
+            return std::abs(szq - szt)*1.0 / (e - s); 
+        };
+
+        for (const auto i : cands) {
+            if (diff_rate(i[0], (*longest)[0]) < 0.1) {
+                anchors.push_back(i);
+            }
+        }
+        DEBUG_printf("anchors: valid = %zd\n", anchors.size());
+    }
+    
+    return anchors;
+}
+
+std::vector<std::array<int,2>> Mapping::Pair::CollectCandidateAnchors(int N, const std::vector<int>& aligned_query, const std::vector<int>& aligned_target) {
+    
+    std::vector<std::array<int,2>> anchors;
+    for (int s = start; s + N + 1 < end; /* */) {
+        int e = s + N;
+        if (aligned_query[s] != -1 && aligned_target[s] != -1) {
+            if (aligned_query[e] != -1 && aligned_target[e] != -1) {
+                if (std::abs(aligned_query[e] - aligned_query[s]) == e - s && 
+                    std::abs(aligned_query[e] - aligned_query[s]) == e - s) {
+
+                    // push
+                    for (e; e < end; e++) {
+                        if (aligned_query[e] != -1 && aligned_target[e] != -1 && 
+                            std::abs(aligned_query[e] - aligned_query[s]) == e - s && 
+                            std::abs(aligned_query[e] - aligned_query[s]) == e - s) {
+                            
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                    anchors.push_back({s, e-1});
+                    s = e;
+
+                } else {
+                    s++;
+                }
+            } else {
+                s = e;
+            } 
+        } else {
+            s ++;
+        }
+    }
+    return anchors;
+}
+
+std::vector<double> Mapping::Pair::CalculateAnchorDistance(const std::vector<std::array<int,2>>& anchors) {
+    std::vector<double> disances(anchors.size() * anchors.size(), 0);
+    for (size_t i = 0; i < anchors.size(); ++i) {
+        for (size_t j = i+1; j < anchors.size(); ++j) {
+            auto s = anchors[i][0];
+            auto e = anchors[j][0];
+            auto d0 = std::abs(aligned_query[s] - aligned_query[e]);
+            auto d1 = std::abs(aligned_target[s] - aligned_target[e]);
+
+            disances[i+j*anchors.size()] = std::abs(d0 - d1) * 1.0 / std::max(d0, d1);
+            disances[j+i*anchors.size()] = std::abs(d0 - d1) * 1.0 / std::max(d0, d1);
+        }
+    }
+    return disances;
+}
+
+void Mapping::Pair::PrintAnchorDistance(const std::vector<std::array<int,2>>& anchors) {
+    auto disances = CalculateAnchorDistance(anchors);
+    for (size_t i = 0; i < anchors.size(); ++i) {
+        for (size_t j = 0; j < anchors.size(); ++j) {
+            DEBUG_printf("%0.2f, ", disances[i*anchors.size() + j]);
+        }
+        DEBUG_printf("\n");
+    }
+}
 
 TimeCounter tc_al_map_bases("al_map_bases"); 
 TimeCounter tc_al_map_seg("al_map_seg");
@@ -389,12 +526,16 @@ std::vector<uint8_t> Mapping::Pair::AlignBases00(
     } else {
         alignment.push_back(EDLIB_EDOP_MISMATCH);
     }
-
+    auto diff_rate = [](int a, int b) {
+        //LOG(INFO)("DIFF_REFF,%d, %d, %.02f", a, b,std::abs(a-b) * 1.0 / (std::max(a,b)));
+        return std::abs(a-b) * 1.0 / (std::max(a,b));
+    };
     int status = 0; // 0 MATCH, 1 MISMATCH
     size_t status_start = al_ref_start;
     for (size_t i = al_ref_start+1; i < al_ref_end; ++i) {
-        // printf("running: %zd in (%zd %zd) %d %d %zd\n", i, al_ref_start, al_ref_end, al_q_2_ref[i], al_t_2_ref[i], alignment.size());
-        if (al_q_2_ref[i] != -1 && al_t_2_ref[i] != -1) { // MATCH
+
+        if (al_q_2_ref[i] != -1 && al_t_2_ref[i] != -1 && 
+            diff_rate(al_q_2_ref[i] - al_q_2_ref[status_start], al_t_2_ref[i] - al_t_2_ref[status_start]) < 0.1) { // MATCH
             if (status == 1) {
                 // mismatch block: (status_start, i)
                 // realign the block
@@ -435,6 +576,18 @@ std::vector<uint8_t> Mapping::Pair::AlignBases00(
                 status = 1;
                 status_start = i - 1; // 开区间
             }
+        }
+    }
+    //LOG(INFO)("status: %d, %d %d", status, status_start, al_ref_end);
+    if (status == 1) {
+        // LOG(INFO)("AL: %zd %zd", status_start, al_ref_end);
+        auto ss = RealignBlock(qseq, al_q_2_ref, tseq, al_t_2_ref, status_start, al_ref_end-1);
+        alignment.insert(alignment.end(), ss.begin(), ss.end());
+            
+        if (tseq[al_t_2_ref[al_ref_end-1]] == qseq[al_q_2_ref[al_ref_end-1]]) {
+            alignment.push_back(EDLIB_EDOP_MATCH);
+        } else {
+            alignment.push_back(EDLIB_EDOP_MISMATCH);
         }
     }
     return alignment;

@@ -300,6 +300,7 @@ std::pair<bool, uint16_t> Alignment::MaxLocalDistance(size_t s, size_t e) const 
         assert(si >= 0);
         assert(ei >= si);
         assert(ei <= local_distances.size());
+        DEBUG_printf("EX si ei : %zd %zd\n", si, ei);
 
         r.second = *std::max_element(local_distances.begin()+si, local_distances.begin()+ei);
     }

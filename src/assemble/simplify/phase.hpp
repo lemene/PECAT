@@ -87,11 +87,11 @@ public:
     CrossPhaser(PhaseCrossSimplifier& owner, const std::vector<BaseNode*> cand);
     bool Phase();
 
-    void GetSnps(const BaseNode* node, const BaseNode* altnode);
-
+protected:
 
     void Debug(const char* const format, ...) const ;
     std::vector<PhasePath> paths;
+    std::vector<BaseNode*> starts;   // 
     std::vector<BaseNode*> ends;
 protected:
     PhaseCrossSimplifier& owner_;

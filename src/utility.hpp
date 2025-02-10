@@ -496,7 +496,7 @@ size_t GetMemoryUsage();
 
 class BitSet {
 public:
-    static const size_t block_size = 256;
+    static const size_t block_size = 32;
 
     void reset() { 
         for (auto &b : bits) b.reset();
