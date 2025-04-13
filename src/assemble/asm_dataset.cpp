@@ -129,8 +129,8 @@ void AsmDataset::FilterLowQuality() {
 
 void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, std::vector<const Overlap*>& ignored) {
 
-    const int WIN_SIZE = 4000;      // param: 
-    const int MIN_COV = 30;         // param;
+    const int WIN_SIZE = 4000;      // TODO param: 
+    const int MIN_COV = 20;         // TODO param;
 
     auto& rinfo = read_infos_[id];
     assert(rinfo.len > 0);
@@ -194,6 +194,10 @@ void AsmDataset::FilterLowQuality(int id, const OverlapGrouper::Group &group, st
             return ident.size() > 0 ? std::max(opts_.filter0.min_identity /100, ident.back()[0]) : opts_.filter0.min_identity /100;
         }
     });
+
+    for (auto& th : identity_threshold) {
+        th = std::floor(th * 100) / 100;
+    }
 
     rinfo.identity_threshold = identity_threshold;
 
@@ -1496,7 +1500,7 @@ void AsmDataset::ClusterBundle(const std::unordered_set<Seq::Id> &bundle) {
     const int klen = 15;
     LOG(INFO)("Start counting kmer count");
     std::unordered_map<KmerId, size_t> kmer_counts;
-    KmerCount kc(klen);
+    KmerCounter kc(klen);
     for (auto rid : bundle) {
         auto rseq = rd_store_.GetSeq(rid);
         auto kmers = kc.CountAll(rseq);

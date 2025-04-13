@@ -117,14 +117,7 @@ std::array<int, 2> ReadVariants::GetClosestSnps(const Overlap& ol) const  {
 
                 auto atob = irb.d == 0 ? (ira.offset - irb.offset) : -(ira.offset - irb.offset) ;
                 int new_distance = std::abs(atob - offset);
-                if (std::abs(new_distance - distance) < 500) {
-                    auto new_result = GetSnps(ira, irb);
-                    if (result[0] + result[1] < new_result[0] + new_result[1]) {
-                        result = new_result;
-                        distance = new_distance;
-                    }
-
-                } else if (new_distance < distance) {
+                if (new_distance < 500 && new_distance < distance) { // TODO PARAMETER
                     result = GetSnps(ira, irb);
                     distance = new_distance;
                 }

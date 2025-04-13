@@ -114,7 +114,7 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     assert (id != StringPool::NID) ;
     const size_t MIN_ALIGNED_LEN = 3000;
     const size_t ACCEPT_ALIGNED_LEN = 10000;
-    const size_t MAX_OVERHANG = 1000;
+    const size_t MAX_OVERHANG = 5000;
 
     auto is_overlap_similar = [](const Overlap& a, const Overlap &b) {
         if (a.SameDirect() != b.SameDirect()) return false;
@@ -126,7 +126,12 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
     std::unordered_map<Seq::Id, std::vector<size_t>> qry_grp;
     auto tgt = queries_.find(id);
     if (tgt != queries_.end()) {
-        std::vector<std::array<const Overlap*, 2>> cands;   // 候选对
+        struct PairItem {
+            const Overlap* tol;
+            const Overlap* qol;
+            double score;
+        };
+        std::vector<PairItem> cands;   
         
         for (size_t i = tgt->second[0]; i < tgt->second[1]; ++i) {
             auto range = query_ranges_[i];
@@ -138,7 +143,6 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                 auto qol = sorted_by_start_[ii];
                 if (qol->b_.end >= tol->b_.start && qol->b_.start <= tol->b_.end &&
                     std::min(qol->b_.end, tol->b_.end) >= std::max(qol->b_.start, tol->b_.start) + MIN_ALIGNED_LEN) {
-
 
                     auto expect_range = [](const Overlap* ol) -> std::array<int,2> {
                         auto exp_s = ol->b_.start - (ol->SameDirect() ?  ol->a_.start : (ol->a_.len - ol->a_.end) );
@@ -158,51 +162,46 @@ std::vector<Mapping::Pair> Mapping::QueryOverlaps(Seq::Id id) const {
                     
                     DEBUG_printf("Mapping id = %d <-> %d, %d %d %d\n\t%s\n\t%s\n", tol->a_.id, qol->a_.id, len_q_t, len_q_tr, len_qr_t,
                         tol->ToM4Line().c_str(), qol->ToM4Line().c_str());
-                    if (std::abs(len_q_tr - len_q_t) <= MAX_OVERHANG && std::abs(len_qr_t - len_q_t) <= MAX_OVERHANG) {
-                        bool valid = false;
-                        if (len_q_t >= ACCEPT_ALIGNED_LEN) {
-                            valid = true;
-                        } else {
-                            std::array<int,2> qoh = qol->SameDirect() ? std::array<int,2>({qol->a_.start, qol->a_.len - qol->a_.end})
-                                                                    : std::array<int,2>({qol->a_.len - qol->a_.end, qol->a_.start});
-                
-                            std::array<int,2> toh = tol->SameDirect() ? std::array<int,2>({tol->a_.start, tol->a_.len - tol->a_.end})
-                                                                    : std::array<int,2>({tol->a_.len - tol->a_.end, tol->a_.start});
-
-                            DEBUG_printf("Mapping id = %d <-> %d qoh=(%d,%d) toh=(%d,%d)\n", tol->a_.id, qol->a_.id, qoh[0], qoh[1], toh[0], toh[1]);
-                            if (std::min(qoh[0], qoh[0]) <= MAX_OVERHANG && std::min(qoh[1], qoh[1]) < MAX_OVERHANG) {
-                                valid = true;
-                            }
-                                                                    
-                        }
-                        if (valid) {
-                            ols.push_back({qol, tol});
-                            bool similar = false;
-                            for (auto iq : qry_grp[qol->a_.id]) {
-                                if (is_overlap_similar(ols.back(), ols[iq])) {
-                                    similar = true;
-                                    break;
-                                }
-                            }
-                            if (similar || qry_grp[qol->a_.id].size() > 30) {
-                                ols.pop_back();
-                            } else {
-                                qry_grp[qol->a_.id].push_back(ols.size()-1);
-                            }
-                            DEBUG_printf("Mapping id = %d <-> %d s=%d %d\n", tol->a_.id, qol->a_.id,similar, qry_grp[qol->a_.id].size() > 30);
-                        }
-                        
+                    if (len_q_t >= ACCEPT_ALIGNED_LEN || len_q_t >= MIN_ALIGNED_LEN &&  std::abs(len_q_tr - len_q_t) <= MAX_OVERHANG*2 && std::abs(len_qr_t - len_q_t) <= MAX_OVERHANG*2) {
+        
+                        DEBUG_printf("Mapping id(added) = %d <-> %d \n", tol->a_.id, qol->a_.id);
+        
+                        size_t alsize = std::min(qol->b_.end, tol->b_.end) - std::max(qol->b_.start, tol->b_.start);
+                        cands.push_back({tol, qol, alsize*qol->Identity()*tol->Identity()});
+                    
                     }
-                }
 
+                }
                 if (qol->b_.start > tol->b_.end) {
                     break;
                 }
-                if (ols.size() >= 30000) break;
             }
-            if (ols.size() >= 30000) break;
         }
 
+        // 对候选节点排序
+        std::sort(cands.begin(), cands.end(), [](const PairItem& a, const PairItem&b) { return a.score > b.score;} );
+                    
+        for (const auto& cand : cands) {
+            auto tol = cand.tol;
+            auto qol = cand.qol;
+
+            ols.push_back({qol, tol});
+            bool similar = false;
+            for (auto iq : qry_grp[qol->a_.id]) {
+                if (is_overlap_similar(ols.back(), ols[iq])) {
+                    similar = true;
+                    break;
+                }
+            }
+            if (similar || qry_grp[qol->a_.id].size() > 10) {
+                ols.pop_back();
+            } else {
+                qry_grp[qol->a_.id].push_back(ols.size()-1);
+            }
+            DEBUG_printf("Mapping id = %d <-> %d s=%d %d\n", tol->a_.id, qol->a_.id,similar, qry_grp[qol->a_.id].size() > 10);
+
+            if (ols.size() >= 10000) break;
+        }
     }
 
     return ols;
@@ -276,6 +275,8 @@ void Mapping::Pair::ToOverlap() {
         start = 0;
         end = 0;
     }
+    DEBUG_printf("pair range(%d,%d): %d-%d, q: %d-%d, t: %d-%d\n", a_.id, b_.id, 
+            start, end, aligned_query[start], aligned_query[end], aligned_target[start], aligned_target[end]);
 
     // for (; start + N < end; ++start) {
     //     if (aligned_query[start] == -1 || aligned_target[start]== -1) continue;

@@ -38,6 +38,63 @@ protected:
 
 };
 
+class Program_N50 : public Program {
+
+    public:
+    Program_N50() {
+        name_ = "n50";
+        desc_ = "for testing";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "ifname", "paf file");
+        ap.AddNamedOption(genome_size_, "genome_size", "genome size");
+        ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string ifname_;
+    std::string rname_;
+    long long genome_size_ { 0 };
+    int thread_size_ { 4 };
+};
+
+
+class Program_Stat : public Program {
+    struct Position {
+        uint16_t match {0};
+        uint16_t mismatch[4] = {0,0,0,0};
+        uint16_t deletion {0};
+        uint16_t insertion {0};
+        uint32_t inssize {0};
+    };
+public:
+    Program_Stat() {
+        name_ = "stat";
+        desc_ = "for testing";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "ifname", "paf file");
+        ap.AddPositionOption(ref_fname_, "reference", "paf file");
+        ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+
+        return ap;
+    }
+    virtual void Running();
+protected:
+    void InitializeTables();
+    void PrintAccuracy();
+protected:
+    std::string ifname_;
+    std::string ref_fname_;
+    long long genome_size_ { 0 };
+    int thread_size_ { 4 };
+    std::unordered_map<std::string, std::vector<Position>> tables_;
+};
+
 class Program_Test : public Program {
 public:
     Program_Test() {
@@ -59,10 +116,13 @@ protected:
     int thread_size_ { 4 };
 };
 
+
 class SamTools : public MultiProgram {
 public:
     SamTools() {
         Add(new Program_GroupRead());
+        Add(new Program_N50());
+        Add(new Program_Stat());
         Add(new Program_Test());
     }
 };

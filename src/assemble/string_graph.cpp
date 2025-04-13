@@ -1220,7 +1220,7 @@ void PathGraph::IdentifyPaths(const std::string &method) {
 
     SortPaths();
     tcode_AnalysePath();
-    MakeLinkMatrix();
+    //MakeLinkMatrix();
 }
 
 template<typename TI, typename TO>

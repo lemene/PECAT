@@ -9,6 +9,8 @@
 #include "utils/project_file.hpp"
 
 #include "phase/hic_read_infos.hpp"
+#include "assemble/read_variants.hpp"
+#include "kmer/kmer.hpp"
 
 namespace fsa {
 
@@ -621,6 +623,80 @@ size_t CountIntersect(const std::unordered_set<Seq::Id>& s0, const std::unordere
         }
     }
     return count;
+}
+
+void Program_SnpDiff::Running() {
+    StringPool sp;
+    ReadVariants  rv(sp);
+    rv.Load(ifname_);
+    auto vr0 = rv.GetVariants(sp.QueryIdByString(read0_));
+    auto vr1 = rv.GetVariants(sp.QueryIdByString(read1_));
+
+    if (vr0 != nullptr && vr1 != nullptr) {
+        for (const auto& i0 : *vr0) {
+            for (const auto& i1 : *vr1) {
+                if (i0.contig != i1.contig) continue;
+                
+                std::array<size_t, 3> count = {0, 0, 0};
+                printf("\n");
+                for (auto &v0 : i0.vars) {
+                    auto v1 = i1.vars.find(v0.first);
+                    if (v1 != i1.vars.end()) {
+                        count[0] ++;
+                        if (v0.second == v1->second) {
+                            count[1] ++;
+                        }
+                    }
+                }
+                printf("count = %zd / %zd", count[1], count[0]);
+            }
+        }
+    } else {
+        LOG(INFO)("Not found: %d, %d", vr0 != nullptr, vr1 != nullptr);
+    }
+}
+
+
+void Program_CountKmer::Running() {
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
+    KmerCounter kc(klen_);
+    std::atomic<size_t> index {0};
+    std::mutex comb_mutex;
+    std::unordered_map<KmerId, size_t> all_kmers;
+
+    auto combine_func = [&all_kmers, &comb_mutex](const std::unordered_map<KmerId, size_t> &mkmer) {
+        std::lock_guard<std::mutex> lock(comb_mutex);
+        for (auto k : mkmer) {
+            all_kmers[k.first] += k.second;
+        }
+
+    };
+    auto work_func = [&rd_store, &kc, &index, combine_func](size_t _) {
+        size_t N = 100000;
+        std::unordered_map<KmerId, size_t> mkmers;
+        for (size_t i = index.fetch_add(1); i < rd_store.Size(); i = index.fetch_add(1)) {
+            auto kmers = kc.CountAll(rd_store.GetSeq(i));
+            for (auto &ks : kmers) {
+                mkmers[std::min<KmerId>(ks[0], ks[1])] += 1;
+            }
+            if (mkmers.size() > N) {
+                LOG(INFO)("start comb %zd", _);
+                combine_func(mkmers);
+                LOG(INFO)("end comb0 %zd", _);
+                mkmers.clear();
+                LOG(INFO)("end comb1 %zd", _);
+            }
+        }
+        if (mkmers.size() > 0) {
+            combine_func(mkmers);
+            mkmers.clear();
+        }
+    };
+
+    printf("kmer size = %zd\n", all_kmers.size());
+    MultiThreadRun(thread_size_, work_func);
+
 }
 
 } // namespace fsa

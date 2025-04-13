@@ -87,7 +87,6 @@ public:
     CrossPhaser(PhaseCrossSimplifier& owner, const std::vector<BaseNode*> cand);
     bool Phase();
 
-protected:
 
     void Debug(const char* const format, ...) const ;
     std::vector<PhasePath> paths;

@@ -32,9 +32,9 @@ struct KmerSet1 {
 using KmerSet = KmerSet1;
 
 
-class KmerCount { 
+class KmerCounter { 
 public:
-    KmerCount(size_t k) : k_(k) {
+    KmerCounter(size_t k) : k_(k) {
         shift1 = 2 * (k - 1);
         mask = (1ULL<<2*k) - 1;
     }
@@ -65,6 +65,19 @@ protected:
     size_t k_;
     uint64_t shift1;
     uint64_t mask;
+};
+
+class MinimizerCounter {
+public:
+    MinimizerCounter(size_t w, size_t k) : w_(w), k_(k) {}
+
+    void Count(const DnaSeq& seq) {
+        
+    }
+
+protected:
+    size_t w_;
+    size_t k_;
 };
 
 KmerSet0 LoadKmers0(const std::string &fname);

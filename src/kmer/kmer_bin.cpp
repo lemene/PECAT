@@ -100,7 +100,7 @@ std::array<size_t, 3> KmerBin::CountKmers(size_t k, const std::string& seq,
         const KmerSet& patkmers, const KmerSet& matkmers,const KmerSet& offkmers) {
     
     std::array<size_t, 3> count {0, 0, 0};
-    KmerCount kc (k);
+    KmerCounter kc (k);
     auto kseq = kc.CountAll(DnaSeq(seq));
 
     // meryl ACTG

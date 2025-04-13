@@ -349,8 +349,8 @@ void CrrDataset::OlGroup::BuildIndex() {
         const auto& r1 = b->GetOtherRead(id);
 
         return (r0.id < r1.id) ||
-               (r0.id == r1.id && a->AlignedLength() > b->AlignedLength()) ||
-               (r0.id == r1.id && a->AlignedLength() == b->AlignedLength() && a->SameDirect() && !b->SameDirect());
+               (r0.id == r1.id && a->AlignedSize() > b->AlignedSize()) ||
+               (r0.id == r1.id && a->AlignedSize() == b->AlignedSize() && a->SameDirect() && !b->SameDirect());
     });
 
     index.push_back({0, ols.size()});

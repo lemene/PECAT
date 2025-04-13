@@ -128,7 +128,7 @@ SemiBubbleEdge* SemiBubbleSimplifier::Detect(PathNode* start_node, int depth_cut
 
     for (size_t i = 0; i < start_node->OutDegree(); ++i) {
         auto e = (PathEdge*)start_node->OutEdge(i);
-        Debug("Find semi contine 0: %s, %d\n", e->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), is_edge_valid(e));
+        Debug("Find semi contine (%zd): %s, %d\n", i, e->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str(), is_edge_valid(e));
         if (!is_edge_valid(e)) continue;
 
         std::vector<PathEdge*>  path;
@@ -142,7 +142,7 @@ SemiBubbleEdge* SemiBubbleSimplifier::Detect(PathNode* start_node, int depth_cut
                 path.push_back(curr);
                 curr = curr->OutNode()->OutEdge<PathEdge>(0);
             }
-        Debug("Find semi contine e: %s\n", curr->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
+            Debug("Find semi contine e: %s\n", curr->Id().ToString(graph_.GetAsmData().GetStringPool()).c_str());
             
             if (is_edge_valid(curr) && curr->InNode()->InDegree() == 1 && curr->OutNode()->OutDegree() == 0 ) {
                 path.push_back(curr);

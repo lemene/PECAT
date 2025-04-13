@@ -522,7 +522,7 @@ void Program_Weight::Running() {
     LOG(INFO)("size = %lld, rate = %f", total, rate);
 
     long long accu = 0;
-    KmerCount kc(kmers.k);
+    KmerCounter kc(kmers.k);
 
     auto to_rate = [&kmers, &kc, this](const DnaSeq& seq) {
 

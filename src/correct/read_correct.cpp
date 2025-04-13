@@ -451,7 +451,7 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
             if (r.first) {
                 vdist.push_back(r.second);
             }
-            DEBUG_printf("al_local_group_i: %d - %zd\n", r.first, r.second);
+            DEBUG_printf("al_local_group_i(%d-%d): %d - %zd\n", al.qid, al.tid, r.first, r.second);
         }
         
         size_t threshold = 1000;
@@ -464,12 +464,15 @@ std::vector<Alignment>  ReadCorrect::Worker::CheckLocalDistance0(const std::vect
         } else {
             std::sort(vdist.begin(), vdist.end(), [](int a, int b) { return a < b; });
             std::vector<uint16_t> oks(vdist.begin(), vdist.begin() + std::min(vdist.size(), cov));
+            for (auto o : oks) {
+                DEBUG_printf("al_local_th ok %zd\n", o);
+            }
             auto m = ComputeMedianAbsoluteDeviation(oks);
             threshold = m[0] + 3*1.4826*m[1];
             DEBUG_printf("al_local_th median1 = %d, %d, %d, %zd\n", threshold, m[0], m[1], vdist.size());
             for (auto t : vdist) {
                 if (t > threshold) {
-                    if (t <= threshold + m[1]) {
+                    if (t <= threshold + std::max(m[1], m[0])) {
                         threshold = t;
                     } else {
                         break;

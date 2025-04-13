@@ -399,14 +399,67 @@ protected:
     int thread_size_ { 4 };
 };
 
+
+class Program_SnpDiff : public Program {
+public:
+    Program_SnpDiff() {
+        name_ = "snpdiff";
+        desc_ = "compare snp alleles in reads";
+    }
+
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "read info file", "input file");
+        ap.AddPositionOption(read0_, "read0", "output file");
+        ap.AddPositionOption(read1_, "read1", "output file");
+        ap.AddNamedOption(thread_size_, "thread_size", "");
+        return ap;
+    }
+
+    virtual void Running();
+
+    
+    std::string ifname_ ;
+    std::string read0_ ;
+    std::string read1_ ;
+    int thread_size_ { 1 };
+};
+
+
+class Program_CountKmer : public Program {
+public:
+    Program_CountKmer() {
+        name_ = "countkmer";
+        desc_ = "count k-mers";
+    }
+
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "read file", "input file");
+        ap.AddPositionOption(klen_, "k", "length of k-mer");
+        ap.AddNamedOption(thread_size_, "thread_size", "");
+        return ap;
+    }
+
+    virtual void Running();
+
+    
+    std::string ifname_ ;
+    int klen_ ;
+    int thread_size_ { 1 };
+};
+    
+
 class MiscTools : public MultiProgram {
 public:
     MiscTools() {
         Add(new Program_SplitOverlaps());
         Add(new Program_SplitOverlaps2());
         Add(new Program_SplitName());
-        Add(new Program_Test());
         Add(new Program_Hic());
+        Add(new Program_SnpDiff());
+        Add(new Program_CountKmer());
+        Add(new Program_Test());
     }
 };
 
