@@ -9,12 +9,12 @@
 
 namespace fsa {
 
-class CrrOptions;
+class PolOptions;
 class Dispatcher;
 
-struct CrrDataset {
+struct PolDataset {
 public:
-    CrrDataset(CrrOptions &opt) : opts_(opt) {}
+    PolDataset(PolOptions &opt) : opts_(opt) {}
 
     void Load();
     const std::string& QueryStringById(Seq::Id id) const { return string_pool_.QueryStringById(id); }    
@@ -77,7 +77,7 @@ protected:
     void EstimateParameters();
     
 public:
-    CrrOptions& opts_;
+    PolOptions& opts_;
     
     StringPool string_pool_;
     ReadStore read_store_ {string_pool_};
@@ -96,7 +96,7 @@ struct Dispatcher {
     virtual std::vector<Seq::Id> Get() = 0;
 };
 struct SimpleDispatcher : public Dispatcher {
-    SimpleDispatcher(const CrrDataset& d, size_t n=1)
+    SimpleDispatcher(const PolDataset& d, size_t n=1)
         : read_ids_(d.read_ids_), N(n) {}
     virtual std::vector<Seq::Id> Get() {
         std::vector<Seq::Id> ids;
@@ -117,7 +117,7 @@ struct SimpleDispatcher : public Dispatcher {
 
 
 struct GroupDispatcher : public Dispatcher {
-    GroupDispatcher(const CrrDataset& d)
+    GroupDispatcher(const PolDataset& d)
         : clu_ids_(d.GroupReadIds()) { }
 
     virtual std::vector<Seq::Id> Get() {

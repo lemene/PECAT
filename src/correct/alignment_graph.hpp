@@ -20,8 +20,6 @@
 namespace fsa {
 
 class ReadStore;
-class CrrOptions;
-class CrrDataset;
 
 class AlignmentGraph {
 public:
@@ -209,13 +207,14 @@ public:
         double reduction_ { 0.8 };
         int min_selected { 7 };
         int max_bubble_length_ { 100 };
+        int min_coverage {3};
             
         std::array<double, 2> weight_range_ { {0.4, 0.8 }};
         std::array<double, 3> branch_score_ { {0.5, 0.5, 0.8} };
     };
 
 
-    AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds);
+    AlignmentGraph(int min_coverage, const StringPool& ds);
 
     void SetParameter(const std::string &name, const std::string &v);
     void SetParameter(const std::string &name, double v);
@@ -303,8 +302,7 @@ protected:
     std::array<double, 2> score_range_;
     Options opts_;
 
-    const CrrOptions &sopts_;
-    const CrrDataset &dataset_;
+    const StringPool &sp_;
 
     std::vector<Tag> tags_;
 

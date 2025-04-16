@@ -21,8 +21,9 @@ namespace fsa {
 
 DnaSerialTable2 AlignmentGraph::Base2Num;
 
-AlignmentGraph::AlignmentGraph(const CrrOptions& opts, const CrrDataset& ds) 
- : sopts_(opts), dataset_(ds) {
+AlignmentGraph::AlignmentGraph(int min_coverage, const StringPool& sp) 
+ : sp_(sp) {
+    opts_.min_coverage = min_coverage;
 }
 
 void AlignmentGraph::SetParameter(const std::string &name, const std::string &opts) {
@@ -247,7 +248,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
     }
 
     for (size_t i = 0; i < cols.size(); i++) {
-        if (cols[i].selected < sopts_.min_coverage) continue;
+        if (cols[i].selected < opts_.min_coverage) continue;
         for (size_t j = 0; j < cols[i].Size(); j++) {
             for (size_t k = 0; k < cols[i][j].Size(); k++) {
 
@@ -418,7 +419,7 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
     const std::vector<std::string> toBase = {"A", "C", "G", "T", ""};
 
     auto valid = [this](const Node *n, const Loc& l) {
-        return cols[l.col].coverage >= (size_t)sopts_.min_coverage || n->best_link->count >= (size_t)sopts_.min_coverage / 2; 
+        return cols[l.col].coverage >= (size_t)opts_.min_coverage || n->best_link->count >= (size_t)opts_.min_coverage / 2; 
     };
     // 找到有效区域
     std::vector<std::array<Loc,2>> range;
@@ -430,7 +431,7 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
     while (loc.col >= 0 ) {
         if (curr_node->best_link != nullptr && loc != seg.begin) {
             DEBUG_printf("col: (%zd,%zd,%zd) %zd  %zd  %zd\n", loc.col, loc.row, loc.base, 
-                cols[loc.col].coverage, sopts_.min_coverage, curr_node->best_link->count);
+                cols[loc.col].coverage, opts_.min_coverage, curr_node->best_link->count);
             if (state == 0) {
                 if (valid(curr_node, loc)) {
                     start = loc;
@@ -1553,7 +1554,7 @@ double AlignmentGraph::LinkScoreWeight(size_t col, size_t row, Link &link) {
     link.w = s;
 
     double scale = std::max<double>(mypow(opts_.branch_score_[2], row)*opts_.branch_score_[0], opts_.branch_score_[1]);
-    double compensate = std::max<double>(scale * cols[col].weight, opts_.branch_score_[0] * cols[col].weight * sopts_.min_coverage / cols[col].coverage);
+    double compensate = std::max<double>(scale * cols[col].weight, opts_.branch_score_[0] * cols[col].weight * opts_.min_coverage / cols[col].coverage);
     DEBUG_printf("FFF: s= %f, c=%f %f %f %d\n", s, compensate, scale, cols[col].weight, cols[col].coverage);
 
     return s - compensate;
@@ -1580,12 +1581,12 @@ void AlignmentGraph::SaveGraph(const std::string &fname, size_t s, size_t e) con
                            << l.count << "," ;
 
                         if (l.seqs[0]) {
-                            of << dataset_.QueryStringById(tid_) ;
+                            of << sp_.QueryStringById(tid_) ;
                         }
 
                         for (size_t i = 0; i < query_infos_.scores_.size(); ++i) {
                             if (l.seqs[i+1]) {
-                                of << '-' << dataset_.QueryStringById(query_infos_.scores_[i].qid);
+                                of << '-' << sp_.QueryStringById(query_infos_.scores_[i].qid);
                             }
                         }
                         of << '\n';

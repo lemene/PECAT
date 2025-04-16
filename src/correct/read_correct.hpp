@@ -49,7 +49,7 @@ protected:
 
     class Worker {
     public:
-        Worker(ReadCorrect& owner) : owner_(owner), graph_(owner.opts_, owner_.dataset_) {
+        Worker(ReadCorrect& owner) : owner_(owner), graph_(owner.opts_.min_coverage, owner_.dataset_.GetStringPool()) {
             graph_.SetParameter("score", owner.opts_.score_);
             aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };

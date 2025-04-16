@@ -6,7 +6,7 @@ BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
              $(BUILD_OBJ_DIR)/bridge $(BUILD_OBJ_DIR)/assemble $(BUILD_OBJ_DIR)/correct/align $(BUILD_OBJ_DIR)/kmer \
 			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph \
-			 $(BUILD_OBJ_DIR)/overlap
+			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish
 
 simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./assemble/simplify/bridge.cpp \
 	./assemble/simplify/transitive.cpp ./assemble/simplify/cross.cpp ./assemble/simplify/low_quality.cpp \
@@ -69,13 +69,9 @@ fsa_rd_correct_src = ./prog/fsa_rd_correct.cpp  \
                      ./correct/read_correct.cpp  ./correct/alignment_graph.cpp
 fsa_rd_correct_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_correct_src))
 
-fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp \
-                     ./polish/contig_polish.cpp ./correct/alignment_graph.cpp
+fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp ./correct/alignment_graph.cpp\
+                     ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp
 fsa_ctg_polish_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_polish_src))
-
-fsa_ctg_correct_src = ./prog/fsa_ctg_correct.cpp \
-                     ./correct/contig_correct.cpp ./correct/alignment_graph.cpp
-fsa_ctg_correct_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_correct_src))
 
 fsa_ol_purge_src = ./prog/fsa_ol_purge.cpp ./overlap_purge.cpp
 fsa_ol_purge_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_purge_src))
@@ -104,17 +100,16 @@ obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
 	$(fsa_ctg_bridge_obj) $(fsa_rd_correct_obj) \
 	$(fsa_rd_haplotype_obj) $(fsa_rd_consistent_obj) $(fsa_ctg_call_obj) \
 	$(fsa_ol_tools_obj) $(fsa_rd_tools_obj) $(fsa_misc_tools_obj) \
-	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_ctg_polish_obj) $(fsa_kmer_bin_obj) \
-	$(fsa_ctg_correct_obj) $(fsa_sam_tools_obj)
+	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_kmer_bin_obj) \
+	$(fsa_ctg_polish_obj) $(fsa_sam_tools_obj)
 
 
 dep:=$(patsubst %.o,%.d, $(obj))
 
-# fsa_ctg_polish
 bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
       fsa_rd_haplotype fsa_ol_tools fsa_rd_tools fsa_sam_tools\
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
-	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_correct 
+	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_polish 
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
 
@@ -157,9 +152,6 @@ $(BUILD_BIN_DIR)/fsa_misc_tools:$(fsa_misc_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
 $(BUILD_BIN_DIR)/fsa_rd_correct: $(fsa_rd_correct_obj) $(BUILD_BIN_DIR)/libfsa.a
-	g++ $^ -o $@ $(LDFLAGS)
-
-$(BUILD_BIN_DIR)/fsa_ctg_correct: $(fsa_ctg_correct_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
 $(BUILD_BIN_DIR)/fsa_ctg_polish: $(fsa_ctg_polish_obj) $(BUILD_BIN_DIR)/libfsa.a
