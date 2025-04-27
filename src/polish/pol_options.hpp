@@ -54,6 +54,7 @@ public:
     int local_window_size_ { 1000 };
     bool check_local_identity_ { false };
 
+    std::string ctg_fname_;
     std::string overlap_fname_;
     std::string rread_fname_;
     std::string cread_fname_;

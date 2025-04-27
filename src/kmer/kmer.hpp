@@ -17,6 +17,12 @@ struct KmerSet0 {
         return iter == kmers.end() ? 0 : iter->second;
     }
     size_t Size() const { return kmers.size(); }
+    int Min() const { 
+        return std::min_element(kmers.begin(), kmers.end(), 
+                    [](const std::pair<KmerId, int>& a, const std::pair<KmerId, int>& b) {
+                        return a.second < b.second;
+                    })->second;
+    }
     size_t k;
     std::unordered_map<KmerId, int> kmers;
 };

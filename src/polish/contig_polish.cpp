@@ -94,6 +94,7 @@ void ContigPolish::CalcCoverage() {
 }
 
 void ContigPolish::Running() {
+    dataset_.Load();
     read_store_.Load(ctg_fname_, "", true);
     LoadReadIds();
     read_store_.Load(rread_fname_, "", true);
@@ -103,7 +104,6 @@ void ContigPolish::Running() {
     ol_store_.GroupTarget(groups_, thread_size_);
 
     CalcCoverage();
-    assert(0);
     LOG(INFO)("Start Correcting");
     Correct();
 }

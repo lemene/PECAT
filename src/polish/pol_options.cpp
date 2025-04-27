@@ -7,6 +7,7 @@
 namespace fsa {
 void PolOptions::SetArguments(ArgumentParser &ap) {
 
+    ap.AddPositionOption(overlap_fname_, "ctg_fname", "contig file name");
     ap.AddPositionOption(overlap_fname_, "ol_fname", "overlap file name");
     ap.AddPositionOption(rread_fname_, "rr_fname", "raw read file name");
     ap.AddPositionOption(cread_fname_, "cr_fname", "corrected read file name");

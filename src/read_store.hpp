@@ -79,6 +79,16 @@ public:
 
     std::string GetSeq(const Seq::Tile& sa);
     size_t GetSeqLength(Seq::Id id) const { return GetSeq(id).Size(); }
+    uint64_t GetTotalLength(size_t min_len) const {
+        uint64_t total = 0;
+        for (size_t i=GetIdLow(); i < GetIdUp(); ++i) {
+            auto len = GetSeqLength(i);
+            if (len >= min_len) {
+                total += len;
+            }
+        }
+        return total;
+    }
 
     std::array<size_t, 2> GetIdRange() const { return {offset_, offset_ + Size()}; }
     size_t GetIdLow() const { return offset_; }

@@ -476,26 +476,23 @@ void Program_Random::Running() {
     long long total = 0;
     LoadReadFile(ifname_, "", [&total, this](const SeqReader::Item& item) {
         if ((int)item.seq.size() >= min_length_) {
-            if (DnaSeq::Check(item.seq)) {
-                total += item.seq.size();
-            } else {
-                LOG(WARNING)("Found bad base in %s", item.head.c_str());
-            }
+            total += item.seq.size();
         }
     });
 
-    double rate = base_size_ * 1.01 / total;    
+    double rate = base_size_ * 1.1 / total;    
     LOG(INFO)("size = %lld, rate = %f", total, rate);
 
-    srand(clock());
-    long long accu = 0;
-    FilterReadFile(ifname_, ofname_, id2name_, [&accu, this, rate](SeqReader::Item& item) {
-        auto random = []() -> double {
-            const int N = 10000;
-            return rand() % (N+1) * 1.0 / N;
-        };
+    
+    std::default_random_engine e;
+    std::uniform_int_distribution<int> u(0, 100000);
+    auto random = [&e, &u]() -> double {
+        return u(e)*1.0/100000;
+    };
 
-        bool r = accu < base_size_ && (int)item.seq.size() >= min_length_ && (DnaSeq::Check(item.seq)) && rate >= random();
+    long long accu = 0;
+    FilterReadFile(ifname_, ofname_, id2name_, [&accu, this, rate, random](SeqReader::Item& item) {
+        bool r = accu < base_size_ && (int)item.seq.size() >= min_length_ && rate <= random();
         if (r) accu += item.seq.size();
         return r;
     });
@@ -504,76 +501,55 @@ void Program_Random::Running() {
 
 void Program_Weight::Running() {
     assert(base_size_ > 0);
-    long long total = 0;
 
     auto kmers = LoadKmers0(kmer_freq_fname_);
+    auto min_freqs = kmers.Min();
 
     ReadStore rd_store;
     rd_store.Load(ifname_);
-    for (size_t i=rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
-        auto len = rd_store.GetSeqLength(i);
-        if (len >= min_length_) {
-            total += len;
-        }
-    }
+    long long total = rd_store.GetTotalLength(min_length_);
     
-    std::vector<double> weight (rd_store.Size());
     double rate = base_size_ * 1.01 / total;    
-    LOG(INFO)("size = %lld, rate = %f", total, rate);
+    double cov = base_size_ *1.0 / kmers.Size();
+    LOG(INFO)("size = %lld, rate = %f, cov=%.02f", total, rate, cov);
 
-    long long accu = 0;
     KmerCounter kc(kmers.k);
-
-    auto to_rate = [&kmers, &kc, this](const DnaSeq& seq) {
-
-
+    auto to_weight = [&kmers, &kc, this, &min_freqs, &cov](const DnaSeq& seq) {
         auto kseq = kc.CountAll(seq);
-        double sum = 0;
-        size_t count = 0;
+        double wt = 0.0;
         for (const auto &k : kseq) {
             auto cc = kmers.Count(std::min(k[0], k[1]));
-            if (cc > 0) {
-                count ++;
-                if (cc > coverage_) {
-                    sum += coverage_ * 1.0 / cc;
-                } else {
-                    sum += 1;
-                }
-            }
+            wt += cov*1.0 / ( cov + std::max<int>(cc, min_freqs)) ;
         }
     
-        return count > 0 ? sum / count : count;
+        return wt;
     };
     
-    std::atomic<long long>  total_weight { 0 };
-    std::atomic<long long>  total_length { 0 };
-    rd_store.ForEach([&weight, &rd_store, to_rate, &total_weight, &total_length](int id, const DnaSeq& seq) {
-        double wt = to_rate(seq);
-        weight[id - rd_store.GetIdLow()] = wt;
-        total_weight.fetch_add(int(wt*seq.Size()));
-        total_length.fetch_add(seq.Size());
-        LOG(INFO)("wt: %f, %d, %zd", wt, int(wt*seq.Size()), seq.Size());
-
-        LOG(INFO)("READ: %lld, %lld, %0.3f", total_weight.fetch_add(0), total_length.fetch_add(0), total_weight.fetch_add(0) *1.0/ total_length.fetch_add(0));
-
+    std::vector<double> weight (rd_store.Size());
+    rd_store.ForEach([&weight, &rd_store, to_weight](int id, const DnaSeq& seq) {
+        weight[id - rd_store.GetIdLow()] = to_weight(seq);
     }, thread_size_);
 
-    double wt_rate = total_weight.load() * 1.0 / total_length.load();
-    LOG(INFO)("READ: %lld, %lld, %0.3f", total_weight.fetch_add(0), total_length.fetch_add(0), total_weight.fetch_add(0) *1.0/ total_length.fetch_add(0));
+    double total_weight = std::accumulate(weight.begin(), weight.end(), 0.0) ;
+    double bwt = total_weight / total;
+    LOG(INFO)("total_weight=%.02f, base_weight= %.02f", total_weight, bwt);
 
     std::default_random_engine e;
     std::uniform_int_distribution<int> u(0, 100000);
     e.seed(time(0));
+    auto random = [&e, &u]() -> double {
+        return u(e)*1.0/100000;
+    };
+
+    long long accu = 0;
     rd_store.Save(ofname_, id2name_, [&](Seq::Id id, const DnaSeq& seq) {
-        auto random = [&e, &u]() -> double {
-            return u(e)*1.0/100000;
-        };
-
         auto wt = weight[id - rd_store.GetIdLow()];
-        bool r = seq.Size() >= min_length_ && wt * (rate / wt_rate) >= random();
+        bool r = seq.Size() >= min_length_ && accu < base_size_ && random() <= rate * wt / (seq.Size()*bwt);
+        if (r) accu += seq.Size();
         return r;
-
     }, thread_size_);
+
+    LOG(INFO)("End sampling obtained=%lld", accu);
 
 }
 
