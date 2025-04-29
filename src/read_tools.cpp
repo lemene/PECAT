@@ -473,30 +473,63 @@ void Program_Longest::Running() {
 
 void Program_Random::Running() {
     assert(base_size_ > 0);
-    long long total = 0;
-    LoadReadFile(ifname_, "", [&total, this](const SeqReader::Item& item) {
-        if ((int)item.seq.size() >= min_length_) {
-            total += item.seq.size();
-        }
-    });
 
-    double rate = base_size_ * 1.1 / total;    
-    LOG(INFO)("size = %lld, rate = %f", total, rate);
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
 
+    std::vector<Seq::Id> idxs;
+    idxs.reserve(rd_store.Size());
+    for (Seq::Id i = rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
+        idxs.push_back(i);
+    }
     
-    std::default_random_engine e;
-    std::uniform_int_distribution<int> u(0, 100000);
-    auto random = [&e, &u]() -> double {
-        return u(e)*1.0/100000;
-    };
-
+    std::random_shuffle(idxs.begin(), idxs.end());
+    std::unordered_set<Seq::Id> selected;
     long long accu = 0;
-    FilterReadFile(ifname_, ofname_, id2name_, [&accu, this, rate, random](SeqReader::Item& item) {
-        bool r = accu < base_size_ && (int)item.seq.size() >= min_length_ && rate <= random();
-        if (r) accu += item.seq.size();
-        return r;
+    for (auto i : idxs) {
+        auto seqlen = rd_store.GetSeqLength(i);
+        if (seqlen > min_length_) {
+            accu += seqlen;
+            selected.insert(i);
+        }
+        if (accu >= base_size_) break;
+    }
+
+    rd_store.Save(ofname_, id2name_, [&selected](Seq::Id id, const DnaSeq& seq) {
+        return selected.find(id) != selected.end();
+    }, 4);
+
+}
+
+std::vector<int> WeightedShuffle(const std::vector<int>& elements, const std::vector<double>& weights) {
+    assert(elements.size() != weights.size() || elements.empty());
+
+
+    std::vector<std::pair<int, double>> weighted_elements;
+    for (size_t i = 0; i < elements.size(); ++i) {
+        weighted_elements.emplace_back(elements[i], weights[i]);
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    for (auto& elem : weighted_elements) {
+        double u = dis(gen);
+        elem.second = -log(u) / elem.second; // 权重越高，这个值越小
+    }
+
+    std::sort(weighted_elements.begin(), weighted_elements.end(),
+        [](const std::pair<int, double>& a, const std::pair<int, double>& b) {
+            return a.second < b.second;
     });
 
+    std::vector<int> result;
+        for (const auto& elem : weighted_elements) {
+        result.push_back(elem.first);
+    }
+
+return result;
 }
 
 void Program_Weight::Running() {
@@ -509,20 +542,37 @@ void Program_Weight::Running() {
     rd_store.Load(ifname_);
     long long total = rd_store.GetTotalLength(min_length_);
     
-    double rate = base_size_ * 1.01 / total;    
-    double cov = base_size_ *1.0 / kmers.Size();
+    double rate = base_size_ * 1.1 / total;    
+    double cov = coverage_ > 0 ? coverage_ : base_size_ *1.0 / kmers.Size();
     LOG(INFO)("size = %lld, rate = %f, cov=%.02f", total, rate, cov);
 
     KmerCounter kc(kmers.k);
     auto to_weight = [&kmers, &kc, this, &min_freqs, &cov](const DnaSeq& seq) {
         auto kseq = kc.CountAll(seq);
-        double wt = 0.0;
+        std::unordered_map<KmerId, int> lfreqs;
         for (const auto &k : kseq) {
-            auto cc = kmers.Count(std::min(k[0], k[1]));
-            wt += cov*1.0 / ( cov + std::max<int>(cc, min_freqs)) ;
+            auto mink = std::min(k[0], k[1]);
+            lfreqs[mink] += 1;
         }
-    
-        return wt;
+
+        std::vector<std::tuple<KmerId, int, double>> kmer_wt;
+        kmer_wt.reserve(lfreqs.size());
+        for (auto &i : lfreqs) {
+            auto gc = kmers.Count(i.first);
+            kmer_wt.push_back({i.first, gc, i.second});
+        }
+        std::sort(kmer_wt.begin(), kmer_wt.end(), [](const std::tuple<KmerId, int, double>& a, const std::tuple<KmerId, int, double>& b) {
+            return std::get<1>(a) < std::get<1>(b);
+        });
+
+        double wt = 0.0;
+        size_t count = 0;
+        for (size_t i=kmer_wt.size() / 4; i < kmer_wt.size() *3/4; ++i) {
+            wt = 
+            wt += 1.0 / std::max(min_freqs, std::get<1>(kmer_wt[i])) / std::get<2>(kmer_wt[i]);
+            count ++;
+        }
+        return count == 0? 0.0 : wt / count;
     };
     
     std::vector<double> weight (rd_store.Size());
@@ -531,7 +581,7 @@ void Program_Weight::Running() {
     }, thread_size_);
 
     double total_weight = std::accumulate(weight.begin(), weight.end(), 0.0) ;
-    double bwt = total_weight / total;
+    double bwt = total_weight / weight.size();
     LOG(INFO)("total_weight=%.02f, base_weight= %.02f", total_weight, bwt);
 
     std::default_random_engine e;
@@ -544,13 +594,12 @@ void Program_Weight::Running() {
     long long accu = 0;
     rd_store.Save(ofname_, id2name_, [&](Seq::Id id, const DnaSeq& seq) {
         auto wt = weight[id - rd_store.GetIdLow()];
-        bool r = seq.Size() >= min_length_ && accu < base_size_ && random() <= rate * wt / (seq.Size()*bwt);
+        bool r =  seq.Size() >= min_length_ &&  random() <= rate * wt / bwt;
         if (r) accu += seq.Size();
         return r;
     }, thread_size_);
 
     LOG(INFO)("End sampling obtained=%lld", accu);
-
 }
 
 

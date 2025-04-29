@@ -189,7 +189,7 @@ protected:
     std::string ofname_;
     std::string kmer_freq_fname_;
     int min_length_ { 0 }; 
-    int coverage_ { 30 };
+    int coverage_ { 1 };
     long long base_size_ { 0 };
     std::string id2name_;
     int thread_size_ { 8 };
