@@ -83,7 +83,7 @@ protected:
     class Worker {
     public:
         Worker(ContigPolish& owner) : owner_(owner), graph_(owner.opts_.min_coverage, owner_.dataset_.GetStringPool()) {
-            aligner_.SetParameter("aligner", owner_.aligner_);
+            aligner_.SetParameter("aligner", owner_.opts_.aligner_);
         };
         ~Worker() {  }
         bool Correct(WindowJob &job);
@@ -106,28 +106,10 @@ protected:
     friend class Worker;
 
 protected:
-    int min_coverage_ { 4 };
-    double min_identity_ { 60 };
-    double min_local_identity_ { 50 };
  
 
-    int coverage_ { 50 };
-    double branch_score_ { 0.3 };
-    int window_size_ { 50000 };
-    int overlap_size_ { 500 };
 
-    std::string aligner_ { "diff" };
-    std::string score_ { "count" };
-
-
-
-    std::vector<Seq::Id> read_ids_;
     std::vector<ContigJob> jobs_;
-
-    std::unordered_set<int> reads_;
-    ReadStore read_store_;
-    OverlapStore ol_store_{read_store_.GetStringPool() };
-    std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> groups_;
     
     PolOptions opts_;
     PolDataset dataset_ { opts_ };

@@ -233,7 +233,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
         }
     }
     // pre-compute
-    for (size_t col = 0; col < cols.size(); col++) {
+    for (size_t col = range_[0]; col < cols.size(); col++) {
         cols[col].weight = 0;
         cols[col].selected = 0;
         if (cols[col].queries[0]) cols[col].weight += 0.5;  // TODO Target score

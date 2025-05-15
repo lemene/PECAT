@@ -10,74 +10,14 @@ namespace fsa {
 
 ArgumentParser ContigPolish::GetArgumentParser() {
     ArgumentParser ap;
-    ap.AddNamedOption(aligner_, "aligner", "method for local alignment, diff|edlib.");
-    ap.AddNamedOption(score_, "score", "");
-    ap.AddNamedOption(coverage_, "coverage", "");
-    ap.AddNamedOption(min_identity_, "min_identity", "");
-    ap.AddNamedOption(min_local_identity_, "min_local_identity", "");
-    ap.AddNamedOption(min_coverage_, "min_coverage", "");
     opts_.SetArguments(ap);
-
     return ap;
-}
-
-void ContigPolish::CalcCoverage() {
-    for (auto ctgid : read_ids_) {
-        const auto ctglen = read_store_.GetSeqLength(ctgid);
-        std::vector<int> cov(ctglen+1, 0);
-
-        auto ctg_ols = groups_.find(ctgid);
-        if (ctg_ols != groups_.end()) {
-            for (auto ols : ctg_ols->second) {
-                for (auto ol : ols.second) {
-                    if (ol->a_.start < ol->a_.len*0.1 && (ol->a_.len - ol->a_.end) < ol->a_.len*0.1) {
-                        cov[ol->b_.start]++;
-                        cov[ol->b_.end]--;
-                    }
-                }
-            }
-            for (size_t i=1; i < cov.size(); ++i) {
-                cov[i] += cov[i-1];
-            }
-            int start = -1;
-            for (size_t i = 0; i + 1 < cov.size(); ++i) {
-                if (cov[i] < 5) {
-                    //printf("cov\t%s\t%zd\t%d\n", read_store_.QueryNameById(ctgid).c_str(), i, cov[i]);
-                    if (start == -1) {
-                        start = i;
-                    }
-                } else {
-                    if (start != -1) {
-                        printf("lowcov\t%s\t%d\t%zd\n", read_store_.QueryNameById(ctgid).c_str(), start, i);
-                        start = -1;
-                    }
-                }
-            }
-        }
-    }
-
-    std::unordered_set<int> done;
-    for (size_t i = 0; i < ol_store_.Size(); ++i) {
-        auto ol = ol_store_.Get(i);
-        if (ol.a_.start < ol.a_.len*0.1 && (ol.a_.len - ol.a_.end) < ol.a_.len*0.1) {
-            done.insert(ol.a_.id);
-        }
-    }
-
-    for (size_t i = 0; i < read_store_.GetIdRange()[1]; ++i) {
-        if (done.find(i) == done.end()) {
-            printf("abn %s\n", read_store_.QueryNameById(i).c_str());
-        }
-    }
 }
 
 void ContigPolish::Running() {
     dataset_.Load();
 
-    ol_store_.GroupTarget(groups_, opts_.thread_size);
-
-    CalcCoverage();
-    LOG(INFO)("Start Correcting");
+    LOG(INFO)("Start polishing");
     Correct();
 }
 
@@ -86,7 +26,7 @@ void ContigPolish::Running() {
 
 void ContigPolish::Correct() {
     std::mutex mutex;
-    std::ofstream of_cread(dataset_.cread_fname_);
+    std::ofstream of_cread(opts_.cread_fname_);
 
    auto save_contig = [&](const std::string& name, const std::string &seq) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -95,8 +35,8 @@ void ContigPolish::Correct() {
 
     std::vector<std::shared_ptr<WindowJob>> windows;
     std::vector<std::shared_ptr<ContigJob>> jobs;
-    for (auto i : read_ids_) {        
-        jobs.push_back(std::shared_ptr<ContigJob>(new ContigJob(i, read_store_.GetSeqLength(i), groups_[i], window_size_, overlap_size_)));
+    for (auto i : dataset_.read_ids_) {        
+        jobs.push_back(std::shared_ptr<ContigJob>(new ContigJob(i, dataset_.read_store_.GetSeqLength(i), dataset_.groups_[i], opts_.window_size_, opts_.overlap_size_)));
         for (auto &s : jobs.back()->windows) {
             windows.push_back(s);
         }
@@ -115,11 +55,9 @@ void ContigPolish::Correct() {
             worker.Clear();
             //if (true || wjob.owner->IsDone()) {
             if ( wjob.owner->Savable()) {
-                LOG(INFO)("Write contig: %s", read_store_.QueryNameById(wjob.owner->tid).c_str());
-                save_contig(read_store_.QueryNameById(wjob.owner->tid), wjob.owner->GetSeq());
-                //save_contig(read_store_.QueryNameById(wjob.owner->tid), wjob.seq);
-                LOG(INFO)("Write contig: %s", read_store_.QueryNameById(wjob.owner->tid).c_str());
-                //break;
+                LOG(INFO)("Write contig: %s", dataset_.read_store_.QueryNameById(wjob.owner->tid).c_str());
+                save_contig(dataset_.read_store_.QueryNameById(wjob.owner->tid), wjob.owner->GetSeq());
+                LOG(INFO)("Write contig: %s", dataset_.read_store_.QueryNameById(wjob.owner->tid).c_str());
             }
             if (curr % 100 == 0) {
                 LOG(INFO)("Jobs done: %d/%d", curr, windows.size());
@@ -133,7 +71,7 @@ void ContigPolish::Correct() {
     if (of_cread.is_open()) {
         MultiThreadRun((size_t)opts_.thread_size, work_func);
     } else {
-        LOG(INFO)("Failed to open file: %s", dataset_.rread_fname_.c_str());
+        LOG(INFO)("Failed to open file: %s", opts_.rread_fname_.c_str());
     }
 
 }
@@ -143,7 +81,7 @@ bool ContigPolish::Worker::ExactFilter(const Alignment &r) {
     if (r.AlignSize() < (size_t)owner_.opts_.filter1_.min_aligned_length && 
         r.AlignSize() < r.QuerySize() * owner_.opts_.filter1_.min_aligned_length) return true;
     
-    if (r.Identity() < owner_.min_identity_) return true;
+    if (r.Identity() < owner_.opts_.min_identity_) return true;
 
     if (r.AlignSize() >= owner_.opts_.filter1_.min_accept_aligned_length) return false;
 
@@ -164,7 +102,7 @@ bool ContigPolish::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment&
     const auto& qread = o->GetOtherRead(id);
 
     std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-    return aligner_.Align(owner_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+    return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
 
 }
       
@@ -220,7 +158,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
 
     std::vector<const Overlap*> cands = job.GetOverlaps();
     if (cands.size() == 0) {    // if the area is not coveraged by any reads.
-        job.seq = *DnaSeq(owner_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString();
+        job.seq = *DnaSeq(owner_.dataset_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString();
         return true;
     }
 
@@ -232,11 +170,10 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         if (r.start < ctgstart)  ctgstart = r.start;
         if (r.end > ctgend) ctgend = r.end;
     }
-    const DnaSeq target(owner_.read_store_.GetSeq(id), ctgstart, ctgend - ctgstart);
+    const DnaSeq target(owner_.dataset_.read_store_.GetSeq(id), ctgstart, ctgend - ctgstart);
     
     CalculateWeight(id, target, cands, ctgstart, {job.start, job.end});
 
-    // 根据权重排序
     std::make_heap(cands.begin(), cands.end(), [](const Overlap* a, const Overlap* b) {
        return a->attached < b->attached;    // CAUTION
     });
@@ -253,7 +190,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
 
         std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
         assert(range[2] >= 0);
-        auto r = aligner_.Align(owner_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+        auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
         if (r && !ExactFilter(al)) {
             al.Rearrange();
             aligned_.push_back(al);
@@ -271,15 +208,13 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
     }
     printf("al size %zd/%zd\n", aligned_.size(), cands.size());
 
-    // auto range = MostEffectiveCoverage(target.Size(), aligned_, 500, owner_.min_coverage_);
-
-    std::array<size_t, 2> range = {(size_t)(job.start - ctgstart), (size_t)(job.end - ctgstart)};
+    auto range = MostEffectiveCoverage(target.Size(), aligned_, 500, owner_.opts_.min_coverage_);
    
     graph_.Build(target, range, aligned_);
     graph_.Consensus();
     job.seq = graph_.GetSequence();
     auto s = graph_.GetTrueRange();
-    printf("rrr: %zd, %zd, %zd\n", s[0], s[1], target.Size());
+    printf("rrr: %zd, %zd, %zd -> %zd %zd-%zd %d-%d\n", s[0], s[1], target.Size(), job.seq.size(), range[0], range[1], ctgstart, ctgend);
 
     job.done = true;
 
@@ -333,7 +268,7 @@ bool ContigPolish::Worker::IsCoverageEnough(const std::vector<int> &cov) {
         return std::accumulate(cov.begin(), cov.end(), 0, [th](int a, int c) { return a + (c<th ? (th-c) : 0); }) * 1.0 / th / cov.size();
     };
             
-    return CoverageStatus(cov, owner_.coverage_) < 0.05;
+    return CoverageStatus(cov, owner_.opts_.coverage_) < 0.05;
 }
 
 ContigPolish::ContigJob::ContigJob(Seq::Id id, size_t len, const std::unordered_map<int, std::vector<const Overlap*>>& ols, size_t wsize, size_t osize) 
@@ -348,6 +283,7 @@ ContigPolish::ContigJob::ContigJob(Seq::Id id, size_t len, const std::unordered_
 
         windows.push_back(std::shared_ptr<WindowJob>(new WindowJob(this, start, end)));
         curr = end;
+        printf("winsize: %zd-%zd\n", start, end);
     }
 } 
 
@@ -355,7 +291,6 @@ std::string ContigPolish::ContigJob::GetSeq() const {
     assert(windows.size() > 0);
 
     std::string seq(windows.front()->seq);
-    printf("begin\n");
 
     for (size_t i=1; i < windows.size(); ++i) {
         // 取后一节窗口的overlap的中间二分一的数据，在前一个窗口的overlap中寻找。
@@ -395,6 +330,7 @@ std::string ContigPolish::ContigJob::GetSeq() const {
             }
             seq.erase(seq.begin() + seq.size() - ovl_size + r.startLocations[0] + offt, seq.end());
             seq.insert(seq.end(), next.begin()+offq, next.end());
+            printf("ctg seq: %zd\n", seq.size());
 
         } else {
             LOG(WARNING)("Don't find common part in the overlap of windows %d and %d", i-1, i);
@@ -402,9 +338,7 @@ std::string ContigPolish::ContigJob::GetSeq() const {
         }
         
         edlibFreeAlignResult(r);
-        printf("end next\n");
     }
-    printf("end\n");
 
     return seq;
 }

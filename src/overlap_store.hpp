@@ -411,7 +411,7 @@ void OverlapStore::LoadFast(const std::string &fname, const std::string &type, s
     } else if (t == "bam") {
         LoadFileBamFast(fname, check, thread_size);
     } else {
-        LOG(ERROR)("Failed to recognize overlap files type: %s", t.c_str());
+        LOG(ERROR)("Failed to recognize overlap files type: %s %s", t.c_str(), fname.c_str());
     }
 }
 

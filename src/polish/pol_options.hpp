@@ -49,10 +49,16 @@ public:
     std::string read_name_ {""};
     std::string read_name_fname_ { "" };
     
+    
+    int min_coverage_ { 4 };
     double min_identity_ { 60 };
     double min_local_identity_ { 50 };
     int local_window_size_ { 1000 };
     bool check_local_identity_ { false };
+
+    int coverage_ { 50 };
+    int window_size_ { 50000 };
+    int overlap_size_ { 500 };
 
     std::string ctg_fname_;
     std::string overlap_fname_;

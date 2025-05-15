@@ -26,17 +26,14 @@ protected:
     void LoadMappings();
     
     void LoadReadIds();
+    void CalcCoverage();
 public:
     PolOptions& opts_;
-    
-    std::string overlap_fname_;
-    std::string rread_fname_;
-    std::string ctg_fname_;
-    std::string cread_fname_;
 
     StringPool string_pool_;
     ReadStore read_store_ {string_pool_};
     OverlapStore ol_store_{string_pool_ };
+    std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> groups_;
     
     OverlapStore rd_2_ref_ {string_pool_ };
     Mapping mapping_ { rd_2_ref_ };
