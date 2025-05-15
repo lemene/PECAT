@@ -22,12 +22,18 @@ public:
 protected:
     /** reads in  */
     std::vector<Bed> CollectBedFromBam(const std::vector<Seq::Id>& read_ids);
-    void LoadOverlaps();
+    void LoadOverlaps(const std::string &fname);
     void LoadMappings();
     
+    void LoadReadIds();
 public:
     PolOptions& opts_;
     
+    std::string overlap_fname_;
+    std::string rread_fname_;
+    std::string ctg_fname_;
+    std::string cread_fname_;
+
     StringPool string_pool_;
     ReadStore read_store_ {string_pool_};
     OverlapStore ol_store_{string_pool_ };

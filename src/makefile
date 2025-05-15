@@ -109,7 +109,7 @@ dep:=$(patsubst %.o,%.d, $(obj))
 bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
       fsa_rd_haplotype fsa_ol_tools fsa_rd_tools fsa_sam_tools\
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
-	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent
+	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_polish
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
 

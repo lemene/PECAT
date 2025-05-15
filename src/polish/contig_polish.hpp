@@ -19,17 +19,14 @@ class ContigPolish : public Program {
 public:
     virtual ArgumentParser GetArgumentParser();
     virtual void Running();
-    virtual void CheckArguments();
+    virtual void CheckArguments() { opts_.CheckArguments(); }
     
 protected:
 
     void LoadOverlaps(const std::string &fname);
-    void LoadReadIds();
     void Correct();
     void CalcCoverage();
     
-    std::string OutputPath(const std::string &fname) { return output_directory_+"/"+fname; }
-
     struct ContigJob;
     struct WindowJob {
         WindowJob(ContigJob *w, int s, int e) : owner(w), start(s), end(e) {}
@@ -109,41 +106,20 @@ protected:
     friend class Worker;
 
 protected:
-    int min_length_ {2000};
-    int min_aligned_length_ { 10000 };
-    double min_aligned_ratio_ { 0.50 };
-    int max_aligned_length_ { 3000 };
-    //int min_acceptable_length_ { 4000 };
-    int max_overhang_ { 3000 };
-    double max_overhang_rate_ { 0.30 };
     int min_coverage_ { 4 };
     double min_identity_ { 60 };
     double min_local_identity_ { 50 };
-
-    std::string filter0_opts_ {"l=2000:al=2000:alr=0.50"};
-    std::string filter1_opts_ {"l=2000:al=3000:alr=0.50:aal=5000:oh=2000:ohr=0.2"};
-    Overlap::Filter filter0_;
-    Overlap::Filter filter1_; 
  
 
-    int max_number_ { 400 };    // MAX_COV - 1
     int coverage_ { 50 };
     double branch_score_ { 0.3 };
     int window_size_ { 50000 };
     int overlap_size_ { 500 };
 
-    std::string read_name_ {""};
-    std::string read_name_fname_ { "" };
-    int thread_size_{ 4 };
-
     std::string aligner_ { "diff" };
     std::string score_ { "count" };
-    std::string output_directory_ {"."};
 
-    std::string overlap_fname_;
-    std::string rread_fname_;
-    std::string ctg_fname_;
-    std::string cread_fname_;
+
 
     std::vector<Seq::Id> read_ids_;
     std::vector<ContigJob> jobs_;

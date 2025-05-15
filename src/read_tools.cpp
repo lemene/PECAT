@@ -502,7 +502,7 @@ void Program_Random::Running() {
 }
 
 std::vector<int> WeightedShuffle(const std::vector<int>& elements, const std::vector<double>& weights) {
-    assert(elements.size() != weights.size() || elements.empty());
+    assert(elements.size() == weights.size() && elements.size() > 0);
 
 
     std::vector<std::pair<int, double>> weighted_elements;
@@ -529,7 +529,7 @@ std::vector<int> WeightedShuffle(const std::vector<int>& elements, const std::ve
         result.push_back(elem.first);
     }
 
-return result;
+    return result;
 }
 
 void Program_Weight::Running() {
@@ -575,29 +575,31 @@ void Program_Weight::Running() {
         return count == 0? 0.0 : wt / count;
     };
     
+    std::vector<int> elements;
+    for (size_t i = rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
+        elements.push_back(i);
+    }
     std::vector<double> weight (rd_store.Size());
     rd_store.ForEach([&weight, &rd_store, to_weight](int id, const DnaSeq& seq) {
         weight[id - rd_store.GetIdLow()] = to_weight(seq);
     }, thread_size_);
 
-    double total_weight = std::accumulate(weight.begin(), weight.end(), 0.0) ;
-    double bwt = total_weight / weight.size();
-    LOG(INFO)("total_weight=%.02f, base_weight= %.02f", total_weight, bwt);
+    auto shuffled = WeightedShuffle(elements, weight);
 
-    std::default_random_engine e;
-    std::uniform_int_distribution<int> u(0, 100000);
-    e.seed(time(0));
-    auto random = [&e, &u]() -> double {
-        return u(e)*1.0/100000;
-    };
-
+    std::unordered_set<Seq::Id> selected;
     long long accu = 0;
-    rd_store.Save(ofname_, id2name_, [&](Seq::Id id, const DnaSeq& seq) {
-        auto wt = weight[id - rd_store.GetIdLow()];
-        bool r =  seq.Size() >= min_length_ &&  random() <= rate * wt / bwt;
-        if (r) accu += seq.Size();
-        return r;
-    }, thread_size_);
+    for (auto i : shuffled) {
+        auto seqlen = rd_store.GetSeqLength(i);
+        if (seqlen > min_length_) {
+            accu += seqlen;
+            selected.insert(i);
+        }
+        if (accu >= base_size_) break;
+    }
+
+    rd_store.Save(ofname_, id2name_, [&selected](Seq::Id id, const DnaSeq& seq) {
+        return selected.find(id) != selected.end();
+    }, 4);
 
     LOG(INFO)("End sampling obtained=%lld", accu);
 }

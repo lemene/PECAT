@@ -10,39 +10,17 @@ namespace fsa {
 
 ArgumentParser ContigPolish::GetArgumentParser() {
     ArgumentParser ap;
-    ap.AddPositionOption(overlap_fname_, "ol_fname", "overlap file name");
-    ap.AddPositionOption(ctg_fname_, "ctg_fname", "contig file name");
-    ap.AddPositionOption(rread_fname_, "rr_fname", "raw read file name");
-    ap.AddPositionOption(cread_fname_, "cr_fname", "corrected read file name");
-
-    ap.AddNamedOption(filter1_opts_, "filter1", "overlap filtering options using at loading step", "");
-    ap.AddNamedOption(thread_size_, "thread_size", "thread size");
-    ap.AddNamedOption(output_directory_, "output_directory", "The directory for temporary files");
-    ap.AddNamedOption(read_name_, "read_name", "Set read name for correcting");
-    ap.AddNamedOption(read_name_fname_, "read_name_fname", "Set read name for correcting");
     ap.AddNamedOption(aligner_, "aligner", "method for local alignment, diff|edlib.");
     ap.AddNamedOption(score_, "score", "");
     ap.AddNamedOption(coverage_, "coverage", "");
-    ap.AddNamedOption(min_length_, "min_length", "");
-    ap.AddNamedOption(min_aligned_length_, "min_aligned_length", "");
     ap.AddNamedOption(min_identity_, "min_identity", "");
     ap.AddNamedOption(min_local_identity_, "min_local_identity", "");
     ap.AddNamedOption(min_coverage_, "min_coverage", "");
-    ap.AddNamedOption(max_overhang_, "max_overhang", "");
-    ap.AddNamedOption(max_overhang_rate_, "max_overhang_rate", "");
     opts_.SetArguments(ap);
 
     return ap;
 }
 
-void ContigPolish::CheckArguments() {
-    filter0_.From(filter0_opts_);
-    filter1_.From(filter1_opts_);
-    
-    filter0_opts_ = filter0_.ToString();
-    filter1_opts_ = filter1_.ToString();
-
-}
 void ContigPolish::CalcCoverage() {
     for (auto ctgid : read_ids_) {
         const auto ctglen = read_store_.GetSeqLength(ctgid);
@@ -95,58 +73,20 @@ void ContigPolish::CalcCoverage() {
 
 void ContigPolish::Running() {
     dataset_.Load();
-    read_store_.Load(ctg_fname_, "", true);
-    LoadReadIds();
-    read_store_.Load(rread_fname_, "", true);
 
-    LoadOverlaps(overlap_fname_);
-
-    ol_store_.GroupTarget(groups_, thread_size_);
+    ol_store_.GroupTarget(groups_, opts_.thread_size);
 
     CalcCoverage();
     LOG(INFO)("Start Correcting");
     Correct();
 }
 
-void ContigPolish::LoadOverlaps(const std::string &fname) {
-    std::unordered_set<Seq::Id> ids(read_ids_.begin(), read_ids_.end());
 
-    auto filter = [this, &ids](Overlap &o) {
-        bool rel = ids.find(o.b_.id) != ids.end();
-        return rel;// && filter0_.ValidQuery(o);
-
-    };
-    
-    ol_store_.LoadFast(fname, "", (size_t)thread_size_, filter);
-
-    LOG(INFO)("Load %zd overlaps from file %s", ol_store_.Size(), fname.c_str());
-
-}
-
-
-
-void ContigPolish::LoadReadIds() {
-    if (!read_name_.empty()) {
-        read_ids_.push_back(read_store_.QueryIdByName(read_name_));
-    } else if (!read_name_fname_.empty()) {
-        std::ifstream file(read_name_fname_);
-        std::string line;
-        while (std::getline(file, line)) {
-            read_ids_.push_back(read_store_.QueryIdByName(line));
-        }
-
-    } else {
-        std::array<size_t, 2> range = read_store_.GetIdRange();
-        for (int i=range[0]; i<range[1]; ++i) {
-            read_ids_.push_back(i);
-        }
-    }
-}
 
 
 void ContigPolish::Correct() {
     std::mutex mutex;
-    std::ofstream of_cread(cread_fname_);
+    std::ofstream of_cread(dataset_.cread_fname_);
 
    auto save_contig = [&](const std::string& name, const std::string &seq) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -189,29 +129,29 @@ void ContigPolish::Correct() {
     };
 
  
-    LOG(INFO)("thread size %zd, jobsize %d", thread_size_, windows.size());
+    LOG(INFO)("thread size %zd, jobsize %d", opts_.thread_size, windows.size());
     if (of_cread.is_open()) {
-        MultiThreadRun((size_t)thread_size_, work_func);
+        MultiThreadRun((size_t)opts_.thread_size, work_func);
     } else {
-        LOG(INFO)("Failed to open file: %s", rread_fname_.c_str());
+        LOG(INFO)("Failed to open file: %s", dataset_.rread_fname_.c_str());
     }
 
 }
 
 
 bool ContigPolish::Worker::ExactFilter(const Alignment &r) {
-    if (r.AlignSize() < (size_t)owner_.filter1_.min_aligned_length && 
-        r.AlignSize() < r.QuerySize() * owner_.filter1_.min_aligned_length) return true;
+    if (r.AlignSize() < (size_t)owner_.opts_.filter1_.min_aligned_length && 
+        r.AlignSize() < r.QuerySize() * owner_.opts_.filter1_.min_aligned_length) return true;
     
     if (r.Identity() < owner_.min_identity_) return true;
 
-    if (r.AlignSize() >= owner_.filter1_.min_accept_aligned_length) return false;
+    if (r.AlignSize() >= owner_.opts_.filter1_.min_accept_aligned_length) return false;
 
-    const double oh_rate = owner_.filter1_.max_overhang_rate;
+    const double oh_rate = owner_.opts_.filter1_.max_overhang_rate;
 
 
-    size_t t_overhang = std::max(size_t(r.TargetSize()*oh_rate), (size_t)owner_.filter1_.max_overhang);
-    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)owner_.filter1_.max_overhang);
+    size_t t_overhang = std::max(size_t(r.TargetSize()*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
+    size_t q_overhang = std::max(size_t(r.QuerySize()*oh_rate), (size_t)owner_.opts_.filter1_.max_overhang);
 
     if (r.target_start > t_overhang && r.query_start > q_overhang) return true;
     if (r.target_end + t_overhang < r.TargetSize() && r.query_end + q_overhang < r.QuerySize()) return true;

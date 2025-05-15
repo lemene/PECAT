@@ -58,6 +58,8 @@ public:
     std::string overlap_fname_;
     std::string rread_fname_;
     std::string cread_fname_;
+
+    
     std::string graph_fname_ {""};
     std::string infos_fname_ {""}; 
     std::string rd_2_ref_fname_ { "" };
