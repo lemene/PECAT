@@ -97,12 +97,119 @@ bool ContigPolish::Worker::ExactFilter(const Alignment &r) {
     return false;
 }
 
-bool ContigPolish::Worker::GetAlignment(Seq::Id id, const Overlap* o, Alignment& al) {
-    const auto& tread = o->GetRead(id);
-    const auto& qread = o->GetOtherRead(id);
+bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignment& al) {
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
 
-    std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
-    return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+  
+    if (ol.detail_.size() != 0) {
+        GetAlignmentFromCigar(tid, ol, al);
+        return true;
+    } else {
+        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+        return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+    }
+
+
+}
+
+
+
+void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol, Alignment &al) {
+    assert(ol.detail_.size() > 0);
+
+    const DnaSeq& qseq = owner_.dataset_.read_store_.GetSeq(ol.a_.id);
+    const DnaSeq& tseq = owner_.dataset_.read_store_.GetSeq(ol.b_.id);
+    assert(ol.b_.strand == 0);
+
+    std::vector<uint8_t> tal;   tal.reserve(ol.AlignedLength()*2);
+    std::vector<uint8_t> qal;   qal.reserve(ol.AlignedLength()*2);
+
+
+    auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
+        return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
+    };
+
+    size_t qidx = 0;        // not from ol.b_.start;
+    size_t tidx = ol.b_.start;
+    size_t distance = 0;
+    for (const auto &d : ol.detail_) {
+        switch (d.type){
+        case 'M':
+        case '=':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                uint8_t cq = get_base(ol.a_, qseq, qidx+i);
+                uint8_t ct = tseq[tidx+i];
+                qal.push_back(cq+1);
+                tal.push_back(ct+1);
+                if (cq != ct) {
+                    distance++;
+                }
+            }
+            qidx += d.len;
+            tidx += d.len;
+            break;
+        case 'I':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                char cq = get_base(ol.a_, qseq, qidx+i);
+                qal.push_back(cq+1);
+                tal.push_back(0);
+            }
+            qidx += d.len;
+            distance += d.len;
+            break;
+        case 'D':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                char ct = tseq[tidx+i];
+                qal.push_back(0);
+                tal.push_back(ct+1);
+            }
+            distance += d.len;
+            tidx += d.len;
+            break; 
+        default:
+            LOG(ERROR)("never come here");
+        }
+    }
+    
+    const auto& tread = ol.GetRead(tid);
+    const auto& qread = ol.GetOtherRead(tid);
+    al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
+    al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
+    assert(al.target!= nullptr);
+    al.target_start = tread.start;
+    al.target_end = tread.end;
+    al.query_start = qread.start;
+    al.query_end = tread.end;
+    al.distance = distance;
+
+    const char* ACGT = "-ACGT-";
+    if (tread.id == ol.b_.id) {
+        assert(tread.strand == 0);
+        for (size_t i = 0; i < tal.size(); ++i) {
+            al.aligned_target.push_back(ACGT[tal[i]]);
+            al.aligned_query.push_back(ACGT[qal[i]]);
+        }
+    } else {
+        if (tread.strand == 0) {
+            for (size_t i = 0; i < tal.size(); ++i) {
+                al.aligned_target.push_back(ACGT[qal[i]]);
+                al.aligned_query.push_back(ACGT[tal[i]]);
+            }
+        } else {
+            for (size_t i = 0; i < tal.size(); ++i) {
+                al.aligned_target.push_back(ACGT[5 - qal[tal.size()-i-1]]);
+                al.aligned_query.push_back(ACGT[5 - tal[tal.size()-i-1]]);
+            }
+        }
+    }
+
+    // for (size_t i = 0, it = 0; i < al.aligned_target.size(); ++i) {
+    //     if (al.aligned_target[i] != '-') {
+    //         assert(al.aligned_target[i] == "ACGT"[(*al.target)[it+al.target_start]]);
+    //         it ++;
+    //     } 
+    // }
 
 }
       

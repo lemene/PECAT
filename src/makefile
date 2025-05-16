@@ -85,6 +85,9 @@ fsa_kmer_bin_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_kmer_bin_src))
 fsa_sam_tools_src = ./prog/fsa_sam_tools.cpp ./sam_tools.cpp
 fsa_sam_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_sam_tools_src))
 
+fsa_rd_call_src = ./prog/fsa_rd_call.cpp ./phase/read_call.cpp
+fsa_rd_call_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_call_src))
+
 ifeq ($(BUILDDEBUG), 1)
 	CFLAGS =  -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 	CXXFLAGS = -std=c++11 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
@@ -170,6 +173,13 @@ $(BUILD_BIN_DIR)/fsa_kmer_bin: $(fsa_kmer_bin_obj) $(BUILD_BIN_DIR)/libfsa.a
 
 $(BUILD_BIN_DIR)/fsa_sam_tools: $(fsa_sam_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
+
+
+$(BUILD_BIN_DIR)/fsa_rd_call: $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
+	echo $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
+	g++ $^ -o $@ $(LDFLAGS)
+
+
 
 %.o:%.c
 	gcc $(CFLAGS) -c -MMD -MP -MF "$(@:%.o=%.d)" -MT "$(@:%.o=%.o)" -o "$@" "$<"

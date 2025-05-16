@@ -90,7 +90,8 @@ protected:
         void CalculateWeight(Seq::Id tid,  const DnaSeq& target, const std::vector<const Overlap*> & cands, int offset, const std::array<int,2>& range);
         bool IsCoverageEnough(const std::vector<int> &cov);
         bool ExactFilter(const Alignment& r);
-        bool GetAlignment(Seq::Id id, const Overlap* o, Alignment &al);
+        bool GetAlignment(Seq::Id id, const Overlap& ol, Alignment &al);
+        void GetAlignmentFromCigar(Seq::Id tid, const Overlap &ol, Alignment &al);
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(), scores_.clear(); }
         const std::string GetCorrected() const { return graph_.GetSequence(); }
     protected:
