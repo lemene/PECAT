@@ -175,6 +175,7 @@ void AlignmentGraph::Clear() {
     query_infos_.Clear();
     sequence_.clear();
     quality_.clear();
+    true_range_.clear();
     tags_.clear();
 }
 
@@ -217,11 +218,8 @@ void AlignmentGraph::Clear() {
 
 // }
 
-AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
-    Segment seg ;
+void AlignmentGraph::ComputeNodeScore() {
 
-    double global_score = -1;
-    
     ComputeSimilarity4();
 
     score_range_ = { 1.0, -1.0};
@@ -238,7 +236,6 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
         cols[col].selected = 0;
         if (cols[col].queries[0]) cols[col].weight += 0.5;  // TODO Target score
 
-       // if (cols[col].queries[0]) cols[col].weight += 1;
         for (size_t i=0; i<query_infos_.scores_.size(); ++i) {
             if (cols[col].queries[i+1] && query_infos_.selected_.count(i) > 0) {
                 cols[col].weight += query_infos_.scores_[i].WeightInGraph(score_range_, opts_.weight_range_);
@@ -247,7 +244,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
         }
     }
 
-    for (size_t i = 0; i < cols.size(); i++) {
+    for (size_t i = range_[0]; i < range_[1]; i++) {
         if (cols[i].selected < opts_.min_coverage) continue;
         for (size_t j = 0; j < cols[i].Size(); j++) {
             for (size_t k = 0; k < cols[i][j].Size(); k++) {
@@ -263,43 +260,82 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
 
                     double score = LinkScoreWeight(i, j, link) + (prev.col == -1 ? 0 : cols[prev.col][prev.row][prev.base].score);
                     DEBUG_printf("FFF (%zd, %zd, %zd) <- (%zd, %zd,%zd),%f\n", prev.col, prev.row, prev.base, i, j, k, score);
-
+                    
+                    //LOG(INFO)("%d, %d, %d = %.02f, %.02f ", i, j, k, score, node.score);
                     if (score > node.score) {
                         node.score = score;
                         node.best_link = &link;
                     }
                 }
-
-                if (node.score > global_score) {
-                    global_score = node.score;
-                    seg.end = Loc(i, j, k);                     
-                }
             }
         }
     }
 
-    return seg;
-
 }
 
+auto AlignmentGraph::FindBestPath() ->  std::vector<Segment> {
+    std::vector<Segment> segs;
+
+    auto find_best_segs = [this](int istart, int iend) {
+        //`LOG(INFO)("%d %d", istart, iend);
+
+        assert(istart > iend);
+
+        Segment seg = {Loc::Invalid(), Loc::Invalid(), 0};
+
+        seg.end = {istart-1, 0, 0 };
+        for (int i = 1; (size_t)i < cols[istart-1][0].Size(); i--) {
+            if (Get(seg.end)->score < Get({istart-1, 0, i})->score) {
+                seg.end.base = i;
+            } 
+        }
+
+        seg.begin = seg.end;
+        while (seg.begin.col >= iend) {
+            auto best_link = Get(seg.begin)->best_link;
+            //LOG(INFO)("ccc %d %d %d %zd", seg.begin.col, seg.begin.row, seg.begin.base, best_link);
+            if (best_link != nullptr && best_link->prev.col != -1) {
+                seg.begin = best_link->prev;
+            } else {
+                break;
+            }
+        }
+        //LOG(INFO)("return seg1: %d %d", seg.begin.col, seg.end.col);
+        return seg;
+    };
+
+    auto seg = find_best_segs(range_[1], range_[0]);
+    do {
+        if (seg.end.col - seg.begin.col > 100) {
+            segs.push_back(seg);
+        }
+        if (seg.begin.col <= (int)range_[0]) break;
+        seg = find_best_segs(seg.begin.col, (int)range_[0]);
+    } while (true);
+
+
+    //LOG(INFO)("SEGS size=%zd", segs.size()    );
+    return segs;
+    
+}
 
 void AlignmentGraph::Reconstruct(const std::vector<Segment>& segs) {
 
-    std::vector<std::string> cns;
-    for (const auto& seg : segs) {
-        std::string s= ReconstructSimple(seg);
-        if (seg.type == 0 || seg.end.col - seg.begin.col > opts_.max_bubble_length_ ) {
-            cns.push_back(ReconstructSimple(seg));
-        } else {
-            cns.push_back(ReconstructComplex(seg));
-        }
-    }
+    // std::vector<std::string> cns;
+    // for (const auto& seg : segs) {
+    //     std::string s= ReconstructSimple(seg);
+    //     if (seg.type == 0 || seg.end.col - seg.begin.col > opts_.max_bubble_length_ ) {
+    //         cns.push_back(ReconstructSimple(seg));
+    //     } else {
+    //         cns.push_back(ReconstructComplex(seg));
+    //     }
+    // }
 
-    sequence_ = cns[0];
-    for (size_t i = 1; i < segs.size(); ++i) {
-        size_t off = segs[i].begin.base == 4 ? 0 : 1;           // if the base is not '-', skip the base
-        sequence_.insert(sequence_.end(), cns[i].begin()+off, cns[i].end());
-    }
+    // sequence_ = cns[0];
+    // for (size_t i = 1; i < segs.size(); ++i) {
+    //     size_t off = segs[i].begin.base == 4 ? 0 : 1;           // if the base is not '-', skip the base
+    //     sequence_.insert(sequence_.end(), cns[i].begin()+off, cns[i].end());
+    // }
 }
 
 auto AlignmentGraph::GetGoodPaths(const Loc& start, const Loc &end) -> std::vector<std::vector<Loc>> {
@@ -416,8 +452,6 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
     const Node *curr_node = Get(seg.end);
     Loc loc = seg.end;
 
-    const std::vector<std::string> toBase = {"A", "C", "G", "T", ""};
-
     auto valid = [this](const Node *n, const Loc& l) {
         return cols[l.col].coverage >= (size_t)opts_.min_coverage || n->best_link->count >= (size_t)opts_.min_coverage / 2; 
     };
@@ -469,13 +503,13 @@ std::string AlignmentGraph::ReconstructSimple(const Segment& seg) {
         return r0[0].col - r0[1].col < r1[0].col - r1[1].col;
     });
 
-    if (range.size() > 0) {
-        DEBUG_printf("vvv %zd %d %d %d %d\n", range.size(), (*mx)[0].col, (*mx)[1].col, seg.begin.col, seg.end.col);
-        cns = ReconstructPath(GetBestPath((*mx)[1], (*mx)[0]));
-        true_range_[1] = (*mx)[0].col;
-        true_range_[0] = (*mx)[1].col < 0 ? 0 : (*mx)[1].col;
-        DEBUG_printf("true_range: %zd %zd\n", true_range_[0], true_range_[1]);
-    }
+    // if (range.size() > 0) {
+    //     DEBUG_printf("vvv %zd %d %d %d %d\n", range.size(), (*mx)[0].col, (*mx)[1].col, seg.begin.col, seg.end.col);
+    //     cns = ReconstructPath(GetBestPath((*mx)[1], (*mx)[0]));
+    //     range[1] = (*mx)[0].col;
+    //     range[0] = (*mx)[1].col < 0 ? 0 : (*mx)[1].col;
+    //     DEBUG_printf("true_range: %zd %zd\n", range[0], range[1]);
+    // }
     return cns;
 }
 
@@ -678,7 +712,16 @@ AlignmentGraph::Loc AlignmentGraph::Locate(const Node& node) {
 }
 
 void AlignmentGraph::Consensus() {
-    Segment seg = FindBestPathBasedOnWeight();
+    ComputeNodeScore();
+    auto segs = FindBestPath();
+
+    for (auto it = segs.rbegin(); it != segs.rend(); ++it) {
+        LOG(INFO)("SEG-RANGE:%d-%d", it->begin.col, it->end.col);
+        sequence_.push_back(ReconstructPath(GetBestPath(it->begin, it->end)));
+        quality_.push_back("");
+        true_range_.push_back({it->begin.col, it->end.col});
+
+    }
 
 
     // auto segs = SplitSegment(seg.end);
@@ -719,15 +762,6 @@ void AlignmentGraph::Consensus() {
     //         sequence_ += ReconstructSimple(s);
     //     }
     //}
-    if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
-        sequence_ = ReconstructSimple(seg);
-        if (sequence_.size() == 50500) {
-            LOG(INFO)("SEQSEQ: %d - (%d %d)\n", seg.end.col, true_range_[0], true_range_[1]);
-        }
-    } else {
-        sequence_ = "";
-    }
-
 }
 
 void AlignmentGraph::AddTarget(const DnaSeq& target, const std::array<size_t, 2> &range) {

@@ -58,8 +58,8 @@ protected:
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(); }
         void ClearCache() { return cache_.Clear(); }
         void ResetCache(const std::vector<Seq::Id> &ids, size_t size) { return cache_.Reset(ids, size); }
-        const std::string GetCorrected() const { return graph_.GetSequence(); }
-        const std::array<size_t, 2> & GetTrueRange() const { return graph_.GetTrueRange(); }
+        const std::string GetCorrected() const { return graph_.GetBestSequence(); }
+        const std::array<size_t, 2> & GetTrueRange() const { return graph_.GetBestSequenceRange(); }
         void SaveReadInfos(std::ostream& os, int tid, const ReadStore &rd) { graph_.SaveReadInfos(os, tid, rd); }
         std::vector<Alignment> CheckLocalDistance0(const std::vector<Alignment>& als);
         std::vector<std::array<size_t, 2>> GroupPositions(const std::vector<size_t> &sorted_positions);

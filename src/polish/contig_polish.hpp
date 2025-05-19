@@ -47,8 +47,11 @@ protected:
         }
         Seq::Id GetTId() { return owner->tid; }
         ContigJob *owner { nullptr};
+        std::string GetSeq() const { return std::accumulate(seqs.begin(), seqs.end(), std::string()); }
         int start, end;
-        std::string seq;
+        std::vector<std::array<size_t, 2>> ranges;
+        std::vector<std::string> seqs;
+        std::vector<std::string> quals;
         std::atomic<bool> done { false};
 
     };
@@ -93,7 +96,7 @@ protected:
         bool GetAlignment(Seq::Id id, const Overlap& ol, Alignment &al, int ctgstart);
         void GetAlignmentFromCigar(Seq::Id tid, const Overlap &ol, Alignment &al);
         void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(), scores_.clear(); }
-        const std::string GetCorrected() const { return graph_.GetSequence(); }
+        const std::string GetCorrected() const { return graph_.GetBestSequence(); }
     protected:
         ContigPolish& owner_;
         ArrayGraph graph_;

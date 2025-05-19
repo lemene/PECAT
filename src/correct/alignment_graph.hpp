@@ -96,8 +96,8 @@ public:
             }
         }
         uint16_t count{ 0 };
-        double score{ 0 };
         const Link* best_link{ nullptr };
+        double score{ 0 };
 
         std::vector<Link> links;
         MyBitSet seqs;
@@ -239,7 +239,8 @@ public:
         return &cols[loc.col].rows[loc.row].base[loc.base];
     }
 
-    Segment FindBestPathBasedOnWeight();
+    void ComputeNodeScore();
+    std::vector<Segment> FindBestPath();
     
     std::vector<std::string> RestoreSegment(const Segment &seg) ;
 
@@ -259,9 +260,20 @@ public:
 
     // std::vector<std::string> RestoreSegment(const Segment &seg);
 
-    const std::string& GetSequence() const { return sequence_; }
-    const std::string& GetQuality() const { return quality_; }
-    const std::array<size_t, 2>& GetTrueRange() const { return true_range_; }
+    // get result
+    size_t getSequenceCount() const { return sequence_.size(); }
+    size_t GetBestSequenceIndex() const {
+        return std::max_element(sequence_.begin(), sequence_.end(), [](const std::string &a, const std::string& b) {
+            return a.length() < b.length();
+        }) - sequence_.begin();
+    } 
+    const std::vector<std::string>& GetSequence() const { return sequence_; }
+    const std::string& GetSequence(size_t i) const { return sequence_[i]; }
+    const std::string& GetBestSequence() const { return sequence_[GetBestSequenceIndex()]; }
+    const std::string& GetQuality(size_t i) const { return quality_[i]; }
+    const std::vector<std::array<size_t, 2>>& GetSequenceRange() const { return true_range_; }
+    const std::array<size_t, 2>& GetSequenceRange(size_t i) const { return true_range_[i]; }
+    const std::array<size_t, 2>& GetBestSequenceRange() const { return true_range_[GetBestSequenceIndex()]; }
 
     void ComputeSimilarity4();
     struct ImportantBranch {
@@ -298,7 +310,6 @@ protected:
     std::vector<Column> cols;
     const DnaSeq* target_;
     std::array<size_t,2> range_;
-    std::array<size_t,2> true_range_ {{0, 0}};
     std::array<double, 2> score_range_;
     Options opts_;
 
@@ -306,10 +317,12 @@ protected:
 
     std::vector<Tag> tags_;
 
-    std::string sequence_;
-    std::string quality_;
     QueryInfos query_infos_;
-};
 
+
+    std::vector<std::string> sequence_;
+    std::vector<std::string> quality_;
+    std::vector<std::array<size_t,2>> true_range_;
+};
 
 } // namespace fsa {

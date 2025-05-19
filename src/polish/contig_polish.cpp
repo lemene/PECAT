@@ -272,13 +272,16 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
     auto id = job.GetTId();
     std::vector<const Overlap*> cands = job.GetOverlaps();
     if (cands.size() == 0) {    // if the area is not coveraged by any reads.
-        job.seq = *DnaSeq(owner_.dataset_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString();
+        job.seqs.push_back(*DnaSeq(owner_.dataset_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString());
+        job.ranges.push_back({job.start, job.end});
         return true;
     }
-    //if (job.start != 599500) return false;
+    //if (job.start != 99500) return false;
     // 寻找
     int ctgstart = job.start;
     int ctgend = job.end;
+
+    LOG(INFO)("start correct: %d - %d", ctgstart, ctgend);
     for (auto o : cands) {
         auto& r = o->GetRead(id);
         if (r.start < ctgstart)  ctgstart = r.start;
@@ -328,9 +331,11 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
    
     graph_.Build(target, range, aligned_);
     graph_.Consensus();
-    job.seq = graph_.GetSequence();
-    auto s = graph_.GetTrueRange();
-    LOG(INFO)("rrr: %zd %zd, %zd, %zd -> %zd(%d-%d) %zd-%zd %d-%d",aligned_.size(), s[0], s[1], target.Size(), job.seq.size(), job.start, job.end,range[0], range[1], ctgstart, ctgend);
+    job.seqs = graph_.GetSequence();
+    job.ranges = graph_.GetSequenceRange();
+    for (size_t i = 0; i < job.seqs.size(); ++i) {
+        LOG(INFO)("rrr: %zd %zd, %zd, %zd -> %zd(%d-%d) %zd-%zd %d-%d",aligned_.size(), s[0], s[1], target.Size(), job.seq.size(), job.start, job.end,range[0], range[1], ctgstart, ctgend);
+    }
 
     job.done = true;
 
@@ -405,12 +410,12 @@ ContigPolish::ContigJob::ContigJob(Seq::Id id, size_t len, const std::unordered_
 std::string ContigPolish::ContigJob::GetSeq() const {
     assert(windows.size() > 0);
 
-    std::string seq(windows.front()->seq);
+    std::string seq(windows.front()->GetSeq());
 
     for (size_t i=1; i < windows.size(); ++i) {
         // 取后一节窗口的overlap的中间二分一的数据，在前一个窗口的overlap中寻找。
 
-        const std::string& next = windows[i]->seq; // alias
+        const std::string next = windows[i]->GetSeq();
 
         EdlibAlignResult r = edlibAlign(next.c_str(), ovl_size, seq.c_str()+seq.size()-ovl_size, ovl_size, 
             edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
