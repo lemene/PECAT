@@ -46,9 +46,9 @@ void ContigPolish::Correct() {
 
     auto work_func = [&](size_t i) {
         Worker worker(*this);
-
         auto curr = index.fetch_add(1);
         while (curr < windows.size()) {
+            
             //if (curr != 0) { curr = index.fetch_add(1);continue; }
             auto& wjob = *windows[curr];
             worker.Correct(wjob);
@@ -97,16 +97,23 @@ bool ContigPolish::Worker::ExactFilter(const Alignment &r) {
     return false;
 }
 
-bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignment& al) {
+bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignment& al, int ctgstart) {
     const auto& tread = ol.GetRead(tid);
     const auto& qread = ol.GetOtherRead(tid);
 
   
     if (ol.detail_.size() != 0) {
         GetAlignmentFromCigar(tid, ol, al);
+        al.target_start -= ctgstart;
+        al.target_end -= ctgstart;
+
+        Alignment al0;
+        std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
+        auto r =  aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al0);  // TODO target 由调用者设置，可能存在不一致，需要优化。
         return true;
     } else {
-        std::array<int, 4> range = {qread.start, qread.end, tread.start, tread.end};
+
+        std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
         return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
     }
 
@@ -117,13 +124,14 @@ bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignmen
 
 void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol, Alignment &al) {
     assert(ol.detail_.size() > 0);
-
     const DnaSeq& qseq = owner_.dataset_.read_store_.GetSeq(ol.a_.id);
     const DnaSeq& tseq = owner_.dataset_.read_store_.GetSeq(ol.b_.id);
     assert(ol.b_.strand == 0);
 
-    std::vector<uint8_t> tal;   tal.reserve(ol.AlignedLength()*2);
-    std::vector<uint8_t> qal;   qal.reserve(ol.AlignedLength()*2);
+    std::vector<uint8_t> tal;   
+    tal.reserve(ol.AlignedLength()*2);
+    std::vector<uint8_t> qal;   
+    qal.reserve(ol.AlignedLength()*2);
 
 
     auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
@@ -174,13 +182,14 @@ void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol,
     
     const auto& tread = ol.GetRead(tid);
     const auto& qread = ol.GetOtherRead(tid);
+
     al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
     al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
     assert(al.target!= nullptr);
     al.target_start = tread.start;
     al.target_end = tread.end;
     al.query_start = qread.start;
-    al.query_end = tread.end;
+    al.query_end = qread.end;
     al.distance = distance;
 
     const char* ACGT = "-ACGT-";
@@ -203,7 +212,6 @@ void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol,
             }
         }
     }
-
     // for (size_t i = 0, it = 0; i < al.aligned_target.size(); ++i) {
     //     if (al.aligned_target[i] != '-') {
     //         assert(al.aligned_target[i] == "ACGT"[(*al.target)[it+al.target_start]]);
@@ -262,13 +270,12 @@ void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol,
 bool ContigPolish::Worker::Correct(WindowJob &job) {
  
     auto id = job.GetTId();
-
     std::vector<const Overlap*> cands = job.GetOverlaps();
     if (cands.size() == 0) {    // if the area is not coveraged by any reads.
         job.seq = *DnaSeq(owner_.dataset_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString();
         return true;
     }
-
+    //if (job.start != 599500) return false;
     // 寻找
     int ctgstart = job.start;
     int ctgend = job.end;
@@ -297,8 +304,8 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
 
         std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
         assert(range[2] >= 0);
-        auto r = aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !o->SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
-        if (r && !ExactFilter(al)) {
+        auto r = GetAlignment(id, *o, al, ctgstart);
+        if (r && !ExactFilter(al) && al.Identity() >= owner_.opts_.min_identity_) {
             al.Rearrange();
             aligned_.push_back(al);
 
@@ -313,15 +320,17 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         });
         heap_size--;
     }
-    printf("al size %zd/%zd\n", aligned_.size(), cands.size());
 
-    auto range = MostEffectiveCoverage(target.Size(), aligned_, 500, owner_.opts_.min_coverage_);
+    //LOG(INFO)("al size %zd/%zd\n", aligned_.size(), cands.size());
+
+    //auto range = MostEffectiveCoverage(target.Size(), aligned_, 500, owner_.opts_.min_coverage_);
+    std::array<size_t,2> range = {job.start - ctgstart, job.end - ctgstart};
    
     graph_.Build(target, range, aligned_);
     graph_.Consensus();
     job.seq = graph_.GetSequence();
     auto s = graph_.GetTrueRange();
-    printf("rrr: %zd, %zd, %zd -> %zd %zd-%zd %d-%d\n", s[0], s[1], target.Size(), job.seq.size(), range[0], range[1], ctgstart, ctgend);
+    LOG(INFO)("rrr: %zd %zd, %zd, %zd -> %zd(%d-%d) %zd-%zd %d-%d",aligned_.size(), s[0], s[1], target.Size(), job.seq.size(), job.start, job.end,range[0], range[1], ctgstart, ctgend);
 
     job.done = true;
 
@@ -390,7 +399,6 @@ ContigPolish::ContigJob::ContigJob(Seq::Id id, size_t len, const std::unordered_
 
         windows.push_back(std::shared_ptr<WindowJob>(new WindowJob(this, start, end)));
         curr = end;
-        printf("winsize: %zd-%zd\n", start, end);
     }
 } 
 
@@ -403,7 +411,6 @@ std::string ContigPolish::ContigJob::GetSeq() const {
         // 取后一节窗口的overlap的中间二分一的数据，在前一个窗口的overlap中寻找。
 
         const std::string& next = windows[i]->seq; // alias
-        printf("next %zd %d %d\n", next.size(), windows[i]->start, windows[i]->end);
 
         EdlibAlignResult r = edlibAlign(next.c_str(), ovl_size, seq.c_str()+seq.size()-ovl_size, ovl_size, 
             edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));

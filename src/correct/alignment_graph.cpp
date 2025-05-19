@@ -117,7 +117,7 @@ void AlignmentGraph::Build(const DnaSeq& target, const std::array<size_t,2> &ran
     BuildCol(ics, tags_.size());
 
     tags_.clear();
-    if (print_rubbish) SaveGraph("sss.txt", 0, cols.size());
+    //if (print_rubbish) SaveGraph("sss.txt", 0, cols.size());
 }
 
 
@@ -233,7 +233,7 @@ AlignmentGraph::Segment AlignmentGraph::FindBestPathBasedOnWeight() {
         }
     }
     // pre-compute
-    for (size_t col = range_[0]; col < cols.size(); col++) {
+    for (size_t col = range_[0]; col < range_[1]; col++) {
         cols[col].weight = 0;
         cols[col].selected = 0;
         if (cols[col].queries[0]) cols[col].weight += 0.5;  // TODO Target score
@@ -721,6 +721,9 @@ void AlignmentGraph::Consensus() {
     //}
     if (seg.end.col > 0) {  // TODO should be replaced by assert(seg.end.col > 0 && "Must find one path");
         sequence_ = ReconstructSimple(seg);
+        if (sequence_.size() == 50500) {
+            LOG(INFO)("SEQSEQ: %d - (%d %d)\n", seg.end.col, true_range_[0], true_range_[1]);
+        }
     } else {
         sequence_ = "";
     }
