@@ -36,7 +36,7 @@ void ContigPolish::Correct() {
     std::vector<std::shared_ptr<WindowJob>> windows;
     std::vector<std::shared_ptr<ContigJob>> jobs;
     for (auto i : dataset_.read_ids_) {        
-        jobs.push_back(std::shared_ptr<ContigJob>(new ContigJob(i, dataset_.read_store_.GetSeqLength(i), dataset_.groups_[i], opts_.window_size_, opts_.overlap_size_)));
+        jobs.push_back(std::shared_ptr<ContigJob>(new ContigJob(i, dataset_, opts_.window_size_, opts_.overlap_size_)));
         for (auto &s : jobs.back()->windows) {
             windows.push_back(s);
         }
@@ -106,10 +106,7 @@ bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignmen
         GetAlignmentFromCigar(tid, ol, al);
         al.target_start -= ctgstart;
         al.target_end -= ctgstart;
-
-        Alignment al0;
-        std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
-        auto r =  aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al0);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+        DEBUG_printf("T:%s\nQ:%s\n", al.aligned_target.c_str(), al.aligned_query.c_str());
         return true;
     } else {
 
@@ -132,7 +129,6 @@ void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol,
     tal.reserve(ol.AlignedLength()*2);
     std::vector<uint8_t> qal;   
     qal.reserve(ol.AlignedLength()*2);
-
 
     auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
         return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
@@ -276,10 +272,11 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         job.ranges.push_back({job.start, job.end});
         return true;
     }
-    //if (job.start != 99500) return false;
+    if (job.start != 449500) return false;
     // 寻找
     int ctgstart = job.start;
     int ctgend = job.end;
+    job.owner->ctg_err_dt.GetBigInserts(ctgstart, ctgend);
 
     LOG(INFO)("start correct: %d - %d", ctgstart, ctgend);
     for (auto o : cands) {
@@ -308,8 +305,10 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
         assert(range[2] >= 0);
         auto r = GetAlignment(id, *o, al, ctgstart);
+        DEBUG_printf("alignment(%s<->%s): (%d, %d, %d) - (%d, %d, %d) %f\n", owner_.dataset_.QueryStringById(o->a_.id).c_str(), owner_.dataset_.QueryStringById(o->b_.id).c_str(),
+            al.query_start, al.query_end, al.QuerySize(), al.target_start, al.target_end, al.TargetSize(), al.Identity());
         if (r && !ExactFilter(al) && al.Identity() >= owner_.opts_.min_identity_) {
-            al.Rearrange();
+            //al.Rearrange();
             aligned_.push_back(al);
 
             std::for_each(coverage.begin()+al.target_start, coverage.begin()+al.target_end, [](int& c) {c++;} );
@@ -324,6 +323,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         heap_size--;
     }
 
+
     //LOG(INFO)("al size %zd/%zd\n", aligned_.size(), cands.size());
 
     //auto range = MostEffectiveCoverage(target.Size(), aligned_, 500, owner_.opts_.min_coverage_);
@@ -334,7 +334,9 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
     job.seqs = graph_.GetSequence();
     job.ranges = graph_.GetSequenceRange();
     for (size_t i = 0; i < job.seqs.size(); ++i) {
-        LOG(INFO)("rrr: %zd %zd, %zd, %zd -> %zd(%d-%d) %zd-%zd %d-%d",aligned_.size(), s[0], s[1], target.Size(), job.seq.size(), job.start, job.end,range[0], range[1], ctgstart, ctgend);
+        auto seq = job.seqs[i];
+        auto s = job.ranges[i];
+        LOG(INFO)("rrr(%zd/%zd): %zd %zd, %zd, %zd -> %zd(%d-%d) %zd-%zd %d-%d",i, job.seqs.size(),aligned_.size(), s[0], s[1], target.Size(), seq.size(), job.start, job.end,range[0], range[1], ctgstart, ctgend);
     }
 
     job.done = true;
@@ -392,10 +394,12 @@ bool ContigPolish::Worker::IsCoverageEnough(const std::vector<int> &cov) {
     return CoverageStatus(cov, owner_.opts_.coverage_) < 0.05;
 }
 
-ContigPolish::ContigJob::ContigJob(Seq::Id id, size_t len, const std::unordered_map<int, std::vector<const Overlap*>>& ols, size_t wsize, size_t osize) 
- : tid(id), tlen(len), overlaps(ols), win_size(wsize), ovl_size(osize) {
-    
+ContigPolish::ContigJob::ContigJob(Seq::Id id, const PolDataset& ds, size_t wsize, size_t osize) 
+ : tid(id), tlen(ds.read_store_.GetSeqLength(id)), dataset(ds), overlaps(ds.groups_.find(id)->second)
+ , win_size(wsize), ovl_size(osize), ctg_err_dt(tid, ds) {
     assert(win_size > ovl_size);
+
+    ctg_err_dt.Detect();
 
     size_t curr = 0;
     while (curr < tlen) {

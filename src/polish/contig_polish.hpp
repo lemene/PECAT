@@ -11,6 +11,7 @@
 #include "utils/program.hpp"
 #include "pol_dataset.hpp"
 #include "pol_options.hpp"
+#include "contig_error_detector.hpp"
 
 namespace fsa {
 using ArrayGraph = AlignmentGraph;
@@ -57,7 +58,7 @@ protected:
     };
 
     struct ContigJob {
-        ContigJob(Seq::Id id, size_t len, const std::unordered_map<int, std::vector<const Overlap*>>& ols, size_t wsize, size_t osize);
+        ContigJob(Seq::Id id, const PolDataset& dataset, size_t wsize, size_t osize);
         // 将各个窗口的数据拼接起来
         std::string GetSeq() const;
         
@@ -80,6 +81,8 @@ protected:
         size_t win_size;
         size_t ovl_size;
         std::atomic<bool> saved { false };
+        ContigErrorDetector ctg_err_dt;
+        const PolDataset & dataset;
     };
 
 

@@ -117,7 +117,7 @@ void AlignmentGraph::Build(const DnaSeq& target, const std::array<size_t,2> &ran
     BuildCol(ics, tags_.size());
 
     tags_.clear();
-    //if (print_rubbish) SaveGraph("sss.txt", 0, cols.size());
+    if (print_rubbish) SaveGraph("sss.txt", 0, cols.size());
 }
 
 
@@ -427,6 +427,7 @@ auto AlignmentGraph::GetBestPath(const Loc& start, const Loc& end) -> std::vecto
     std::vector<Loc> path {end};
 
     do {
+        DEBUG_printf("col(%zd): %zd  %zd  %zd\n", path.size(), path.back().col, path.back().row, path.back().base);
         auto n = Get(path.back());
         assert(n != nullptr && n->best_link != nullptr);
         path.push_back(n->best_link->prev);
@@ -1617,15 +1618,15 @@ void AlignmentGraph::SaveGraph(const std::string &fname, size_t s, size_t e) con
                            << l.prev.col << "_" << l.prev.row << "_" << "ACGT-"[l.prev.base] << "," 
                            << l.count << "," ;
 
-                        if (l.seqs[0]) {
-                            of << sp_.QueryStringById(tid_) ;
-                        }
+                        // if (l.seqs[0]) {
+                        //     of << sp_.QueryStringById(tid_) ;
+                        // }
 
-                        for (size_t i = 0; i < query_infos_.scores_.size(); ++i) {
-                            if (l.seqs[i+1]) {
-                                of << '-' << sp_.QueryStringById(query_infos_.scores_[i].qid);
-                            }
-                        }
+                        // for (size_t i = 0; i < query_infos_.scores_.size(); ++i) {
+                        //     if (l.seqs[i+1]) {
+                        //         of << '-' << sp_.QueryStringById(query_infos_.scores_[i].qid);
+                        //     }
+                        // }
                         of << '\n';
                     }
                 }

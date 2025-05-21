@@ -70,7 +70,9 @@ fsa_rd_correct_src = ./prog/fsa_rd_correct.cpp  \
 fsa_rd_correct_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_correct_src))
 
 fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp ./correct/alignment_graph.cpp\
-                     ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp
+                     ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp\
+					 ./polish/contig_error_detector.cpp
+					 
 fsa_ctg_polish_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_polish_src))
 
 fsa_ol_purge_src = ./prog/fsa_ol_purge.cpp ./overlap_purge.cpp
