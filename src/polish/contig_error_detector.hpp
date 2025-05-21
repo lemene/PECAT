@@ -14,14 +14,13 @@ namespace fsa {
 struct BaseCoverage {
     std::string ToString() const {
         char buf[1024];
-        sprintf(buf, "%d (%d %d %d %d) %d %d %d", ref, bases[0], bases[0], bases[0], bases[0], del, ins, inssize);
+        sprintf(buf, "%d (%d %d %d %d) %d %d %d", ref, bases[0], bases[1], bases[2], bases[3], bases[4], bases[5], inssize);
         return buf;
     }
     uint8_t ref;
-    uint8_t bases[4];
-    uint8_t del;
-    uint8_t ins;
+    uint8_t bases[6];       // A C G T DEL INS
     uint32_t inssize;
+    uint16_t clips;         
 };
 
 class ContigErrorDetector {
@@ -29,7 +28,10 @@ public:
     ContigErrorDetector(Seq::Id tid, const PolDataset& ds);
     void Detect();
     void ComputeCoverage();
+    void CollectCandidates();
+    void VerifyCandidates(std::vector<std::array<size_t, 2>> &merged);
     std::vector<size_t> GetBigInserts(size_t start, size_t end);
+    void EvaluateQuality();
 protected:
     Seq::Id tid_;
     const PolDataset& dataset_;

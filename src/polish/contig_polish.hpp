@@ -73,7 +73,7 @@ protected:
             return IsDone() && !saved.exchange(true);
         }
 
-
+        DnaSeq GetTarget(size_t start, size_t end, const std::vector<size_t> inserts);
         Seq::Id tid;    // target id
         size_t tlen;
         const std::unordered_map<int, std::vector<const Overlap*>>& overlaps;

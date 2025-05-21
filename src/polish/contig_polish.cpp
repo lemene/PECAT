@@ -284,6 +284,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         if (r.start < ctgstart)  ctgstart = r.start;
         if (r.end > ctgend) ctgend = r.end;
     }
+
     const DnaSeq target(owner_.dataset_.read_store_.GetSeq(id), ctgstart, ctgend - ctgstart);
     
     CalculateWeight(id, target, cands, ctgstart, {job.start, job.end});
@@ -465,5 +466,6 @@ std::string ContigPolish::ContigJob::GetSeq() const {
 
     return seq;
 }
+
 
 } // namespace fsa {
