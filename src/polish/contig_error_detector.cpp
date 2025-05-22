@@ -12,7 +12,6 @@ void ContigErrorDetector::Detect() {
     ComputeCoverage();
     EvaluateQuality();
     CollectCandidates();
-
 }
 
 void ContigErrorDetector::ComputeCoverage() {
@@ -28,197 +27,116 @@ void ContigErrorDetector::ComputeCoverage() {
 
     for (size_t i = 0; i < ol_group.Size(); i++) {
         for (size_t j = 0; j < ol_group.Size(i); j++) {
-            auto ol = ol_group.Get(i, j);
-            const DnaSeq& qseq = seq_store.GetSeq(ol->a_.id);
-            const DnaSeq& tseq = seq_store.GetSeq(ol->b_.id);
-            assert(ol->b_.strand == 0);
-        
-            std::vector<uint8_t> tal;   
-            tal.reserve(ol->AlignedLength()*2);
-            std::vector<uint8_t> qal;   
-            qal.reserve(ol->AlignedLength()*2);
+            const auto &ol = *ol_group.Get(i, j);
+            auto cov = ComputeCoverage(ol);
 
-            if (!ol->IsProper(500)) {
-                if (ol->SameDirect()) {
-                    if (ol->a_.start >= 500) {
-                        ctg_cov_[ol->b_.start].clips ++;
-                    }
-                    if (ol->a_.len - ol->a_.end >= 500) {
-                        ctg_cov_[ol->b_.end-1].clips ++;
-                    }
-                } else {
-                    if (ol->a_.start >= 500) {
-                        ctg_cov_[ol->b_.end-1].clips ++;
-                    }
-                    if (ol->a_.len - ol->a_.end >= 500) {
-                        ctg_cov_[ol->b_.start].clips ++;
-                    }
-
-                }
+            // 检查质量是否
+            if (cov.front().clips == 0 && cov.back().clips() == 0 && ) {
+                MergeCoverage(cov, ol);
             }
-        
-            auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
-                return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
-            };
-        
-            size_t qidx = 0;        // not from ol.b_.start;
-            size_t tidx = ol->b_.start;
-            size_t distance = 0;
-
-            for (const auto &d : ol->detail_) {
-                switch (d.type){
-                case 'M':
-                case '=':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        uint8_t cq = get_base(ol->a_, qseq, qidx+i);
-                        uint8_t ct = tseq[tidx+i];
-                        qal.push_back(cq+1);
-                        tal.push_back(ct+1);
-                        ctg_cov_[tidx+i].bases[ct]++;
-                        if (cq != ct) {
-                            distance++;
-                        }
-                    }
-                    qidx += d.len;
-                    tidx += d.len;
-                    break;
-                case 'D':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        char ct = tseq[tidx+i];
-                        qal.push_back(0);
-                        tal.push_back(ct+1);
-                        ctg_cov_[tidx].bases[4]++;
-                    }
-                    distance += d.len;
-                    tidx += d.len;
-                    break; 
-                case 'I':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        char cq = get_base(ol->a_, qseq, qidx+i);
-                        qal.push_back(cq+1);
-                        tal.push_back(0);
-                    }
-                    ctg_cov_[tidx].bases[5]++;
-                    ctg_cov_[tidx].inssize += d.len;
-                    qidx += d.len;
-                    distance += d.len;
-                    break;
-                default:
-                    LOG(ERROR)("never come here");
-                }
-            } 
         }
-
     }
 
     // for (size_t i = 0; i < ctg_cov_.size(); ++i) {
     //     LOG(INFO)("ctgcov(%d): %s", i, ctg_cov_[i].ToString().c_str());
     // }
+
 
 }
 
+std::vector<BaseCoverage> ContigErrorDetector::ComputeCoverage(const Overlap& ol) {
 
-void ContigErrorDetector::ComputeCoverage1() {
-    // short name
     const ReadStore& seq_store = dataset_.seq_store_;
-    auto  ol_group = dataset_.grouper_.Get(tid_);
-    // 
-    
-    const DnaSeq& target = seq_store.GetSeq(tid_);
-    for (size_t i = 0; i < target.Size(); ++i) {
-        ctg_cov_[i].ref = target[i];
-    }
 
-    for (size_t i = 0; i < ol_group.Size(); i++) {
-        for (size_t j = 0; j < ol_group.Size(i); j++) {
-            auto ol = ol_group.Get(i, j);
-            const DnaSeq& qseq = seq_store.GetSeq(ol->a_.id);
-            const DnaSeq& tseq = seq_store.GetSeq(ol->b_.id);
-            assert(ol->b_.strand == 0);
-        
-            std::vector<uint8_t> tal;   
-            tal.reserve(ol->AlignedLength()*2);
-            std::vector<uint8_t> qal;   
-            qal.reserve(ol->AlignedLength()*2);
+    std::vector<BaseCoverage> cov(ol.b_.end - ol.b_.start);
 
-            if (!ol->IsProper(500)) {
-                if (ol->SameDirect()) {
-                    if (ol->a_.start >= 500) {
-                        ctg_cov_[ol->b_.start].clips ++;
-                    }
-                    if (ol->a_.len - ol->a_.end >= 500) {
-                        ctg_cov_[ol->b_.end-1].clips ++;
-                    }
-                } else {
-                    if (ol->a_.start >= 500) {
-                        ctg_cov_[ol->b_.end-1].clips ++;
-                    }
-                    if (ol->a_.len - ol->a_.end >= 500) {
-                        ctg_cov_[ol->b_.start].clips ++;
-                    }
+    const DnaSeq& qseq = seq_store.GetSeq(ol.a_.id);
+    const DnaSeq& tseq = seq_store.GetSeq(ol.b_.id);
+    assert(ol.b_.strand == 0);
 
-                }
-                continue;
+
+    std::vector<uint8_t> tal;   
+    tal.reserve(ol.AlignedLength()*2);
+    std::vector<uint8_t> qal;   
+    qal.reserve(ol.AlignedLength()*2);
+
+    if (!ol.IsProper(500)) {
+        if (ol.SameDirect()) {
+            if (ol.a_.start >= 500) {
+                cov.front().clips++;
             }
-        
-            auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
-                return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
-            };
-        
-            size_t qidx = 0;        // not from ol.b_.start;
-            size_t tidx = ol->b_.start;
-            size_t distance = 0;
-
-            for (const auto &d : ol->detail_) {
-                switch (d.type){
-                case 'M':
-                case '=':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        uint8_t cq = get_base(ol->a_, qseq, qidx+i);
-                        uint8_t ct = tseq[tidx+i];
-                        qal.push_back(cq+1);
-                        tal.push_back(ct+1);
-                        ctg_cov_[tidx+i].bases[ct]++;
-                        if (cq != ct) {
-                            distance++;
-                        }
-                    }
-                    qidx += d.len;
-                    tidx += d.len;
-                    break;
-                case 'D':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        char ct = tseq[tidx+i];
-                        qal.push_back(0);
-                        tal.push_back(ct+1);
-                        ctg_cov_[tidx].bases[4]++;
-                    }
-                    distance += d.len;
-                    tidx += d.len;
-                    break; 
-                case 'I':
-                    for (size_t i = 0; i < (size_t)d.len; ++i) {
-                        char cq = get_base(ol->a_, qseq, qidx+i);
-                        qal.push_back(cq+1);
-                        tal.push_back(0);
-                    }
-                    ctg_cov_[tidx].bases[5]++;
-                    ctg_cov_[tidx].inssize += d.len;
-                    qidx += d.len;
-                    distance += d.len;
-                    break;
-                default:
-                    LOG(ERROR)("never come here");
-                }
-            } 
+            if (ol.a_.len - ol.a_.end >= 500) {
+                cov.back().clips++;
+            }
+        } else {
+            if (ol.a_.start >= 500) {
+                cov.back().clips++;
+            }
+            if (ol.a_.len - ol.a_.end >= 500) {
+                cov.front().clips++;
+            }
         }
-
     }
+    
+    auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
+        return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
+    };
+    
+    size_t qidx = 0;        // not from ol.b_.start;
+    size_t tidx = 0;
+    size_t distance = 0;
 
-    // for (size_t i = 0; i < ctg_cov_.size(); ++i) {
-    //     LOG(INFO)("ctgcov(%d): %s", i, ctg_cov_[i].ToString().c_str());
-    // }
+    for (const auto &d : ol.detail_) {
+        switch (d.type){
+        case 'M':
+        case '=':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                uint8_t cq = get_base(ol.a_, qseq, qidx+i);
+                uint8_t ct = tseq[tidx+i];
+                qal.push_back(cq+1);
+                tal.push_back(ct+1);
+                cov[tidx+i].bases[ct]++;
+                if (cq != ct) {
+                    distance++;
+                }
+            }
+            qidx += d.len;
+            tidx += d.len;
+            break;
+        case 'D':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                char ct = tseq[tidx+i];
+                qal.push_back(0);
+                tal.push_back(ct+1);
+                cov[tidx+i].bases[4]++;
+            }
+            distance += d.len;
+            tidx += d.len;
+            break; 
+        case 'I':
+            for (size_t i = 0; i < (size_t)d.len; ++i) {
+                char cq = get_base(ol.a_, qseq, qidx+i);
+                qal.push_back(cq+1);
+                tal.push_back(0);
+            }
+            cov[tidx].bases[5]++;
+            cov[tidx].inssize += d.len;
+            qidx += d.len;
+            distance += d.len;
+            break;
+        default:
+            LOG(ERROR)("never come here");
+        }
+    } 
+    return cov;
+}
 
+void ContigErrorDetector::MergeCoverage(const std::vector<BaseCoverage>& cov, const Overlap &ol) {
+    size_t s = ol.b_.start;
+    for (size_t i = 0; i < cov.size(); ++i) {
+        const auto & c = cov[i];
+        ctg_cov_[s+i].
+    }
 }
 
 class WinIterator {
