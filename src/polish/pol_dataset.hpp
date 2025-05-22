@@ -25,21 +25,18 @@ protected:
     void LoadOverlaps(const std::string &fname);
     void LoadMappings();
     
-    void LoadReadIds();
+    std::vector<Seq::Id> LoadContigIds(const std::string& name, const std::string &fname, const ReadStore& store);
     void CalcCoverage();
 public:
     PolOptions& opts_;
 
     StringPool string_pool_;
-    ReadStore read_store_ {string_pool_};
-    OverlapStore ol_store_{string_pool_ };
-    std::unordered_map<int, std::unordered_map<int, std::vector<const Overlap*>>> groups_;
+    ReadStore seq_store_ {string_pool_};
+    OverlapStore rd_2_ctg_ {string_pool_ };
+    OverlapGrouper grouper_ { rd_2_ctg_ };
     
-    OverlapStore rd_2_ref_ {string_pool_ };
-    Mapping mapping_ { rd_2_ref_ };
-
     
-    std::vector<Seq::Id> read_ids_;
+    std::vector<Seq::Id> ctg_ids_;
 };
 
 

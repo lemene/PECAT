@@ -34,13 +34,16 @@ protected:
 
         std::vector<const Overlap*> GetOverlaps() {
             std::vector<const Overlap*> ols;
-            for (auto i : owner->overlaps) {
-                for (auto o : i.second) {
-                    auto& r = o->GetRead(owner->tid);
+            auto ol_group = owner->dataset.grouper_.Get(owner->tid);
+
+            for (size_t i = 0; i < ol_group.Size(); ++i) {
+                for (size_t j = 0; j < ol_group.Size(j); ++j) {
+                    auto ol = ol_group.Get(i,j);
+                    auto& r = ol->GetRead(owner->tid);
                     auto s = std::max(r.start, start);
                     auto e = std::min(r.end, end);
                     if (e > s + 2000) {
-                        ols.push_back(o);
+                        ols.push_back(ol);
                     }
                 }
             }
@@ -76,7 +79,6 @@ protected:
         DnaSeq GetTarget(size_t start, size_t end, const std::vector<size_t> inserts);
         Seq::Id tid;    // target id
         size_t tlen;
-        const std::unordered_map<int, std::vector<const Overlap*>>& overlaps;
         std::vector<std::shared_ptr<WindowJob>> windows;
         size_t win_size;
         size_t ovl_size;

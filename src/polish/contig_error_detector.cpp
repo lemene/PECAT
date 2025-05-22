@@ -4,7 +4,7 @@ namespace fsa {
 
 ContigErrorDetector::ContigErrorDetector(Seq::Id tid, const PolDataset& ds)
  : tid_(tid), dataset_(ds) {
-    size_t tlen = ds.read_store_.GetSeqLength(tid);
+    size_t tlen = ds.seq_store_.GetSeqLength(tid);
     ctg_cov_.assign(tlen, BaseCoverage());
 }
 
@@ -17,20 +17,20 @@ void ContigErrorDetector::Detect() {
 
 void ContigErrorDetector::ComputeCoverage() {
     // short name
-    const ReadStore& rd_store = dataset_.read_store_;
-    const std::unordered_map<int, std::vector<const Overlap*>>& overlaps = dataset_.groups_.find(tid_)->second;
+    const ReadStore& seq_store = dataset_.seq_store_;
+    auto  ol_group = dataset_.grouper_.Get(tid_);
     // 
     
-    const DnaSeq& target = rd_store.GetSeq(tid_);
+    const DnaSeq& target = seq_store.GetSeq(tid_);
     for (size_t i = 0; i < target.Size(); ++i) {
         ctg_cov_[i].ref = target[i];
     }
 
-    for (auto it : overlaps) {
-        //const Overlap* ol = it.second;
-        for (auto ol : it.second) {
-            const DnaSeq& qseq = rd_store.GetSeq(ol->a_.id);
-            const DnaSeq& tseq = rd_store.GetSeq(ol->b_.id);
+    for (size_t i = 0; i < ol_group.Size(); i++) {
+        for (size_t j = 0; j < ol_group.Size(i); j++) {
+            auto ol = ol_group.Get(i, j);
+            const DnaSeq& qseq = seq_store.GetSeq(ol->a_.id);
+            const DnaSeq& tseq = seq_store.GetSeq(ol->b_.id);
             assert(ol->b_.strand == 0);
         
             std::vector<uint8_t> tal;   
@@ -55,6 +55,110 @@ void ContigErrorDetector::ComputeCoverage() {
                     }
 
                 }
+            }
+        
+            auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
+                return r.strand == 0 ? seq[r.start+idx] : (3 - seq[r.end - idx - 1]);
+            };
+        
+            size_t qidx = 0;        // not from ol.b_.start;
+            size_t tidx = ol->b_.start;
+            size_t distance = 0;
+
+            for (const auto &d : ol->detail_) {
+                switch (d.type){
+                case 'M':
+                case '=':
+                    for (size_t i = 0; i < (size_t)d.len; ++i) {
+                        uint8_t cq = get_base(ol->a_, qseq, qidx+i);
+                        uint8_t ct = tseq[tidx+i];
+                        qal.push_back(cq+1);
+                        tal.push_back(ct+1);
+                        ctg_cov_[tidx+i].bases[ct]++;
+                        if (cq != ct) {
+                            distance++;
+                        }
+                    }
+                    qidx += d.len;
+                    tidx += d.len;
+                    break;
+                case 'D':
+                    for (size_t i = 0; i < (size_t)d.len; ++i) {
+                        char ct = tseq[tidx+i];
+                        qal.push_back(0);
+                        tal.push_back(ct+1);
+                        ctg_cov_[tidx].bases[4]++;
+                    }
+                    distance += d.len;
+                    tidx += d.len;
+                    break; 
+                case 'I':
+                    for (size_t i = 0; i < (size_t)d.len; ++i) {
+                        char cq = get_base(ol->a_, qseq, qidx+i);
+                        qal.push_back(cq+1);
+                        tal.push_back(0);
+                    }
+                    ctg_cov_[tidx].bases[5]++;
+                    ctg_cov_[tidx].inssize += d.len;
+                    qidx += d.len;
+                    distance += d.len;
+                    break;
+                default:
+                    LOG(ERROR)("never come here");
+                }
+            } 
+        }
+
+    }
+
+    // for (size_t i = 0; i < ctg_cov_.size(); ++i) {
+    //     LOG(INFO)("ctgcov(%d): %s", i, ctg_cov_[i].ToString().c_str());
+    // }
+
+}
+
+
+void ContigErrorDetector::ComputeCoverage1() {
+    // short name
+    const ReadStore& seq_store = dataset_.seq_store_;
+    auto  ol_group = dataset_.grouper_.Get(tid_);
+    // 
+    
+    const DnaSeq& target = seq_store.GetSeq(tid_);
+    for (size_t i = 0; i < target.Size(); ++i) {
+        ctg_cov_[i].ref = target[i];
+    }
+
+    for (size_t i = 0; i < ol_group.Size(); i++) {
+        for (size_t j = 0; j < ol_group.Size(i); j++) {
+            auto ol = ol_group.Get(i, j);
+            const DnaSeq& qseq = seq_store.GetSeq(ol->a_.id);
+            const DnaSeq& tseq = seq_store.GetSeq(ol->b_.id);
+            assert(ol->b_.strand == 0);
+        
+            std::vector<uint8_t> tal;   
+            tal.reserve(ol->AlignedLength()*2);
+            std::vector<uint8_t> qal;   
+            qal.reserve(ol->AlignedLength()*2);
+
+            if (!ol->IsProper(500)) {
+                if (ol->SameDirect()) {
+                    if (ol->a_.start >= 500) {
+                        ctg_cov_[ol->b_.start].clips ++;
+                    }
+                    if (ol->a_.len - ol->a_.end >= 500) {
+                        ctg_cov_[ol->b_.end-1].clips ++;
+                    }
+                } else {
+                    if (ol->a_.start >= 500) {
+                        ctg_cov_[ol->b_.end-1].clips ++;
+                    }
+                    if (ol->a_.len - ol->a_.end >= 500) {
+                        ctg_cov_[ol->b_.start].clips ++;
+                    }
+
+                }
+                continue;
             }
         
             auto get_base = [](const Overlap::Read &r, const DnaSeq& seq, size_t idx) {
@@ -172,13 +276,13 @@ void ContigErrorDetector::CollectCandidates() {
             cands.push_back(win);
         }
 
-        if (std::accumulate(ms.begin(), ms.end(), 0) * 1.0 / std::accumulate(bs.begin(), bs.end(), 0) < 0.8) {
-            cands.push_back(win);
-        }
+        // if (std::accumulate(ms.begin(), ms.end(), 0) * 1.0 / std::accumulate(bs.begin(), bs.end(), 0) < 0.8) {
+        //     cands.push_back(win);
+        // }
 
-        if (clips > 5) {
-            cands.push_back(win);            
-        }
+        // if (clips > 5) {
+        //     cands.push_back(win);            
+        // }
     }
 
     // merge
@@ -196,13 +300,16 @@ void ContigErrorDetector::CollectCandidates() {
         }
     }
     LOG(INFO)("Merged: %zd", merged.size());
+    for (auto w : merged) {
+        LOG(INFO)("[%zd, %zd]", w[0], w[1]);
+    }
 }
 
 void ContigErrorDetector::VerifyCandidates(const std::vector<std::array<size_t, 2>> &merged) {
     std::vector<std::array<size_t, 2>> verified;
 
     for (const auto& win : merged) {
-
+        
     }
 }
 

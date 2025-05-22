@@ -28,8 +28,9 @@ public:
     ContigErrorDetector(Seq::Id tid, const PolDataset& ds);
     void Detect();
     void ComputeCoverage();
+    void ComputeCoverage1();
     void CollectCandidates();
-    void VerifyCandidates(std::vector<std::array<size_t, 2>> &merged);
+    void VerifyCandidates(const std::vector<std::array<size_t, 2>> &merged);
     std::vector<size_t> GetBigInserts(size_t start, size_t end);
     void EvaluateQuality();
 protected:

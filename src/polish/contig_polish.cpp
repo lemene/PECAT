@@ -35,7 +35,7 @@ void ContigPolish::Correct() {
 
     std::vector<std::shared_ptr<WindowJob>> windows;
     std::vector<std::shared_ptr<ContigJob>> jobs;
-    for (auto i : dataset_.read_ids_) {        
+    for (auto i : dataset_.ctg_ids_) {        
         jobs.push_back(std::shared_ptr<ContigJob>(new ContigJob(i, dataset_, opts_.window_size_, opts_.overlap_size_)));
         for (auto &s : jobs.back()->windows) {
             windows.push_back(s);
@@ -55,9 +55,9 @@ void ContigPolish::Correct() {
             worker.Clear();
             //if (true || wjob.owner->IsDone()) {
             if ( wjob.owner->Savable()) {
-                LOG(INFO)("Write contig: %s", dataset_.read_store_.QueryNameById(wjob.owner->tid).c_str());
-                save_contig(dataset_.read_store_.QueryNameById(wjob.owner->tid), wjob.owner->GetSeq());
-                LOG(INFO)("Write contig: %s", dataset_.read_store_.QueryNameById(wjob.owner->tid).c_str());
+                LOG(INFO)("Write contig: %s", dataset_.seq_store_.QueryNameById(wjob.owner->tid).c_str());
+                save_contig(dataset_.seq_store_.QueryNameById(wjob.owner->tid), wjob.owner->GetSeq());
+                LOG(INFO)("Write contig: %s", dataset_.seq_store_.QueryNameById(wjob.owner->tid).c_str());
             }
             if (curr % 100 == 0) {
                 LOG(INFO)("Jobs done: %d/%d", curr, windows.size());
@@ -111,7 +111,7 @@ bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignmen
     } else {
 
         std::array<int, 4> range = {qread.start, qread.end, tread.start-ctgstart, tread.end-ctgstart};
-        return aligner_.Align(owner_.dataset_.read_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
+        return aligner_.Align(owner_.dataset_.seq_store_.GetSeq(qread.id), !ol.SameDirect(), range, al);  // TODO target 由调用者设置，可能存在不一致，需要优化。
     }
 
 
@@ -121,8 +121,8 @@ bool ContigPolish::Worker::GetAlignment(Seq::Id tid, const Overlap& ol, Alignmen
 
 void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol, Alignment &al) {
     assert(ol.detail_.size() > 0);
-    const DnaSeq& qseq = owner_.dataset_.read_store_.GetSeq(ol.a_.id);
-    const DnaSeq& tseq = owner_.dataset_.read_store_.GetSeq(ol.b_.id);
+    const DnaSeq& qseq = owner_.dataset_.seq_store_.GetSeq(ol.a_.id);
+    const DnaSeq& tseq = owner_.dataset_.seq_store_.GetSeq(ol.b_.id);
     assert(ol.b_.strand == 0);
 
     std::vector<uint8_t> tal;   
@@ -179,8 +179,8 @@ void ContigPolish::Worker::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol,
     const auto& tread = ol.GetRead(tid);
     const auto& qread = ol.GetOtherRead(tid);
 
-    al.query = &owner_.dataset_.read_store_.GetSeq(qread.id);
-    al.target = &owner_.dataset_.read_store_.GetSeq(tread.id);
+    al.query = &owner_.dataset_.seq_store_.GetSeq(qread.id);
+    al.target = &owner_.dataset_.seq_store_.GetSeq(tread.id);
     assert(al.target!= nullptr);
     al.target_start = tread.start;
     al.target_end = tread.end;
@@ -268,7 +268,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
     auto id = job.GetTId();
     std::vector<const Overlap*> cands = job.GetOverlaps();
     if (cands.size() == 0) {    // if the area is not coveraged by any reads.
-        job.seqs.push_back(*DnaSeq(owner_.dataset_.read_store_.GetSeq(id), job.start, job.end-job.start).ToString());
+        job.seqs.push_back(*DnaSeq(owner_.dataset_.seq_store_.GetSeq(id), job.start, job.end-job.start).ToString());
         job.ranges.push_back({job.start, job.end});
         return true;
     }
@@ -285,7 +285,7 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         if (r.end > ctgend) ctgend = r.end;
     }
 
-    const DnaSeq target(owner_.dataset_.read_store_.GetSeq(id), ctgstart, ctgend - ctgstart);
+    const DnaSeq target(owner_.dataset_.seq_store_.GetSeq(id), ctgstart, ctgend - ctgstart);
     
     CalculateWeight(id, target, cands, ctgstart, {job.start, job.end});
 
@@ -396,7 +396,7 @@ bool ContigPolish::Worker::IsCoverageEnough(const std::vector<int> &cov) {
 }
 
 ContigPolish::ContigJob::ContigJob(Seq::Id id, const PolDataset& ds, size_t wsize, size_t osize) 
- : tid(id), tlen(ds.read_store_.GetSeqLength(id)), dataset(ds), overlaps(ds.groups_.find(id)->second)
+ : tid(id), tlen(ds.seq_store_.GetSeqLength(id)), dataset(ds)
  , win_size(wsize), ovl_size(osize), ctg_err_dt(tid, ds) {
     assert(win_size > ovl_size);
 
