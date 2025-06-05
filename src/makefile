@@ -6,7 +6,7 @@ BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
              $(BUILD_OBJ_DIR)/bridge $(BUILD_OBJ_DIR)/assemble $(BUILD_OBJ_DIR)/correct/align $(BUILD_OBJ_DIR)/kmer \
 			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph \
-			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish
+			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish $(BUILD_OBJ_DIR)/align
 
 simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./assemble/simplify/bridge.cpp \
 	./assemble/simplify/transitive.cpp ./assemble/simplify/cross.cpp ./assemble/simplify/low_quality.cpp \
@@ -14,6 +14,8 @@ simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./a
 	./assemble/simplify/best.cpp ./assemble/simplify/semi_bubble.cpp ./assemble/simplify/repeat.cpp \
 	./assemble/simplify/phase.cpp ./assemble/simplify/pbridge.cpp ./assemble/simplify/pspur.cpp \
 	./assemble/simplify/ptransitive.cpp ./assemble/simplify/extend.cpp
+
+align_src = align/match_info.cpp
 
 graph_src = assemble/graph/cross_node.cpp
 
@@ -34,7 +36,7 @@ libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_sto
 			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp  ./kmer/kmer.cpp\
 			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp ./utils/project_file.cpp\
 			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
-			 $(assemble_src) $(overlap_src)
+			 $(assemble_src) $(overlap_src) $(align_src)
 
 libfsa_src += $(wildcard ./correct/align/*.cpp)
 
@@ -98,7 +100,7 @@ else
 	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 endif
 
-LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a -lrt ../thirdparty/htslib/libhts.a  
+LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a ../thirdparty/htslib/libhts.a  
 
 
 obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \

@@ -25,6 +25,7 @@ public:
 protected:
 
     void LoadOverlaps(const std::string &fname);
+    void DetectErrors();
     void Correct();
     void CalcCoverage();
     

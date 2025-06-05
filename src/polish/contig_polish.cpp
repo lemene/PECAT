@@ -17,11 +17,39 @@ ArgumentParser ContigPolish::GetArgumentParser() {
 void ContigPolish::Running() {
     dataset_.Load();
 
-    LOG(INFO)("Start polishing");
-    Correct();
+    LOG(INFO)("Start detecting misassemblies");
+    DetectErrors();
+    //Correct();
 }
 
+void ContigPolish::DetectErrors() {
+    std::ofstream of_cov("cov_all");
+    std::ofstream of_mis("mis.bed");
+    std::mutex mutex;
 
+    auto dump = [&mutex, &of_cov, &of_mis](ContigErrorDetector& ctg_dtr) {
+        std::lock_guard<std::mutex> locked(mutex);
+
+        ctg_dtr.DumpCoverage(of_cov);
+        ctg_dtr.SaveErrors(of_mis);
+
+    };
+
+    std::atomic<size_t> index {0};
+    auto work_func = [dump, &index, this](size_t _) {
+        
+        for (size_t i = index.fetch_add(1); i < dataset_.ctg_ids_.size(); i = index.fetch_add(1)) {
+            auto tid = dataset_.ctg_ids_[i];     
+            auto ctg_dtr = ContigErrorDetector(tid, dataset_);
+            ctg_dtr.Detect();
+            dump(ctg_dtr);
+        }
+    };
+ 
+
+    MultiThreadRun((size_t)opts_.thread_size, work_func);
+
+}
 
 
 void ContigPolish::Correct() {
@@ -272,11 +300,10 @@ bool ContigPolish::Worker::Correct(WindowJob &job) {
         job.ranges.push_back({job.start, job.end});
         return true;
     }
-    if (job.start != 449500) return false;
+    //if (job.start != 449500) return false;
     // 寻找
     int ctgstart = job.start;
     int ctgend = job.end;
-    job.owner->ctg_err_dt.GetBigInserts(ctgstart, ctgend);
 
     LOG(INFO)("start correct: %d - %d", ctgstart, ctgend);
     for (auto o : cands) {
@@ -454,7 +481,7 @@ std::string ContigPolish::ContigJob::GetSeq() const {
             }
             seq.erase(seq.begin() + seq.size() - ovl_size + r.startLocations[0] + offt, seq.end());
             seq.insert(seq.end(), next.begin()+offq, next.end());
-            printf("ctg seq: %zd\n", seq.size());
+
 
         } else {
             LOG(WARNING)("Don't find common part in the overlap of windows %d and %d", i-1, i);

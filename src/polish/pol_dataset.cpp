@@ -53,7 +53,7 @@ void PolDataset::LoadOverlaps(const std::string &fname) {
 
     auto filter = [this, &ids](Overlap &o) {
         bool rel = ids.find(o.b_.id) != ids.end();
-        return rel;// && filter0_.ValidQuery(o);
+        return rel && opts_.filter0_.ValidQuery(o);
 
     };
     

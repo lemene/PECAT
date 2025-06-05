@@ -52,11 +52,14 @@ public:
 
     class Stream {
     public:
-        Stream(Logger& logger, Level level) :logger_(logger), level_(level){}
+        Stream(Logger& logger, Level level, const std::string& fname, int line) 
+            : logger_(logger), level_(level), fname_(fname), line_(line) {}
         void operator() (const char* const format, ...);
     protected:
         Logger & logger_;
         Level level_;
+        std::string fname_;
+        int line_;
     };
 
     void SetFileName(const std::string &fname);
@@ -70,7 +73,7 @@ protected:
     FILE *file_;
 };
 
-#define LOG(s) Logger::Stream(LOGGER, Logger::L_##s)
+#define LOG(s) Logger::Stream(LOGGER, Logger::L_##s, __FILE__, __LINE__)
 #define SET_LOG_LEVEL(s) LOGGER.SetLevel(Logger::L_##s)
 
 extern Logger LOGGER;

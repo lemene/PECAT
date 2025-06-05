@@ -8,7 +8,7 @@ TARGET_DIR=../build/bin
 PLGD_PM = $(wildcard ./plgd/Plgd/*.pm) $(wildcard ./plgd/Plgd/Grid/*.pm)  $(wildcard ./plgd/Plgd/Job/*.pm)
 TARGET_PLGD_PM = $(patsubst ./plgd/Plgd/%, ${TARGET_DIR}/Plgd/%, $(PLGD_PM))
 
-thirdparty: pigz pldg libksw2 mbio htslib
+thirdparty: pldg libksw2 mbio htslib #pigz
 
 pldg: ${TARGET_PLGD_PM}
 	echo ${TARGET_PLGD_PM}
