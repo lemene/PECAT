@@ -38,12 +38,16 @@ public:
     double MaxLocalDistance(size_t win_size) const ;
     std::vector<std::array<size_t,2>> LocalDistance(size_t win_size) const;
     double Identity() const { return ol_->Identity(); }
-
+    double MatchedIdentity() const { return matched_identity_; }
     std::vector<std::array<size_t,2>> GetHighQualityRegions(size_t win_size, double max_dist, size_t min_clip, size_t min_intv) const;
     const Overlap* GetOverlap() const { return ol_; }
+
+protected:
+    void ComputeMatchedIdentity(size_t large_size = 500);
 protected:
     std::vector<InfoItem> match_;
     std::vector<std::array<size_t,2>> insert_;
     const Overlap* ol_ { nullptr };
+    double matched_identity_;   // without larget indels
 };
 }

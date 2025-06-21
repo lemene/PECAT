@@ -409,7 +409,7 @@ void OverlapStore::LoadFast(const std::string &fname, const std::string &type, s
     } else if (t == "txt") {
         LoadFileTxtFast(fname, check, thread_size);
     } else if (t == "bam") {
-        LoadFileBamFast(fname, check, thread_size);
+        LoadFileBam(fname, check, thread_size);
     } else {
         LOG(ERROR)("Failed to recognize overlap files type: %s %s", t.c_str(), fname.c_str());
     }
@@ -554,7 +554,7 @@ void OverlapStore::LoadFileBam(const std::string &fname, C check, size_t thread_
                     }
                 }
                 ol.b_.end = ol.b_.start + rpos;
-                ol.identity_ = match * 2.0 / (qpos + rpos);
+                ol.identity_ = match * 100 * 2.0 / (qpos + rpos);
 
                 ol.a_.len = clip+qpos;
 

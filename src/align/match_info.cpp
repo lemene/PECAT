@@ -17,11 +17,11 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
     size_t qidx = 0;        // not from ol.b_.start;
     size_t tidx = 0;
 
+    size_t matched = 0;
+    size_t matched_len = 0;
+    size_t SMALL_INDEL = 50;
+
     for (const auto &d : ol->detail_) {
-        
-        if (ol_->a_.id == 106) {
-            LOG(INFO)("ddd %c %d", d.type, d.len);
-        }
         switch (d.type){
         case 'M':
         case '=':
@@ -31,9 +31,13 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
                 uint8_t ct = tseq[tidx+i + ol->b_.start];
                 match_[tidx+i].ref = ct;
                 match_[tidx+i].base = cq;
+                if (ct == cq) {
+                    matched ++;
+                }
             }
             qidx += d.len;
             tidx += d.len;
+            matched_len += d.len;
             break;
         case 'D':
             for (size_t i = 0; i < (size_t)d.len; ++i) {
@@ -42,12 +46,18 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
                 match_[tidx+i].base = 4;
             }
             tidx += d.len;
+            if (d.len <= SMALL_INDEL) {
+                matched_len += d.len;
+            }
             break; 
         case 'I':
             insert_.push_back({qidx, qidx+d.len});
             match_[tidx].ins = insert_.size();
 
             qidx += d.len;
+            if (d.len <= SMALL_INDEL) {
+                matched_len += d.len;
+            }
             break;
         case 'S':
         case 'H':
@@ -56,6 +66,8 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
             LOG(ERROR)("never come here %c", d.type);
         }
     } 
+    matched_identity_ = matched * 1.0 / matched_len;
+ 
 }
 
 double MatchInfo::MaxLocalDistance(size_t win_size) const {
@@ -105,18 +117,6 @@ std::vector<std::array<size_t,2>> MatchInfo::LocalDistance(size_t win_size)  con
             dist[i][0] = 1;
         }
         dist[i][1] = 1 + GetInssize(match_[i].ins);
-        
-        if (ol_->a_.id == 106) {
-            
-            LOG(INFO)("insert %zd, %zd", i, GetInssize(match_[i].ins));
-        }
-    }
-
-    if (ol_->a_.id == 106) {
-        for (size_t i =0; i<dist.size(); ++i){
-            auto d = dist[i];
-            LOG(INFO)("DDD (%zd) %d, %d", i, d[0], d[1]);
-        }
     }
 
     win_dist[0] = std::accumulate(dist.begin(), dist.begin() + win_size, std::array<size_t,2>({0,0}),
@@ -173,4 +173,5 @@ std::vector<std::array<size_t,2>> MatchInfo::GetHighQualityRegions(size_t win_si
 
     return regs;
 }
+
 }

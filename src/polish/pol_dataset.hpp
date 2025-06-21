@@ -27,11 +27,14 @@ protected:
     
     std::vector<Seq::Id> LoadContigIds(const std::string& name, const std::string &fname, const ReadStore& store);
     void CalcCoverage();
+    void SelectBestMapping();
 public:
     PolOptions& opts_;
 
     StringPool string_pool_;
     ReadStore seq_store_ {string_pool_};
+    std::array<size_t,2> rd_ids_;
+    
     OverlapStore rd_2_ctg_ {string_pool_ };
     OverlapGrouper grouper_ { rd_2_ctg_ };
     
