@@ -26,14 +26,16 @@ void ContigPolish::DetectErrors() {
     std::ofstream of_cov("cov_all");
     std::ofstream of_win("cov_win");
     std::ofstream of_mis("mis.bed");
+    std::ofstream of_match("match_info");
     std::ofstream of_pol(opts_.cread_fname_);
     std::mutex mutex;
 
-    auto dump = [&mutex, &of_cov, &of_mis, &of_win, &of_pol](ContigErrorDetector& ctg_dtr) {
+    auto dump = [&mutex, &of_cov, &of_mis, &of_win, &of_pol, &of_match](ContigErrorDetector& ctg_dtr) {
         std::lock_guard<std::mutex> locked(mutex);
 
         ctg_dtr.DumpCoverage(of_cov);
         ctg_dtr.DumpWindow(of_win);
+        ctg_dtr.DumpMatch(of_match);
         ctg_dtr.SaveErrors(of_mis);
         ctg_dtr.SaveContig(of_pol);
 

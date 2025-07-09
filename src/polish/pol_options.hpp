@@ -76,6 +76,7 @@ public:
     bool use_cache { false };
     bool debug { false };
     std::string variants;
+    double secondary_to_primary_ratio { 0.9 };
 };
 
 } // namespace fsa

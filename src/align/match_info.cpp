@@ -41,7 +41,7 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
             break;
         case 'D':
             for (size_t i = 0; i < (size_t)d.len; ++i) {
-                char ct = tseq[tidx+i];
+                char ct = tseq[tidx+i + ol->b_.start];
                 match_[tidx+i].ref = ct;
                 match_[tidx+i].base = 4;
             }
@@ -67,10 +67,13 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
         }
     } 
     matched_identity_ = matched * 1.0 / matched_len;
- 
+    CalculateMaxLocalDistance(1000);    // TODO: make it configurable
+    for (size_t i = 0; i < match_.size(); ++i) {
+        assert(match_[i].ref  == tseq[i + ol->b_.start]);
+    }
 }
 
-double MatchInfo::MaxLocalDistance(size_t win_size) const {
+void MatchInfo::CalculateMaxLocalDistance(size_t win_size) {
     if (match_.size() < win_size) {
         LOG(INFO)("%d %d %d", ol_->a_.start, ol_->a_.end, ol_->a_.len);
     }
@@ -103,7 +106,7 @@ double MatchInfo::MaxLocalDistance(size_t win_size) const {
             max_dist = d;
         }
     }
-    return max_dist;
+    max_local_distance_ = max_dist;
 }
 
 std::vector<std::array<size_t,2>> MatchInfo::LocalDistance(size_t win_size)  const {
@@ -150,7 +153,7 @@ std::vector<std::array<size_t,2>> MatchInfo::GetHighQualityRegions(size_t win_si
             size_t s = i < min_intv ? 0 : i - min_intv;
             size_t e = i + win_size + min_intv > match_.size() ? match_.size() : i + win_size + min_intv;
             vregs.push_back({s, e});
-            //LOG(INFO)("vregs %zd-%zd", s,e);
+            LOG(INFO)("vregs %zd-%zd %.02f > %.02f", s,e, d, max_dist);
         }
     }
 

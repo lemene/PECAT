@@ -352,7 +352,7 @@ void ComputeMedianAbsoluteDeviation(const std::vector<std::array<T,2>>& data_, T
             return a[0] < b[0];
         });
 
-        T total = std::accumulate(data.begin(), data.end(), 0, [](T a, const std::array<T,2> &b) {
+        T total = std::accumulate(data.begin(), data.end(), (T)0, [](T a, const std::array<T,2> &b) {
             return a + b[1];
         });
         
@@ -405,7 +405,8 @@ void ComputeMeanAbsoluteDeviation(std::vector<T>& data, T &mean, T &mad) {
 
 
 template<typename T>
-void ComputeMeanAbsoluteDeviation(std::vector<std::array<T,2>>& data, T &mean, T &mad) {
+void ComputeMeanAbsoluteDeviation(const std::vector<std::array<T,2>>& data_, T &mean, T &mad) {
+    auto data = data_;
     assert(data.size() > 0);
 
     auto find_mean = [](std::vector<std::array<T,2>> &data) {

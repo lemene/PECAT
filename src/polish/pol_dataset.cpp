@@ -67,10 +67,13 @@ void PolDataset::LoadOverlaps(const std::string &fname) {
 }
 
 void PolDataset::SelectBestMapping() {
+    
+    std::vector<std::array<double, 2>> quals;
+    quals.reserve(rd_ids_[1] - rd_ids_[0]);
+
     struct Item {
         const Overlap* ol;
         double wt;
-        uint32_t rank;
     };
     for (size_t ri = rd_ids_[0]; ri < rd_ids_[1]; ++ri) {
         auto gp = grouper_.Get(ri);
@@ -78,47 +81,55 @@ void PolDataset::SelectBestMapping() {
         for (size_t i = 0; i < gp.Size(); i++) {
             for (size_t j = 0; j < gp.Size(i); j++) {
                 auto ol = gp.Get(i,j);
-                //items.push_back({ol, ol->Identity()*ol->QueryLength(), 0});
-                items.push_back({ol, ol->Identity()*ol->AlignedLength(), 0});
+                items.push_back({ol, ol->Identity()*ol->AlignedLength() }); // TODO use a better weight function
             }
         }
         if (items.size() > 0) {
-            std::vector<int> ranks(items.size());
-            std::iota(ranks.begin(), ranks.end(), 0);
-            std::random_shuffle(ranks.begin(), ranks.end());
-            for (size_t i = 0; i < items.size(); ++i) {
-                items[i].rank = ranks[i];
-            }
-            auto mx = std::max_element(items.begin(), items.end(), [](const Item& a, const Item& b) {
-                // if (a.wt + 500 < b.wt) {
-                //     return true;
-                // } else if (a.wt > b.wt + 500) {
-                //     return false;
-                // } else {
-                //     return a.rank > b.rank;
-                // }
-                return a.wt < b.wt;
+            std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
+                return a.wt > b.wt;
             });
-            mx->ol->attached = 1;
+            quals.push_back({items[0].ol->Identity(), items[0].ol->AlignedLength()});
 
-            for (auto &it : items) {
-                if (it.wt + 500 > mx->wt && it.wt < mx->wt + 500) {
-                    mx->ol->attached = 1;
+            size_t count = 1;
+            for (; count < items.size(); ++count) {
+                if (items[count].wt < items[0].wt * opts_.secondary_to_primary_ratio) {
+                    break;
                 }
-
             }
-
-            if (items.size() > 0) {
-                LOG(INFO)("SEL %s %.02f %zd", OverlapStore::ToPafLine(*mx->ol, StringPool::TempNameId2(string_pool_)).c_str(), 
-                    mx->wt, mx->rank);   
-                for (auto it : items) {
-                    LOG(INFO)("SEL_all %s %.02f %zd", OverlapStore::ToPafLine(*it.ol, StringPool::TempNameId2(string_pool_)).c_str(), 
-                    it.wt, it.rank);   
-
-                } 
+            for (size_t i = 0; i < count; ++i) {
+                items[i].ol->attached = count;  // number of positions this overlap is aligned to
             }
         }
     }
+
+    std::sort(quals.begin(), quals.end(), [](const std::array<double,2> &a, const std::array<double,2> &b) {
+        return a[0] > b[0];
+    });
+
+    double median = 0;
+    double mad = 0;
+
+    ComputeMedianAbsoluteDeviation(std::vector<std::array<double, 2>>(quals.begin(), quals.begin()+quals.size()*3/4), median, mad);
+    overlap_quality_threshold_ = median-6*1.4826*mad;
+    LOG(INFO)("Median = %.02f, MAD = %.02f, threshold=%.02f", median, mad, overlap_quality_threshold_);
+
+}
+
+
+    
+size_t PolDataset::CountReadMap(Seq::Id id) const {
+    size_t count = 0;
+    auto gp = grouper_.Get(id);
+    for (size_t i = 0; i < gp.Size(); ++i) {
+        for (size_t j = 0; j < gp.Size(i); ++j) {
+            const Overlap& ol = *gp.Get(i, j);
+            if (ol.attached == 1) {
+                count ++;
+            }
+        }
+       
+    }
+    return count;
 }
 
 }   // namespace fsa

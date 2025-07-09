@@ -35,7 +35,8 @@ public:
     size_t Size() const { return match_.size(); }
     const InfoItem& Get(size_t i) const  { return match_[i]; }
     const size_t GetInssize(size_t i) const { return i == 0 ? 0 : insert_[i-1][1]-insert_[i-1][0]; }
-    double MaxLocalDistance(size_t win_size) const ;
+    double MaxLocalDistance() const { return max_local_distance_; }
+    void CalculateMaxLocalDistance(size_t win_size) ;
     std::vector<std::array<size_t,2>> LocalDistance(size_t win_size) const;
     double Identity() const { return ol_->Identity(); }
     double MatchedIdentity() const { return matched_identity_; }
@@ -49,5 +50,6 @@ protected:
     std::vector<std::array<size_t,2>> insert_;
     const Overlap* ol_ { nullptr };
     double matched_identity_;   // without larget indels
+    double max_local_distance_ { 0.0 };
 };
 }

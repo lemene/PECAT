@@ -52,6 +52,7 @@ public:
 
     void DumpCoverage(std::ofstream& of);
     void DumpWindow(std::ofstream& of);
+    void DumpMatch(std::ofstream& of);
 
 protected:
     Seq::Id tid_;
@@ -66,6 +67,7 @@ protected:
     WindowSlider win_slider_;
     std::vector<ErrorRegion> errors_;
     std::vector<Segment> segs_;
+    double max_local_distance_threshold_ {0.0};
 };
 
 } // namespace fsa {

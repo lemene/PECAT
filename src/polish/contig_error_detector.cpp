@@ -12,12 +12,13 @@ void ContigErrorDetector::Detect() {
 
     ComputeCoverage();
     cov_info_.Scan();
+    cov_info_.Stat();
     //EvaluateQuality();
  
     LOG(INFO)("ComputeCoverage");
     win_slider_.Flush();
     LOG(INFO)("Start_Detect_Error_Regions %d", tid_);
-    auto errs = win_slider_.DetectErrorRegions1(1000);
+    auto errs = win_slider_.DetectErrorRegions(1000, cov_info_.AvarageCoverage());
     LOG(INFO)("ComputeCoverage0");
     for (auto e : errs) {
         if (CheckRegion(e)) {
@@ -40,18 +41,35 @@ void ContigErrorDetector::ComputeCoverage() {
             const auto &ol = *ol_group.Get(i, j);
             const DnaSeq& query = seq_store.GetSeq(ol.a_.id);
             assert(query.Size() >= 2000);
-            if (ol.attached == 1) {
+            if (ol.attached > 0) {
                 match_.push_back(MatchInfo(&ol, query, target));
-                //if ( match_.back().Identity() >= 0.85 && (match_.back().LClip() < MIN_CLIP || match_.back().RClip() < MIN_CLIP )) {
-                if ( match_.back().MatchedIdentity() >= 0.90 && (match_.back().LClip() < MIN_CLIP || match_.back().RClip() < MIN_CLIP )) {
-                    LOG(INFO)("add_seq %d: %s", match_.back().GetOverlap()->a_.id, dataset_.QueryStringById(match_.back().GetOverlap()->a_.id).c_str());
-                    cov_info_.Merge(match_.back());
-                }
-                //break;
+            } else {
+                assert(ol.attached == 0);
             }
-            
-            //break;  // 
         }
+    }
+
+    std::vector<double> max_local_distances;
+    for (const auto& m : match_) {
+        max_local_distances.push_back(m.MaxLocalDistance());
+    }
+
+    double median = 0.0;
+    double mad = 0.0;
+    ComputeMedianAbsoluteDeviation(max_local_distances, median, mad);
+    LOG(INFO)("local distance median: %.2f, mad: %.2f", median, mad);
+    max_local_distance_threshold_ = median + 3 * mad;
+    LOG(INFO)("max_local_distance_threshold: %.2f", max_local_distance_threshold_);
+
+
+    for (auto& m : match_) {
+        if ( m.MatchedIdentity() >= dataset_.GetOverlapQualityThreshold() && (m.LClip() < MIN_CLIP || m.RClip() < MIN_CLIP )) {
+            LOG(INFO)("add_seq %d: %s", m.GetOverlap()->a_.id, dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+            assert(m.GetOverlap()->attached > 0);
+            //cov_info_.Merge(m, MIN_CLIP*2, max_local_distance_threshold_, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+            cov_info_.Merge(m, MIN_CLIP*2, 0.50, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+        }
+
     }
 }
 
@@ -87,19 +105,24 @@ std::vector<ErrorRegion> ContigErrorDetector::MergeRegions(const std::vector<Err
 
 
 bool ContigErrorDetector::CheckRegion(const ErrorRegion& reg) {
-    size_t count = 0;
+    double count = 0.0;
     auto s = reg.start / STRIDE;
     auto e = (reg.end - WIN_SIZE + 1) / STRIDE;
 
     for (auto& m : match_) {
-        if (m.Start() + 1000 < reg.start && m.End() > reg.end + 1000 && 
-            m.MaxLocalDistance(1000) < 0.2 && m.LClip() < 1000 && m.RClip() < 1000) {
-            count++;
+        if ((m.Start() + 1000 < reg.start || m.Start() < 100) && 
+            (m.End() > reg.end + 1000 || m.Len() - m.End() < 100) && 
+            m.MatchedIdentity() >= dataset_.GetLocalQualityThreshold() &&
+            m.MaxLocalDistance() < max_local_distance_threshold_ && m.LClip() < MIN_CLIP && m.RClip() < MIN_CLIP &&
+            m.GetOverlap()->attached > 0 ) {
+            
+            count += 1.0 / m.GetOverlap()->attached;
             LOG(INFO)("checkreg: sup %zd %zd %s", m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
         }
     }
-    LOG(INFO)("checkreg: %s:%zd-%zd %zd", Name().c_str(), reg.start, reg.end, count);
-    return count < 2;
+    LOG(INFO)("checkreg: %s:%zd-%zd %.02f %0.2f", Name().c_str(), reg.start, reg.end, count, this->win_slider_.SurroundingCoverage(reg) * 0.2);
+    return count == 0 || count < this->win_slider_.SurroundingCoverage(reg) * 0.2;
+    return count == 0 || count < std::min(this->win_slider_.SurroundingCoverage(reg) * 0.2, cov_info_.AvarageCoverage()[1]/2.0);
 }
 
 
@@ -123,7 +146,7 @@ std::string ContigErrorDetector::ConsensusSimple(const Segment& seg) {
     std::string seq;
     for (size_t i = seg.start; i < seg.end; ++i) {
         auto c = cov_info_.GetBestChoice(i);
-        assert (c < 5);
+        assert (c < 6);
         if (c <= 3) {
             seq += "ACGT"[c];
         }
@@ -185,43 +208,18 @@ void ContigErrorDetector::DumpWindow(std::ofstream& of) {
 
 }
 
-// void ContigErrorDetector::EvaluateQuality() {
-//     size_t ref_mis = 0;
-//     size_t rd_mat = 0;
-//     size_t rd_total = 0;
-//     //for (const auto& c : ctg_cov_) {
-//     for (size_t i = 0; i < ctg_cov_.size(); ++i) {
-//         const auto& c = ctg_cov_[i];
-//         auto m = std::max_element(c.bases, c.bases+6);
-//         //LOG(INFO)("S(%zd): %s | %zd %zd", i, c.ToString().c_str(), m-c.bases, *m);
 
-//         if ((m-c.bases) != c.ref) {
-//             ref_mis ++;
-//         }
-
-//         rd_total += c.bases[0] + c.bases[1] + c.bases[2] + c.bases[3] + c.bases[5];
-
-//         switch ((m-c.bases)) {
-//         case 0:
-//         case 1:
-//         case 2:
-//         case 3:
-//             rd_mat += *m;
-//             break;
-//         case 4:
-//             // 
-//             break;
-//         case 5:
-//             rd_mat += c.inssize;
-//             break;
-//         default:
-//             LOG(INFO)("XXX %zd", (m-c.bases));
-//             assert(!"never coming here");
-//         }
+void ContigErrorDetector::DumpMatch(std::ofstream& of) {
     
-//     }
-//     LOG(INFO)("%zd, %zd, %zd, %zd", ref_mis, ctg_cov_.size(), rd_mat, rd_total);
-//     LOG(INFO)("%.02f, %.02f", ref_mis*1.0/ctg_cov_.size(), rd_mat*1.0 / rd_total);
-// }
+    for (size_t i = 0; i < match_.size(); ++i) {
+        const auto &m = match_[i];
+        const auto ol = m.GetOverlap();
+       const auto &rd_name = dataset_.QueryStringById(ol->a_.id);
+       const auto &ctg_name = dataset_.QueryStringById(ol->b_.id);
+        of << ctg_name << ":" << ol->b_.start << '-' << ol->b_.end << " " 
+           << rd_name << " " << ol->a_.start << " " << ol->a_.end << " " << ol->a_.len << " " << ol->identity_ << "\n";
+    }
+
+}
 
 }

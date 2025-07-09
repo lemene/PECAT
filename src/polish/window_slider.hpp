@@ -45,15 +45,18 @@ class WindowSlider {
 public:
     /** Sliding window information */
     struct WinInfo {
-        uint32_t c0;
-        uint32_t c1;
-        uint32_t min_c;
+        double c0;
+        double c1;
+        double c2;
+        uint32_t count[3];
+        uint32_t min_c[3];
+        uint32_t max_c[3];
         uint32_t ins;
         uint32_t inssize;
         uint32_t clips;
         std::string ToString() const {
             char buf[1024];
-            sprintf(buf, "%d %d %d %d %d", c0, c1, min_c, ins, inssize);
+            sprintf(buf, "%.02f %.02f %.02f (%d %d) %d %d %d  %d %d %d", c0, c1, c2, min_c[1], max_c[1], ins, inssize, clips, count[0], count[1], count[2]);
             return buf;
         }
         uint8_t type;
@@ -62,18 +65,21 @@ public:
 public:
     WindowSlider(CoverageInfo &cov_info, uint32_t wsize, uint32_t stride)
      : cov_info_(cov_info), win_size_(wsize), stride_(stride) {
-
     }
     
     std::array<size_t,2> Window2Region(size_t i) { return {i*stride_, std::min(i*stride_+win_size_, cov_info_.Size())}; }
-    std::array<size_t,2> Region2Window(size_t i) { return {i*stride_, std::min(i*stride_+win_size_, cov_info_.Size())}; }
-    std::vector<ErrorRegion> DetectErrorRegions(size_t max_gap);
-    std::vector<ErrorRegion> DetectErrorRegions1(size_t max_gap);
+    std::array<size_t,2> Region2Window(const std::array<size_t,2>& r) const { 
+        return {r[0] / stride_, (r[1] > win_size_ ? r[1] - win_size_ : 0) / stride_};
+    }
+    std::array<size_t,2> Region2Window(const ErrorRegion& reg) const { return Region2Window(std::array<size_t,2> ({reg.start, reg.end})); }
+    std::vector<ErrorRegion> DetectErrorRegions(size_t max_gap, const std::array<double,3>& ave_covs);
     std::vector<ErrorRegion> DetectSimpleRegions() const;
     std::vector<ErrorRegion> MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const ;
+    std::vector<ErrorRegion> ExtendRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const ;
     std::vector<ErrorRegion> MergeRegions2(const std::vector<ErrorRegion> &regs)const ;
     void Flush();
     void Dump(std::ofstream &of, const std::string& ctg_name);
+    double SurroundingCoverage(const ErrorRegion& reg, size_t inv=10);
 protected:
 protected:
     CoverageInfo &cov_info_;
