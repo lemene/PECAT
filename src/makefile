@@ -73,7 +73,8 @@ fsa_rd_correct_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_correct_src
 
 fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp ./correct/alignment_graph.cpp\
                      ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp\
-					 ./polish/contig_error_detector.cpp ./polish/coverage_info.cpp ./polish/window_slider.cpp
+					 ./polish/contig_analyzer.cpp ./polish/coverage_info.cpp ./polish/window_slider.cpp \
+					 ./polish/contig_fragment.cpp ./polish/contig_chain.cpp ./polish/contig_graph.cpp 
 					 
 fsa_ctg_polish_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_polish_src))
 

@@ -73,9 +73,7 @@ public:
     }
     std::array<size_t,2> Region2Window(const ErrorRegion& reg) const { return Region2Window(std::array<size_t,2> ({reg.start, reg.end})); }
     std::vector<ErrorRegion> DetectErrorRegions(size_t max_gap, const std::array<double,3>& ave_covs);
-    std::vector<ErrorRegion> DetectSimpleRegions() const;
     std::vector<ErrorRegion> MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const ;
-    std::vector<ErrorRegion> ExtendRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const ;
     std::vector<ErrorRegion> MergeRegions2(const std::vector<ErrorRegion> &regs)const ;
     void Flush();
     void Dump(std::ofstream &of, const std::string& ctg_name);

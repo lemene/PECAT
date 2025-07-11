@@ -153,7 +153,7 @@ std::vector<std::array<size_t,2>> MatchInfo::GetHighQualityRegions(size_t win_si
             size_t s = i < min_intv ? 0 : i - min_intv;
             size_t e = i + win_size + min_intv > match_.size() ? match_.size() : i + win_size + min_intv;
             vregs.push_back({s, e});
-            LOG(INFO)("vregs %zd-%zd %.02f > %.02f", s,e, d, max_dist);
+            //LOG(INFO)("vregs %zd-%zd %.02f > %.02f", s,e, d, max_dist);
         }
     }
 

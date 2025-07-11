@@ -604,6 +604,58 @@ void Program_Weight::Running() {
     LOG(INFO)("End sampling obtained=%lld", accu);
 }
 
+void Program_XXX::Running() {
+
+    std::mutex mutex;
+    auto kmers = LoadKmers0(kmer_freq_fname_);
+
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
+    
+    std::unordered_set<Seq::Id> selected;
+    KmerCounter kc(kmers.k);
+    
+    std::atomic<size_t> index {rd_store.GetIdLow()};
+    auto count_kmer_in_read = [&rd_store, &kmers, &kc, &index, &mutex, &selected](size_t tid) {
+        std::unordered_set<Seq::Id> sel;
+        for (size_t i = index.fetch_add(1); i < rd_store.GetIdUp(); i = index.fetch_add(1)) {
+
+            auto seq = rd_store.GetSeq(i);
+            auto kseq = kc.CountAll(seq);
+            std::unordered_map<KmerId, int> lfreqs;
+            for (const auto &k : kseq) {
+                auto mink = std::min(k[0], k[1]);
+                if (kmers.Find(mink)) {
+                    lfreqs[mink] += 1;
+                }
+            }
+
+            size_t count = 0; 
+            for (auto &i : lfreqs) {
+                if (i.second == 1) {
+                    count ++;
+                }
+            }
+            LOG(INFO)("low-freq-kmer %s %zd %zd", rd_store.QueryNameById(i).c_str(), i, count);
+            if (count >= kseq.size() * 0.5) {
+                sel.insert(i);
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            selected.insert(sel.begin(), sel.end());
+        }
+    };
+
+    MultiThreadRun((size_t)thread_size_, count_kmer_in_read);
+
+    rd_store.Save(ofname_, "", [&selected](Seq::Id id, const DnaSeq& seq) {
+        return selected.find(id) != selected.end();
+    }, 4);
+
+}
+
+
 
 void Program_Sub::Running() {
     std::unordered_set<std::string> names;

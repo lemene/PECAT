@@ -1,35 +1,26 @@
-#include "contig_error_detector.hpp"
+#include "contig_analyzer.hpp"
 
 #include "align/match_info.hpp"
 
 namespace fsa {
 
-ContigErrorDetector::ContigErrorDetector(Seq::Id tid, const PolDataset& ds)
+ContigAnalyzer::ContigAnalyzer(Seq::Id tid, const PolDataset& ds)
  : tid_(tid), dataset_(ds), win_slider_(cov_info_, WIN_SIZE, STRIDE), cov_info_(ds.seq_store_.GetSeq(tid)) {
 }
 
-void ContigErrorDetector::Detect() {
+void ContigAnalyzer::Detect() {
 
     ComputeCoverage();
     cov_info_.Scan();
     cov_info_.Stat();
-    //EvaluateQuality();
  
     LOG(INFO)("ComputeCoverage");
     win_slider_.Flush();
-    LOG(INFO)("Start_Detect_Error_Regions %d", tid_);
-    auto errs = win_slider_.DetectErrorRegions(1000, cov_info_.AvarageCoverage());
-    LOG(INFO)("ComputeCoverage0");
-    for (auto e : errs) {
-        if (CheckRegion(e)) {
-            errors_.push_back(e);
-        }
-    }
-    LOG(INFO)("SplitSegments");
-    SplitSegments();
+    DetectErrors();
+
 }
 
-void ContigErrorDetector::ComputeCoverage() {
+void ContigAnalyzer::ComputeCoverage() {
     // short name
     const ReadStore& seq_store = dataset_.seq_store_;
     auto  ol_group = dataset_.grouper_.Get(tid_);
@@ -58,7 +49,7 @@ void ContigErrorDetector::ComputeCoverage() {
     double mad = 0.0;
     ComputeMedianAbsoluteDeviation(max_local_distances, median, mad);
     LOG(INFO)("local distance median: %.2f, mad: %.2f", median, mad);
-    max_local_distance_threshold_ = median + 3 * mad;
+    max_local_distance_threshold_ = median + 6*1.4826 * mad;
     LOG(INFO)("max_local_distance_threshold: %.2f", max_local_distance_threshold_);
 
 
@@ -74,7 +65,7 @@ void ContigErrorDetector::ComputeCoverage() {
 }
 
 
-void ContigErrorDetector::SaveErrors(std::ofstream& of) {
+void ContigAnalyzer::SaveErrors(std::ofstream& of) {
 
     auto ctg_name = dataset_.QueryStringById(tid_);
     for (auto w : errors_) {
@@ -83,7 +74,7 @@ void ContigErrorDetector::SaveErrors(std::ofstream& of) {
 }
 
 
-std::vector<ErrorRegion> ContigErrorDetector::MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) {
+std::vector<ErrorRegion> ContigAnalyzer::MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) {
 
 
     std::vector<ErrorRegion> merged;
@@ -104,7 +95,7 @@ std::vector<ErrorRegion> ContigErrorDetector::MergeRegions(const std::vector<Err
 
 
 
-bool ContigErrorDetector::CheckRegion(const ErrorRegion& reg) {
+bool ContigAnalyzer::CheckRegion(const ErrorRegion& reg) {
     double count = 0.0;
     auto s = reg.start / STRIDE;
     auto e = (reg.end - WIN_SIZE + 1) / STRIDE;
@@ -126,90 +117,58 @@ bool ContigErrorDetector::CheckRegion(const ErrorRegion& reg) {
 }
 
 
-void ContigErrorDetector::Correct() {
-
-}
-std::string ContigErrorDetector::Consensus() {
-    std::string seq;
-
-    for (const auto& seg : segs_) {
-        if (seg.type == 0) {
-            seq += ConsensusSimple(seg);
-        } else {
-            seq += ConsensusComplex(seg);
-        }
-    }
-    return seq;
-}
-
-std::string ContigErrorDetector::ConsensusSimple(const Segment& seg) {
-    std::string seq;
-    for (size_t i = seg.start; i < seg.end; ++i) {
-        auto c = cov_info_.GetBestChoice(i);
-        assert (c < 6);
-        if (c <= 3) {
-            seq += "ACGT"[c];
-        }
-
-    }
-    return seq;
-}
-
-std::string ContigErrorDetector::ConsensusComplex(const Segment& seg) {
-    std::string seq;
-    for (size_t i = seg.start; i < seg.end; ++i) {
-        auto c = cov_info_.GetBestChoice(i);
-        if (c <= 3) {
-            seq += "ACGT"[c];
-        }
-
-    }
-    return seq;
-}
-
-void ContigErrorDetector::SplitSegments() {
+void ContigAnalyzer::DetectErrors() {
+    LOG(INFO)("DetectErrors");
+    errors_ = win_slider_.DetectErrorRegions(1000, cov_info_.AvarageCoverage());
+    LOG(INFO)("DetectErrors: %zd", errors_.size());
+    errors_ = MergeRegions(errors_, 1000);
+    LOG(INFO)("DetectErrors: merged %zd", errors_.size());
     
-    size_t i = 0;
-    for (const auto &r : win_slider_.DetectSimpleRegions()) {
-
-        if ( i < r.start) {
-            segs_.push_back({i, r.start, 1});
-            i = r.start;
+    for (auto& e : errors_) {
+        if (CheckRegion(e)) {
+            LOG(INFO)("DetectErrors: add %s:%zd-%zd", Name().c_str(), e.start, e.end);
+        } else {
+            LOG(INFO)("DetectErrors: skip %s:%zd-%zd", Name().c_str(), e.start, e.end);
         }
-        segs_.push_back({r.start, r.end, 0});
-        i = r.end;
-    }
-
-    if (i < cov_info_.Size()) {
-        
-        segs_.push_back({i, cov_info_.Size(), 1});
-    }
-    LOG(INFO)("segs: %zd", segs_.size());
-    for (auto r : segs_) {
-        LOG(INFO)("segs: %zd-%zd %d", r.start, r.end, r.type);
     }
 }
 
-void ContigErrorDetector::SaveContig(std::ofstream& of) {
-    const auto &ctg_name = dataset_.QueryStringById(tid_);
-    auto seq = Consensus();
-    of << ">" << ctg_name << "\n" << seq << "\n";
+
+std::vector<ContigFragment> ContigAnalyzer::Split() {
+    std::vector<ContigFragment> frgs;
+
+    size_t idx = 0;
+    for (size_t i = 0; i < errors_.size(); ++i) {
+        const auto &e = errors_[i];
+        if (e.start > idx) {
+            frgs.push_back(ContigFragment(this, idx, e.start));
+        }
+        if (e.end > e.start) {
+            frgs.push_back(ContigFragment(this, e.start, e.end));
+        }
+        idx = e.end;
+    }
+    if (idx < cov_info_.Size()) {
+        frgs.push_back(ContigFragment(this, idx, cov_info_.Size()));
+    }
+    LOG(INFO)("Split: %zd fragments", frgs.size());
+    return frgs;
 }
 
 
-void ContigErrorDetector::DumpCoverage(std::ofstream& of) {
+void ContigAnalyzer::DumpCoverage(std::ofstream& of) {
     const auto &ctg_name = dataset_.QueryStringById(tid_);
     cov_info_.Dump(of, ctg_name);
 }
 
-void ContigErrorDetector::DumpWindow(std::ofstream& of) {
+void ContigAnalyzer::DumpWindow(std::ofstream& of) {
     const auto &ctg_name = dataset_.QueryStringById(tid_);
     win_slider_.Dump(of, ctg_name);
 
 }
 
 
-void ContigErrorDetector::DumpMatch(std::ofstream& of) {
+void ContigAnalyzer::DumpMatch(std::ofstream& of) {
     
     for (size_t i = 0; i < match_.size(); ++i) {
         const auto &m = match_[i];

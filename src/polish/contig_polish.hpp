@@ -11,7 +11,7 @@
 #include "utils/program.hpp"
 #include "pol_dataset.hpp"
 #include "pol_options.hpp"
-#include "contig_error_detector.hpp"
+#include "contig_analyzer.hpp"
 
 namespace fsa {
 using ArrayGraph = AlignmentGraph;
@@ -25,104 +25,12 @@ public:
 protected:
 
     void LoadOverlaps(const std::string &fname);
-    void DetectErrors();
-    void Correct();
-    void CalcCoverage();
-    
-    struct ContigJob;
-    struct WindowJob {
-        WindowJob(ContigJob *w, int s, int e) : owner(w), start(s), end(e) {}
-
-        std::vector<const Overlap*> GetOverlaps() {
-            std::vector<const Overlap*> ols;
-            auto ol_group = owner->dataset.grouper_.Get(owner->tid);
-
-            for (size_t i = 0; i < ol_group.Size(); ++i) {
-                for (size_t j = 0; j < ol_group.Size(j); ++j) {
-                    auto ol = ol_group.Get(i,j);
-                    auto& r = ol->GetRead(owner->tid);
-                    auto s = std::max(r.start, start);
-                    auto e = std::min(r.end, end);
-                    if (e > s + 2000) {
-                        ols.push_back(ol);
-                    }
-                }
-            }
-            return ols;
-        }
-        Seq::Id GetTId() { return owner->tid; }
-        ContigJob *owner { nullptr};
-        std::string GetSeq() const { return std::accumulate(seqs.begin(), seqs.end(), std::string()); }
-        int start, end;
-        std::vector<std::array<size_t, 2>> ranges;
-        std::vector<std::string> seqs;
-        std::vector<std::string> quals;
-        std::atomic<bool> done { false};
-
-    };
-
-    struct ContigJob {
-        ContigJob(Seq::Id id, const PolDataset& dataset, size_t wsize, size_t osize);
-        // 将各个窗口的数据拼接起来
-        std::string GetSeq() const;
-        
-        bool IsDone() const {
-            for (const auto& w : windows) {
-                if (!w->done) return false;
-            }
-            return true;
-        }
-
-        bool Savable() {
-            return IsDone() && !saved.exchange(true);
-        }
-
-        DnaSeq GetTarget(size_t start, size_t end, const std::vector<size_t> inserts);
-        Seq::Id tid;    // target id
-        size_t tlen;
-        std::vector<std::shared_ptr<WindowJob>> windows;
-        size_t win_size;
-        size_t ovl_size;
-        std::atomic<bool> saved { false };
-        ContigErrorDetector ctg_err_dt;
-        const PolDataset & dataset;
-    };
-
-
-    class Worker {
-    public:
-        Worker(ContigPolish& owner) : owner_(owner), graph_(owner.opts_.min_coverage, owner_.dataset_.GetStringPool()) {
-            aligner_.SetParameter("aligner", owner_.opts_.aligner_);
-        };
-        ~Worker() {  }
-        bool Correct(WindowJob &job);
-        void CalculateWeight(Seq::Id tid,  const DnaSeq& target, const std::vector<const Overlap*> & cands, int offset, const std::array<int,2>& range);
-        bool IsCoverageEnough(const std::vector<int> &cov);
-        bool ExactFilter(const Alignment& r);
-        bool GetAlignment(Seq::Id id, const Overlap& ol, Alignment &al, int ctgstart);
-        void GetAlignmentFromCigar(Seq::Id tid, const Overlap &ol, Alignment &al);
-        void Clear() {graph_.Clear(); aligned_.clear(); corrected.clear(), scores_.clear(); }
-        const std::string GetCorrected() const { return graph_.GetBestSequence(); }
-    protected:
-        ContigPolish& owner_;
-        ArrayGraph graph_;
-        Aligner aligner_;
-        std::vector<Alignment> aligned_;
-        std::string corrected;
-        std::vector<ArrayGraph::Score> scores_;
-    public:
-        std::array<int,3> counts_ {{0, 0, 0}}; // for debug
-    };   
-    friend class Worker;
-
+    void AnalyzeContigs();
 protected:
- 
-
-
-    std::vector<ContigJob> jobs_;
     
     PolOptions opts_;
     PolDataset dataset_ { opts_ };
+    std::vector<std::shared_ptr<ContigAnalyzer>> ctg_analyzers_;
 };
 
 } // namespace fsa {

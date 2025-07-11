@@ -717,7 +717,6 @@ void AlignmentGraph::Consensus() {
     auto segs = FindBestPath();
 
     for (auto it = segs.rbegin(); it != segs.rend(); ++it) {
-        LOG(INFO)("SEG-RANGE:%d-%d", it->begin.col, it->end.col);
         sequence_.push_back(ReconstructPath(GetBestPath(it->begin, it->end)));
         quality_.push_back("");
         true_range_.push_back({it->begin.col, it->end.col});

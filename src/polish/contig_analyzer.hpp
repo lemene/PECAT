@@ -12,13 +12,14 @@
 
 #include "window_slider.hpp"
 #include "contig_refiner.cpp"
+#include "contig_fragment.hpp"
 
 namespace fsa {
 
 class ContigRegion{};
 
 
-class ContigErrorDetector {
+class ContigAnalyzer {
 public:
     struct Segment {
         uint32_t start;
@@ -26,29 +27,21 @@ public:
         uint8_t type;
     };
 public:
-    ContigErrorDetector(Seq::Id tid, const PolDataset& ds);
+    ContigAnalyzer(Seq::Id tid, const PolDataset& ds);
 
     void Detect();
     void ComputeCoverage();
-
-
     //void EvaluateQuality();
 
     std::vector<ErrorRegion> MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap=1000);
     std::vector<ErrorRegion> MergeRegions2(const std::vector<ErrorRegion> &regs, size_t max_gap=1000);
     
     bool CheckRegion(const ErrorRegion& reg);
+    void DetectErrors();
     void SaveErrors(std::ofstream& of);
-    void SaveContig(std::ofstream& of);
-
-    std::string Consensus();
-    std::string ConsensusSimple(const Segment& seg);
-    std::string ConsensusComplex(const Segment& seg);
     
-    void Correct();
-
     const std::string& Name() const { return dataset_.QueryStringById(tid_); }
-    void SplitSegments();
+    std::vector<ContigFragment> Split();
 
     void DumpCoverage(std::ofstream& of);
     void DumpWindow(std::ofstream& of);

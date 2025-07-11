@@ -195,28 +195,6 @@ protected:
     int thread_size_ { 8 };
 };
 
-class Program_XXX : public Program {
-public:
-    Program_XXX() {
-        name_ = "xxx";
-        desc_ = "xxx";  
-    }
-    virtual ArgumentParser GetArgumentParser() {
-        ArgumentParser ap(Name(), Description(), "");
-        ap.AddPositionOption(ifname_, "ifname", "input file");
-        ap.AddPositionOption(ofname_, "ofname", "output file");
-        ap.AddNamedOption(thread_size_, "thread_size", "threads");
-        ap.AddPositionOption(kmer_freq_fname_, "kmer_freq", "kmer frequence");
-        return ap;
-    }
-    virtual void Running();
-protected:
-    std::string ifname_;
-    std::string ofname_;
-    std::string kmer_freq_fname_;
-    int thread_size_ { 8 };
-};
-
 class Program_Fasta2Fastq : public Program {
 public:
     Program_Fasta2Fastq() {
@@ -296,7 +274,6 @@ public:
         Add(new Program_Longest());
         Add(new Program_Random());
         Add(new Program_Weight());
-        Add(new Program_XXX());
         Add(new Program_Sub());
         Add(new Program_Test());
     }

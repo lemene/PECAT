@@ -1,9 +1,19 @@
+#pragma once
+
+#include <string>
 namespace fsa {
+
+class ContigAnalyzer;
+
 class ContigFragment {
 public:
-    ContigFragment(Seq::Id id, const DnaSeq& seq, size_t start, size_t end)
-        : id_(id), seq_(seq), start_(start), end_(end) {}       
+    ContigFragment(ContigAnalyzer* ctg_analyzer, size_t start, size_t end);
 
-}
+protected:
+    ContigAnalyzer *ctg_analyzer_ {nullptr};
+    size_t start_ {0};
+    size_t end_ {0};
+    uint8_t type_ {0}; // 0: normal, 1: error
+};
 
 }

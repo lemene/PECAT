@@ -47,6 +47,7 @@ void WindowSlider::Flush() {
         win_cov_[i].count[0] /= win[1] - win[0];
         win_cov_[i].count[1] /= win[1] - win[0];
         win_cov_[i].count[2] /= win[1] - win[0];
+        LOG(INFO)("win %zd-%zd %s", win[0], win[1], win_cov_[i].ToString().c_str());
     }
 }
 
@@ -173,23 +174,6 @@ auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>
     //return MergeRegions(cands, max_gap);
 }
 
-std::vector<ErrorRegion> WindowSlider::DetectSimpleRegions() const {
-    
-    std::vector<ErrorRegion> cands;
-
-    for (size_t i = 0; i < win_cov_.size(); ++i) {
-        std::array<size_t,2> win = {i*stride_, std::min(i*stride_+win_size_, cov_info_.Size()) };
-        const auto& wc = win_cov_[i];
-
-        if (wc.clips == 0 && wc.ins == 0) {
-
-            cands.push_back({win[0], win[1], 0});
-        }
-    
-    }
-    return MergeRegions(cands, 0);
-}
-
 std::vector<ErrorRegion> WindowSlider::MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const {
 
 
@@ -207,18 +191,6 @@ std::vector<ErrorRegion> WindowSlider::MergeRegions(const std::vector<ErrorRegio
         }
     }
     return merged;
-}
-
-
-std::vector<ErrorRegion> WindowSlider::ExtendRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const  {
-    
-    const size_t EXT_SIZE = 5;
-    std::vector<ErrorRegion> extended;
-    for (const auto &r : regs) {
-        auto win = Region2Window(r);
-    }
-
-    return extended;
 }
 
 std::vector<ErrorRegion> WindowSlider::MergeRegions2(const std::vector<ErrorRegion> &regs) const {
