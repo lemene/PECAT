@@ -102,6 +102,78 @@ def ts_bed_range(argv):
         s, e = int(its[1]), int(its[2])
         range += e - s
     print("Range:", range)
+
+def load_from_gaep(fname):
+    result = []
+    for i, line in enumerate(open(fname)):
+        if i % 4 == 3:
+            its = line.split()
+            if its[3] == 'inv':
+                chr, start, end, = its[2], its[6], its[7]
+            else:
+                chr, start, end, = its[2], its[5], its[6]
+            result.append((chr, int(start), int(end), line))
+            if result[-1][1] >= result[-1][2]:
+                print(result[-1])
+                assert 0
+    result.sort()
+    return result
+def load_from_bed1(fname):
+    beds = []
+    for line in open(fname):
+        its = line.split()
+        beds.append((its[0], int(its[1]), int(its[2])))
+    return beds
+
+
+def ts_save_coverage_graph(argv):
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+
+    bed_fname = argv[0]
+    cov_fname = argv[1]
+
+    line = open(bed_fname, 'r').readline()
+    if len(line.split()) == 1:
+        # If the first line has only one column, it's a GAEP file
+        beds = load_from_gaep(bed_fname)
+    else:
+        # Otherwise, it's a standard BED file  
+        beds = load_from_bed1(bed_fname)
+        
+
+    covs = defaultdict(list)
+    for line in open(cov_fname):
+        its = line.split()
+        assert len(its) >= 3
+        bed = its[0].split(':')
+        
+        cov = [float(i) for i in its[1:4]]
+        covs[bed[0]].append(cov)
+
+    for bed in beds:
+        assert bed[0] in covs, f"Bed {bed[0]} not found in coverage data"
+        s = bed[1] // 200
+        e = (bed[2] + 199) // 200
+        s = max(0, s - 50)
+        e = min(e + 50, len(covs[bed[0]]))
+
+        cov_data = covs[bed[0]]
+
+        x = list(range(s, e))
+        for i in range(3):
+            y = [cov[i] for cov in cov_data[s:e]]
+            plt.plot(x, y, label=f"Coverage {i+1}")
+        plt.savefig(f"{bed[0]}_{bed[1]}_{bed[2]}.png")
+        plt.close()
+    
+
+
+    
+
+
+        
+
 _local_func = locals()
 def main():
     utils.script_entry(sys.argv, _local_func, "ts_")

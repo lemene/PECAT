@@ -53,6 +53,9 @@ void WindowSlider::Flush() {
 
 auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>& ave_covs) -> std::vector<ErrorRegion>  {
 
+    ComputeCoverageThresholds(0);
+    ComputeCoverageThresholds(1);
+    ComputeCoverageThresholds(2);
     // Detect error regions based on coverage information
     // - Detect regions with low coverage, high coverage, or significant differences between coverage types
     // 
@@ -60,84 +63,73 @@ auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>
     const double MAX_COV_DIFF = 0.2; 
     const double MIN_COV_DIFF = 0.1; 
 
+    const size_t SLOPE_WIN_SIZE = 10000;
+    const size_t SLOPE_WIN_COUNT = SLOPE_WIN_SIZE / stride_;
+
 
     std::vector<ErrorRegion> cands;
     
     std::vector<double> l_slope;
     std::vector<double> l_slope_rate;
-    std::vector<int> kernel = {5, -1, -1, -1, -1, -1};
-    const int SLEN = kernel.size();
-    assert(SLEN == kernel.size() && SLEN - 1 == kernel[0]);
+    std::vector<int> kernel = {1, 1, 1, 1, 1, 0, -1, -1, -1, -1, -1};
+    const int KLEN = kernel.size();
+    assert(KLEN % 2 == 1 && KLEN == kernel.size());
 
-    for (size_t i = 0; i + SLEN - 1 < win_cov_.size(); ++i) {
+    for (size_t i = KLEN/2; i + KLEN/2 < win_cov_.size(); ++i) {
         int s = 0;
         int ss = 0;
-        for (size_t ii = 0; ii < SLEN; ++ii) {
-            s += int(win_cov_[i+ii].c1)*kernel[ii];
-            ss += int(win_cov_[i+ii].c1);
+        for (size_t ii = 0; ii < KLEN; ++ii) {
+            s += int(win_cov_[i + ii - KLEN/2].c1)*kernel[ii];
+            ss += int(win_cov_[i + ii - KLEN/2].c1);
         }
         l_slope.push_back(s);
         l_slope_rate.push_back(ss == 0 ? 0.0 : s * 1.0 / ss);
+        LOG(DEBUG)("detect_slope_item %.02f %.02f", l_slope.back(), l_slope_rate.back());
     }
 
-    double mean = 0;
-    double mad = 0;
-    ComputeMedianAbsoluteDeviation(l_slope, mean, mad);
-    LOG(INFO)("PEAK mean %.02f %.02f", mean,mad);
-    auto low = mean - 6*1.253*mad;
-    auto high = mean + 6*1.253*mad;
+    auto mm = ComputeMedianAbsoluteDeviation(l_slope);
+    auto low = mm[0] - 3*1.4826*mm[1];
+    auto high = mm[0] + 3*1.4826*mm[1];
+    LOG(INFO)("PEAK threashold: %.02f %.02f -> %.02f %.02f", mm[0], mm[1], low, high);
 
-    
-    double mean_rate = 0;
-    double mad_rate = 0;
-    ComputeMedianAbsoluteDeviation(l_slope_rate, mean_rate, mad_rate);
-    LOG(INFO)("PEAK rate mean %.02f %.02f", mean_rate, mean_rate);
-    auto low_rate = mean_rate - 6*1.253*mad_rate;
-    auto high_rate = mean_rate + 6*1.253*mad_rate;
+    mm = ComputeMedianAbsoluteDeviation(l_slope_rate);
+    auto low_rate = mm[0] - 3*1.4826*mm[1];
+    auto high_rate = mm[0] + 3*1.4826*mm[1];
+    LOG(INFO)("PEAK rate threashold %.02f %.02f -> %.02f %.02f", mm[0], mm[1], low_rate, high_rate);
 
-    for (size_t i = 0; i + SLEN - 1 < win_cov_.size(); ++i) {
+    for (size_t i = 0 ; i < win_cov_.size(); ++i) {
         auto &winfo = win_cov_[i];
-        auto p = l_slope[i];
-        auto r = l_slope_rate[i];
         std::array<size_t,2> win = Window2Region(i);
-        LOG(INFO)("PEAK %zd-%zd %.02f %.02f %.02f |  %.02f %.02f %.02f ", win[0], win[1], p, low, high, r, low_rate, high_rate);
-        if (p < low && win_cov_[i].c1 <= ave_covs[1] || p > high && win_cov_[i].c1 >= ave_covs[1] ||
-            (r < low_rate && win_cov_[i].c1 <= ave_covs[1] || r > high_rate && win_cov_[i].c1 >= ave_covs[1])) {
-                
-            LOG(INFO)("set_type_t: %zd-%zd %d", win[0], win[1], win_cov_[i].c1);
-            winfo.type = 4;
+        assert(winfo.type == 0); // Not yet set type
+
+        if (winfo.min_c[1] * 1.0 < ave_covs[1] * 0.5 || winfo.max_c[1] * 1.0  > ave_covs[1] * 1.5) {
+            winfo.type = 1;
         }
-    }
-
-        
-    for (size_t i = 0; i < win_cov_.size(); ++i) {
-        auto &winfo = win_cov_[i];
-        std::array<size_t,2> win = Window2Region(i);
-        if (winfo.min_c[1] * 1.0 < ave_covs[1] * 0.5 || winfo.max_c[1] * 1.0  > ave_covs[1] * 2) {
-            if (winfo.type == 0) {
-                if (winfo.c1 < winfo.count[1] *0.5) {
-                    winfo.type = 2;
-                } else {
-                    winfo.type = 1;
-                }
-            } 
-        } 
 
         if (win_cov_[i].c1 <= MIN_COV_HQ) {
-            LOG(INFO)("add_cand_win0 %zd-%zd %.02f %.02f", win[0], win[1], win_cov_[i].c1 ,win_cov_[i].c0);
-            //cands.push_back({win[0], win[1], 0});
             winfo.type = 2;
         }
+
         if ((win_cov_[i].c0- win_cov_[i].c1)*1.0 > std::max<double>(MIN_COV_HQ, win_cov_[i].c1*MAX_COV_DIFF)) {
-            LOG(INFO)("add_cand_win1 %zd-%zd %zd %zd", win[0], win[1], win_cov_[i].c1 ,win_cov_[i].c0);    
             winfo.type = 2; 
         } else if ((win_cov_[i].c0- win_cov_[i].c1)*1.0 > std::max<double>(MIN_COV_HQ, win_cov_[i].c1*MIN_COV_DIFF)) {
             winfo.type = 3;
         }
+
+        if (i >= KLEN / 2 && i + KLEN / 2 < win_cov_.size()) {
+            // Check slope
+            auto sp = l_slope[i-KLEN/2];
+            auto spr = l_slope_rate[i-KLEN/2];  
+            LOG(INFO)("detect_slope %zd-%zd %.02f < %.02f < %.02f |  %.02f < %.02f < %.02f ", win[0], win[1], low, sp,  high, low_rate, spr, high_rate);
+            if (sp < low || sp > high || spr < low_rate || spr > high_rate) {
+                winfo.type = 2;
+            }
+        }
         
+        LOG(INFO)("detect %zd-%zd %d %.02f", win[0], win[1], winfo.type);
+
     }
     
-
     for (size_t i = 0; i < win_cov_.size(); ++i) {
         std::array<size_t,2> win = Window2Region(i);
         auto &winfo = win_cov_[i];
@@ -171,7 +163,6 @@ auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>
         return a.start < b.start || (a.start == b.start && a.end < b.end);
     });
     return MergeRegions2(MergeRegions(cands, max_gap));
-    //return MergeRegions(cands, max_gap);
 }
 
 std::vector<ErrorRegion> WindowSlider::MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const {
@@ -254,69 +245,6 @@ std::vector<ErrorRegion> WindowSlider::MergeRegions2(const std::vector<ErrorRegi
     return merged;
 }
 
-//     auto check_adjacent_reg = [this](const ErrorRegion& reg0, const ErrorRegion& reg1) {
-//         if (reg0.end + 1000000 < reg1.start) return false;
-
-//         size_t s0 = reg0.start / stride_ - 1;
-//         size_t e0 = 1+ (reg0.end > win_size_ ? reg0.end - win_size_ : 0) / stride_;
-//         size_t s1 = reg1.start / stride_ - 1;
-//         size_t e1 = 1 + (reg1.end > win_size_ ? reg1.end - win_size_ : 0) / stride_;
-
-//         int t0 = 0;
-//         if (win_cov_[s0].c1 + win_cov_[s0].c1*0.2 < win_cov_[e0].c1) {
-//             t0 = -1;
-//         } else if (win_cov_[s0].c1 > win_cov_[e0].c1 + win_cov_[e0].c1*0.2) {
-//             t0 = 1;
-//         }
-
-//         int t1 = 0;
-//         if (win_cov_[s1].c1 + win_cov_[s1].c1*0.2 < win_cov_[e1].c1) {
-//             t1 = -1;
-//         } else if (win_cov_[s1].c1 > win_cov_[e1].c1 + win_cov_[e1].c1*0.2) {
-//             t1 = 1;
-//         }
-//         LOG(INFO)("mmm %zd-%zd %d, %zd-%zd %d", reg0.start, reg0.end, t0, reg1.start, reg1.end, t1);
-
-//         if (t0 == -1 && t1 == 1) {
-//             for (size_t i = e0; i <= s1; ++i) {
-//                 LOG(INFO)("mmm-  %d %d %d", win_cov_[i].c1, win_cov_[s0].c1, win_cov_[e1].c1);
-//                 if (win_cov_[i].c1 < (win_cov_[s0].c1 + win_cov_[e1].c1 )/ 2) {
-//                     return false;
-//                 }
-//             }
-//             return true;
-
-//         }
-
-//         if (t0 == 1 && t1 == -1) {
-//             for (size_t i = e0; i <= s1; ++i) {
-//                 if (win_cov_[i].c1 > (win_cov_[s0].c1 + win_cov_[e1].c1 )/ 2) {
-//                     return false;
-//                 }
-//             }
-//             return true;
-
-//         }
-//         return false;
-//     };
-
-//     std::vector<ErrorRegion> merged;
-//     if (regs.size() > 0) {
-//         merged.push_back(regs[0]);
-
-//         for (size_t i = 1; i < regs.size(); ++i) {
-//             if (check_adjacent_reg(merged.back(), regs[i])) {
-//                 assert(merged.back().end <= regs[i].end);
-//                 merged.back().end = regs[i].end;
-//             } else {
-//                 merged.push_back(regs[i]);
-//             }
-//         }
-//     }
-//     return merged;
-// }
-
-
 
 void WindowSlider::Dump(std::ofstream &of, const std::string& ctg_name) {
     for (size_t i = 0; i < win_cov_.size(); ++i) {
@@ -347,4 +275,18 @@ double WindowSlider::SurroundingCoverage(const ErrorRegion& reg, size_t inv) {
     LOG(INFO)("Sur:%zd-%zd %zd-%zd %.02f %zd %.02f %zd",reg.start, reg.end, win[0], win[1], laccu, lsz, raccu, rsz);
     return std::min((lsz == 0 ? 0.0 : laccu), (rsz == 0 ? 0.0 : raccu));
 }
+
+std::array<double,2> WindowSlider::ComputeCoverageThresholds(int type) {
+    std::vector<double> covs;
+    for (size_t i = 0; i < win_cov_.size(); ++i) {
+        covs.push_back(type == 0 ? win_cov_[i].c0 : (type == 1 ? win_cov_[i].c1 : win_cov_[i].c2));
+    }
+    auto mm = ComputeMedianAbsoluteDeviation(covs);
+    auto low  = mm[0] - 3*1.4826*mm[1];
+    auto high = mm[0] + 3*1.4826*mm[1];
+    LOG(INFO)("Coverage(%d) median mad low high %.02f %.02f %.02f %.02f", type, mm[0], mm[1], low, high);
+    return {low, high};
+}
+
+
 }

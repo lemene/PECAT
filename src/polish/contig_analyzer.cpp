@@ -45,20 +45,17 @@ void ContigAnalyzer::ComputeCoverage() {
         max_local_distances.push_back(m.MaxLocalDistance());
     }
 
-    double median = 0.0;
-    double mad = 0.0;
-    ComputeMedianAbsoluteDeviation(max_local_distances, median, mad);
-    LOG(INFO)("local distance median: %.2f, mad: %.2f", median, mad);
-    max_local_distance_threshold_ = median + 6*1.4826 * mad;
-    LOG(INFO)("max_local_distance_threshold: %.2f", max_local_distance_threshold_);
+    auto mm = ComputeMedianAbsoluteDeviation(max_local_distances); // median, mad
+    max_local_distance_threshold_ = mm[0] + 3*1.4826 * mm[1];
+    LOG(INFO)("max_local_distance_threshold: %.02f = %.02f + 3*1.4826 * %.02f", max_local_distance_threshold_, mm[0], mm[1]);
 
 
     for (auto& m : match_) {
         if ( m.MatchedIdentity() >= dataset_.GetOverlapQualityThreshold() && (m.LClip() < MIN_CLIP || m.RClip() < MIN_CLIP )) {
             LOG(INFO)("add_seq %d: %s", m.GetOverlap()->a_.id, dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
             assert(m.GetOverlap()->attached > 0);
-            //cov_info_.Merge(m, MIN_CLIP*2, max_local_distance_threshold_, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
-            cov_info_.Merge(m, MIN_CLIP*2, 0.50, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+            cov_info_.Merge(m, MIN_CLIP*2, max_local_distance_threshold_, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+            //cov_info_.Merge(m, MIN_CLIP*2, 0.50, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
         }
 
     }
@@ -111,9 +108,8 @@ bool ContigAnalyzer::CheckRegion(const ErrorRegion& reg) {
             LOG(INFO)("checkreg: sup %zd %zd %s", m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
         }
     }
-    LOG(INFO)("checkreg: %s:%zd-%zd %.02f %0.2f", Name().c_str(), reg.start, reg.end, count, this->win_slider_.SurroundingCoverage(reg) * 0.2);
+    LOG(INFO)("checkreg: %s:%zd-%zd %.02f < %0.2f", Name().c_str(), reg.start, reg.end, count, this->win_slider_.SurroundingCoverage(reg) * 0.2);
     return count == 0 || count < this->win_slider_.SurroundingCoverage(reg) * 0.2;
-    return count == 0 || count < std::min(this->win_slider_.SurroundingCoverage(reg) * 0.2, cov_info_.AvarageCoverage()[1]/2.0);
 }
 
 
@@ -124,13 +120,16 @@ void ContigAnalyzer::DetectErrors() {
     errors_ = MergeRegions(errors_, 1000);
     LOG(INFO)("DetectErrors: merged %zd", errors_.size());
     
-    for (auto& e : errors_) {
-        if (CheckRegion(e)) {
+    errors_.erase(std::remove_if(errors_.begin(), errors_.end(), [this](const ErrorRegion& e) {
+        bool torf = CheckRegion(e);
+        if (torf) {
             LOG(INFO)("DetectErrors: add %s:%zd-%zd", Name().c_str(), e.start, e.end);
+
         } else {
             LOG(INFO)("DetectErrors: skip %s:%zd-%zd", Name().c_str(), e.start, e.end);
         }
-    }
+        return !CheckRegion(e);
+    }), errors_.end());
 }
 
 

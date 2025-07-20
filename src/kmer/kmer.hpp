@@ -73,18 +73,6 @@ protected:
     uint64_t mask;
 };
 
-class MinimizerCounter {
-public:
-    MinimizerCounter(size_t w, size_t k) : w_(w), k_(k) {}
-
-    void Count(const DnaSeq& seq) {
-        
-    }
-
-protected:
-    size_t w_;
-    size_t k_;
-};
 
 KmerSet0 LoadKmers0(const std::string &fname);
 KmerSet1 LoadKmers1(const std::string &fname);

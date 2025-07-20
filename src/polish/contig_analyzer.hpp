@@ -11,7 +11,6 @@
 #include "align/match_info.hpp"
 
 #include "window_slider.hpp"
-#include "contig_refiner.cpp"
 #include "contig_fragment.hpp"
 
 namespace fsa {

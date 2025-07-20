@@ -16,6 +16,7 @@ ArgumentParser ContigPolish::GetArgumentParser() {
 }
 
 void ContigPolish::Running() {
+    SET_LOG_LEVEL(DEBUG);
     dataset_.Load();
 
     LOG(INFO)("Start detecting misassemblies");

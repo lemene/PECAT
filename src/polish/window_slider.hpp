@@ -78,7 +78,7 @@ public:
     void Flush();
     void Dump(std::ofstream &of, const std::string& ctg_name);
     double SurroundingCoverage(const ErrorRegion& reg, size_t inv=10);
-protected:
+    std::array<double,2> ComputeCoverageThresholds(int type);
 protected:
     CoverageInfo &cov_info_;
     uint32_t win_size_;

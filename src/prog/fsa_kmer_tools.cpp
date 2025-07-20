@@ -1,4 +1,4 @@
-#include "../read_tools.hpp"
+#include "../kmer/kmer_tools.hpp"
 
 
-PROGRAM_INSTANCE(ReadTools)
+PROGRAM_INSTANCE(KmerTools)

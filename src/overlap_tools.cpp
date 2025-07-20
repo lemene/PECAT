@@ -631,6 +631,8 @@ void Program_Accuracy::Running() {
                     err.insert(err.end(), d.len, 1);
                     ins.insert(ins.end(), d.len, 0);
                     break;
+                case 'N':
+                    break; // skip N
                 default:
                     LOG(ERROR)("Not support %c", d.type);
 
@@ -733,6 +735,8 @@ void Program_Accuracy2::Running() {
                 break;
             case 'D':
                 del += d.len;
+                break;
+            case 'N':
                 break;
             default:
                 LOG(ERROR)("Not support %c", d.type);
