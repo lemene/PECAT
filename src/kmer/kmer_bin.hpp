@@ -6,7 +6,7 @@
 #include "utils/program.hpp"
 #include "utility.hpp"
 
-#include "kmer.hpp"
+#include "kmer_counter.hpp"
 
 namespace fsa {
 

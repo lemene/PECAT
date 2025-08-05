@@ -27,16 +27,18 @@ assemble_src = ./assemble/contig_generator.cpp
 
 overlap_src = ./overlap/mapping.cpp
 
+kmer_src = ./kmer/ranked_kmers.cpp ./kmer/kmer.cpp ./kmer/minimizer_counter.cpp ./kmer/kmer_counter.cpp
+
 libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_store.cpp sequence.cpp\
              utility.cpp file_io.cpp seq_io.cpp overlap_store.cpp graph.cpp sequence_store.cpp\
 			 assemble/overlap_assemble.cpp simple_align.cpp assemble/string_graph.cpp \
 			 assemble/read_variants.cpp assemble/string_node.cpp assemble/string_edge.cpp \
 			 assemble/asm_dataset.cpp assemble/asm_options.cpp assemble/stat_readinfo.cpp\
 			 ../thirdparty/edlib/edlib/src/edlib.cpp correct/aligner.cpp ./correct/dw.cpp  ./correct/diff.cpp  \
-			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp  ./kmer/kmer.cpp\
+			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp  \
 			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp ./utils/project_file.cpp\
 			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
-			 $(assemble_src) $(overlap_src) $(align_src)
+			 $(assemble_src) $(overlap_src) $(align_src) $(kmer_src)
 
 libfsa_src += $(wildcard ./correct/align/*.cpp)
 
@@ -74,7 +76,7 @@ fsa_rd_correct_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_correct_src
 fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp ./correct/alignment_graph.cpp\
                      ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp\
 					 ./polish/contig_analyzer.cpp ./polish/coverage_info.cpp ./polish/window_slider.cpp \
-					 ./polish/contig_fragment.cpp ./polish/contig_chain.cpp ./polish/contig_graph.cpp 
+					 ./polish/contig_fragment.cpp ./polish/contig_graph.cpp 
 					 
 fsa_ctg_polish_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_polish_src))
 
@@ -112,7 +114,7 @@ obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
 	$(fsa_rd_haplotype_obj) $(fsa_rd_consistent_obj) $(fsa_ctg_call_obj) \
 	$(fsa_ol_tools_obj) $(fsa_rd_tools_obj) $(fsa_misc_tools_obj) \
 	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_kmer_bin_obj) \
-	$(fsa_ctg_polish_obj) $(fsa_sam_tools_obj)
+	$(fsa_ctg_polish_obj) $(fsa_sam_tools_obj) $(fsa_kmer_tools_obj)
 
 
 dep:=$(patsubst %.o,%.d, $(obj))

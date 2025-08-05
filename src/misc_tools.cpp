@@ -10,7 +10,7 @@
 
 #include "phase/hic_read_infos.hpp"
 #include "assemble/read_variants.hpp"
-#include "kmer/kmer.hpp"
+#include "kmer/kmer_counter.hpp"
 
 namespace fsa {
 

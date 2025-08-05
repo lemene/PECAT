@@ -168,12 +168,6 @@ def ts_save_coverage_graph(argv):
         plt.close()
     
 
-
-    
-
-
-        
-
 _local_func = locals()
 def main():
     utils.script_entry(sys.argv, _local_func, "ts_")

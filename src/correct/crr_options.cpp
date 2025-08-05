@@ -20,6 +20,7 @@ void CrrOptions::SetArguments(ArgumentParser &ap) {
 
     ap.AddNamedOption(graph_fname_, "graph_fname", "The file recording graph");
     ap.AddNamedOption(infos_fname_, "infos_fname", "The file recording score infos");
+    ap.AddNamedOption(filtered_overlaps_fname_, "filtered_overlaps", "The file recording filtered overlaps");
 
     ap.AddNamedOption(min_identity_, "min_identity", "");
     ap.AddNamedOption(min_local_identity_, "min_local_identity", "");

@@ -37,12 +37,13 @@ void ReadCorrect::Correct() {
     
     std::ofstream of_cread(opts_.cread_fname_);
     std::ofstream of_infos(opts_.infos_fname_);
+    std::ofstream of_flt_ols(opts_.filtered_overlaps_fname_);
     const size_t flush_block = 20*1024*1024;
     StatInfo stat_info;
 
     Progress progress(5000, dataset_.read_ids_.size());
 
-    auto combine_func = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, StatInfo &si) {
+    auto combine_func = [&](std::ostringstream &oss_cread, std::ostringstream &oss_scores, std::ostringstream& oss_flt_ols, StatInfo &si) {
         std::lock_guard<std::mutex> lock(mutex);
         of_cread << oss_cread.str();              
         oss_cread.str("");
@@ -51,6 +52,12 @@ void ReadCorrect::Correct() {
             of_infos << oss_scores.str();
         }
         oss_scores.str("");
+
+        if (of_flt_ols.is_open()) {
+            of_flt_ols << oss_flt_ols.str();
+        }
+        oss_flt_ols.str("");
+        
         stat_info.Merge(si);
         si.Clear();
     };
@@ -63,6 +70,7 @@ void ReadCorrect::Correct() {
 
         std::ostringstream oss_cread;
         std::ostringstream oss_scores;
+        std::ostringstream oss_flt_ols;
 
         for (auto ids = dispatcher->Get(); ids.size() > 0; ids = dispatcher->Get()){
             worker.ResetCache(ids, ids.size());
@@ -73,6 +81,7 @@ void ReadCorrect::Correct() {
                     if ( worker.GetCorrected().size() > 0) {
                         SaveCRead(oss_cread, tid, worker.GetCorrected(), worker.GetTrueRange());
                         if (of_infos.is_open()) worker.SaveReadInfos(oss_scores, tid, dataset_.read_store_);
+                        if (of_flt_ols.is_open()) worker.DumpFilteredOverlaps(oss_flt_ols);
                     } else {
                         LOG(WARNING)("Failed to correct read(%s)", dataset_.read_store_.QueryNameById(tid).c_str());
                     }
@@ -82,13 +91,13 @@ void ReadCorrect::Correct() {
             }
             
             if (oss_cread.tellp() > (int)flush_block) {
-                combine_func(oss_cread, oss_scores, worker.stat_info);
+                combine_func(oss_cread, oss_scores, oss_flt_ols, worker.stat_info);
             }
             progress.Forward(ids.size());
         }
 
         if (oss_cread.tellp() > 0) {
-            combine_func(oss_cread, oss_scores, worker.stat_info);
+            combine_func(oss_cread, oss_scores, oss_flt_ols, worker.stat_info);
         }
     };
 
@@ -524,6 +533,27 @@ std::vector<std::array<size_t, 2>> ReadCorrect::Worker::GroupPositions(const std
     return groups;
 }
 
+void ReadCorrect::Worker::DumpFilteredOverlaps(std::ostream &os) {
+    StringPool::UnsafeNameId ni(owner_.dataset_.GetStringPool());
+    for (const auto &al : aligned_) {
+        Overlap ol;
+        ol.a_.id = al.qid;
+        ol.a_.len = al.query->Size();
+        ol.a_.start = al.query_start;
+        ol.a_.end = al.query_end;
+        ol.a_.strand = al.strand;
+
+        ol.b_.id = al.tid;
+        ol.b_.len = al.target->Size();
+        ol.b_.start = al.target_start;
+        ol.b_.end = al.target_end;
+        ol.b_.strand = 0;
+
+        ol.identity_ = al.Identity();
+        
+        os << OverlapStore::ToPafLine(ol, ni) << "\n";
+    }
+}
 
 void ReadCorrect::GetAlignmentFromCigar(Seq::Id tid, const Overlap& ol, Alignment &al) {
     assert(ol.detail_.size() > 0);
@@ -760,6 +790,7 @@ void ReadCorrect::GetAlignmentFromMapping1(Seq::Id tid, const Overlap& ol, Worke
     }
     
 }
+
 
 } // namespace fsa {
     

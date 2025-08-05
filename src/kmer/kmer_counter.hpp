@@ -30,8 +30,10 @@ public:
                 kmer[0] = (kmer[0] << 2 | c) & mask;           // forward k-mer
                 kmer[1] = (kmer[1] >> 2) | (3ULL^c) << shift1; // reverse k-mer
                 kmers.push_back(kmer);
+                assert(kmer[0] != kmer[1]);
             }
         }
+        
         return kmers;
     }
 

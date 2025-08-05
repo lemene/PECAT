@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../sequence.hpp"
+
 namespace fsa {
 
 using KmerId = unsigned long long;
@@ -38,41 +39,6 @@ struct KmerSet1 {
 using KmerSet = KmerSet1;
 
 
-class KmerCounter { 
-public:
-    KmerCounter(size_t k) : k_(k) {
-        shift1 = 2 * (k - 1);
-        mask = (1ULL<<2*k) - 1;
-    }
-
-    std::vector<std::array<KmerId, 2>> CountAll(const DnaSeq& seq) {
-        std::vector<std::array<KmerId, 2>> kmers;
-
-        if (seq.Size() >= k_) {    
-            std::array<KmerId, 2> kmer = {0, 0};
-            
-            size_t index = 0;
-            for (index = 0; index < k_-1; ++index) {
-                auto c = seq[index];
-                kmer[0] = (kmer[0] << 2 | c) & mask;           // forward k-mer
-                kmer[1] = (kmer[1] >> 2) | (3ULL^c) << shift1; // reverse k-mer
-            }
-            for (; index < seq.Size(); index++) {
-                auto c = seq[index];
-                kmer[0] = (kmer[0] << 2 | c) & mask;           // forward k-mer
-                kmer[1] = (kmer[1] >> 2) | (3ULL^c) << shift1; // reverse k-mer
-                kmers.push_back(kmer);
-            }
-        }
-        return kmers;
-    }
-
-protected:
-    size_t k_;
-    uint64_t shift1;
-    uint64_t mask;
-};
-
 
 KmerSet0 LoadKmers0(const std::string &fname);
 KmerSet1 LoadKmers1(const std::string &fname);
@@ -80,4 +46,30 @@ KmerSet1 LoadKmers1(const std::string &fname);
 KmerId KmerStringToId(const std::string &str);
 std::string KmerId2String(KmerId id, size_t k);
 size_t GetKmerLength(const std::string &fname);
+
+static inline uint64_t hash64(uint64_t key)
+{
+    key = (~key + (key << 21));
+    key = key ^ key >> 24;
+    key = ((key + (key << 3)) + (key << 8));
+    key = key ^ key >> 14;
+    key = ((key + (key << 2)) + (key << 4));
+    key = key ^ key >> 28;
+    key = (key + (key << 31));
+    return key;
+}
+
+
+static inline uint64_t hash64(uint64_t key, uint64_t mask)
+{
+	key = (~key + (key << 21)) & mask; // key = (key << 21) - key - 1;
+	key = key ^ key >> 24;
+	key = ((key + (key << 3)) + (key << 8)) & mask; // key * 265
+	key = key ^ key >> 14;
+	key = ((key + (key << 2)) + (key << 4)) & mask; // key * 21
+	key = key ^ key >> 28;
+	key = (key + (key << 31)) & mask;
+	return key;
+}
+
 } // namespace fsa

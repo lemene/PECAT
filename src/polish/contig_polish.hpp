@@ -12,6 +12,7 @@
 #include "pol_dataset.hpp"
 #include "pol_options.hpp"
 #include "contig_analyzer.hpp"
+#include "contig_graph.hpp"
 
 namespace fsa {
 using ArrayGraph = AlignmentGraph;
@@ -23,14 +24,15 @@ public:
     virtual void CheckArguments() { opts_.CheckArguments(); }
     
 protected:
-
-    void LoadOverlaps(const std::string &fname);
     void AnalyzeContigs();
+    void BuildGraph();
+    void PolishContigs();
+
 protected:
-    
     PolOptions opts_;
     PolDataset dataset_ { opts_ };
     std::vector<std::shared_ptr<ContigAnalyzer>> ctg_analyzers_;
+    ContigGraph graph_;
 };
 
 } // namespace fsa {

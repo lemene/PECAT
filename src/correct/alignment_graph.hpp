@@ -261,7 +261,7 @@ public:
     // std::vector<std::string> RestoreSegment(const Segment &seg);
 
     // get result
-    size_t getSequenceCount() const { return sequence_.size(); }
+    size_t GetSequenceCount() const { return sequence_.size(); }
     size_t GetBestSequenceIndex() const {
         return std::max_element(sequence_.begin(), sequence_.end(), [](const std::string &a, const std::string& b) {
             return a.length() < b.length();

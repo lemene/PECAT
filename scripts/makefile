@@ -4,7 +4,8 @@ TARGET_DIR=../build/bin
 
 TARGET_FILES =   ${TARGET_DIR}/FsaUtils.pm 
 TARGET_SCRIPTS = ${TARGET_DIR}/pecat.pl  ${TARGET_DIR}/raec.pl ${TARGET_DIR}/show_hapkmer.R \
-	${TARGET_DIR}/parallel_medaka.py ${TARGET_DIR}/test_pol.py
+	${TARGET_DIR}/parallel_medaka.py ${TARGET_DIR}/test_pol.py ${TARGET_DIR}/pecat2.pl \
+	${TARGET_DIR}/adjust_filtered_overlaps.py
 
 scripts: ${TARGET_SCRIPTS} ${TARGET_FILES}
 

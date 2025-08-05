@@ -5,7 +5,7 @@
 #include <random>
 
 #include "../utility.hpp"
-#include "../kmer/kmer.hpp"
+#include "../kmer/kmer_counter.hpp"
 
 #include "edlib.h"
 

@@ -1,4 +1,5 @@
 #include "contig_fragment.hpp"
+#include "contig_analyzer.hpp"
 
 namespace fsa {
 ContigFragment::ContigFragment(ContigAnalyzer* ctg_analyzer, size_t start, size_t end)
@@ -7,4 +8,7 @@ ContigFragment::ContigFragment(ContigAnalyzer* ctg_analyzer, size_t start, size_
 }
     
 
+Seq::Id ContigFragment::ContigId() const {
+    return ctg_analyzer_->GetId(); 
+}
 }

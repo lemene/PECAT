@@ -10,7 +10,7 @@
 
 #include "phase/hic_read_infos.hpp"
 
-#include "kmer/kmer.hpp"
+#include "kmer/kmer_counter.hpp"
 
 namespace fsa {
 
@@ -421,42 +421,17 @@ void Program_SplitName::SaveOverlaps(const std::string &fn_ols, const std::strin
     MultiThreadRun(std::min<size_t>(8, thread_size_), work);
 }
 
-// void Program_Longest::Running() {
-//     int min_length = min_length_;
-//     if (base_size_ > 0) {
-//         std::vector<int> lengths;
-//         LoadReadFile(ifname_, "", [&lengths, this](const SeqReader::Item& item) {
-//             if (DnaSeq::Check(item.seq)) {
-//                 lengths.push_back((int)item.seq.size());
-//             } else {
-//                 LOG(WARNING)("Found bad base in %s", item.head.c_str());
-//             }
-//         });
-
-//         LOG(INFO)("length size = %zd", lengths.size());
-        
-//         FindLongestXHeap(lengths, base_size_);
-//         if (lengths[0] > min_length)  min_length = lengths[0];
-//     }
-
-//     LOG(INFO)("min_length = %zd", min_length);
-
-//     FilterReadFile(ifname_, ofname_, id2name_, [min_length, this](SeqReader::Item& item) {
-//         return (int)item.seq.size() >= min_length && DnaSeq::Check(item.seq);
-//     });
-// }
-
-
 void Program_Longest::Running() {
     int min_length = min_length_;
-
-    ReadStore rd_store;
-    rd_store.Load(ifname_);
     if (base_size_ > 0) {
         std::vector<int> lengths;
-        for (size_t i = rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
-            lengths.push_back(rd_store.GetSeqLength(i));
-        }
+        LoadReadFile(ifname_, "", [&lengths, this](const SeqReader::Item& item) {
+            if (DnaSeq::Check(item.seq)) {
+                lengths.push_back((int)item.seq.size());
+            } else {
+                LOG(WARNING)("Found bad base in %s", item.head.c_str());
+            }
+        });
 
         LOG(INFO)("length size = %zd", lengths.size());
         
@@ -466,10 +441,35 @@ void Program_Longest::Running() {
 
     LOG(INFO)("min_length = %zd", min_length);
 
-    rd_store.Save(ofname_, id2name_, [min_length](Seq::Id id, const DnaSeq& seq) {
-        return seq.Size() >= min_length;
-    }, 8);
+    FilterReadFile(ifname_, ofname_, id2name_, [min_length, this](SeqReader::Item& item) {
+        return (int)item.seq.size() >= min_length && DnaSeq::Check(item.seq);
+    });
 }
+
+
+// void Program_Longest::Running() {
+//     int min_length = min_length_;
+
+//     ReadStore rd_store;
+//     rd_store.Load(ifname_);
+//     if (base_size_ > 0) {
+//         std::vector<int> lengths;
+//         for (size_t i = rd_store.GetIdLow(); i < rd_store.GetIdUp(); ++i) {
+//             lengths.push_back(rd_store.GetSeqLength(i));
+//         }
+
+//         LOG(INFO)("length size = %zd", lengths.size());
+        
+//         FindLongestXHeap(lengths, base_size_);
+//         if (lengths[0] > min_length)  min_length = lengths[0];
+//     }
+
+//     LOG(INFO)("min_length = %zd", min_length);
+
+//     rd_store.Save(ofname_, id2name_, [min_length](Seq::Id id, const DnaSeq& seq) {
+//         return seq.Size() >= min_length;
+//     }, 8);
+// }
 
 void Program_Random::Running() {
     assert(base_size_ > 0);

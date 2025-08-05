@@ -33,18 +33,18 @@ public:
     //void EvaluateQuality();
 
     std::vector<ErrorRegion> MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap=1000);
-    std::vector<ErrorRegion> MergeRegions2(const std::vector<ErrorRegion> &regs, size_t max_gap=1000);
-    
+
     bool CheckRegion(const ErrorRegion& reg);
     void DetectErrors();
     void SaveErrors(std::ofstream& of);
-    
+
     const std::string& Name() const { return dataset_.QueryStringById(tid_); }
     std::vector<ContigFragment> Split();
 
     void DumpCoverage(std::ofstream& of);
     void DumpWindow(std::ofstream& of);
     void DumpMatch(std::ofstream& of);
+    Seq::Id GetId() const { return tid_; }
 
 protected:
     Seq::Id tid_;

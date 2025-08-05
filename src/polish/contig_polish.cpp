@@ -21,6 +21,9 @@ void ContigPolish::Running() {
 
     LOG(INFO)("Start detecting misassemblies");
     AnalyzeContigs();
+
+    LOG(INFO)("Build Contig graph");
+    BuildGraph();
 }
 
 void ContigPolish::AnalyzeContigs() {
@@ -64,11 +67,22 @@ void ContigPolish::AnalyzeContigs() {
     };
 
     MultiThreadRun((size_t)opts_.thread_size, work_func);
-    LOG(INFO)("Build Contig graph");
-    graph.BuildGraph();
 
 }
 
+void ContigPolish::BuildGraph() {
+    for (const auto& ctg_alzr : ctg_analyzers_) {
+        graph_.AddFragment(ctg_alzr->Split());
+    }
+    graph_.Build();
+}
+
+void ContigPolish::PolishContigs() {
+    auto chains = graph_.GetChains();
+    for (auto& chain : chains) {
+        chain.Polish();
+    }
+}
 
 
 } // namespace fsa {
