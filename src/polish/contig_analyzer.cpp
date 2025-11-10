@@ -5,18 +5,21 @@
 namespace fsa {
 
 ContigAnalyzer::ContigAnalyzer(Seq::Id tid, const PolDataset& ds)
- : tid_(tid), dataset_(ds), win_slider_(cov_info_, WIN_SIZE, STRIDE), cov_info_(ds.seq_store_.GetSeq(tid)) {
+ : tid_(tid), dataset_(ds), win_slider_(cov_info_, WIN_SIZE, STRIDE), cov_info_(ds.seq_store_.GetSeq(tid))
+ , multi_cov_(ds.seq_store_.GetSeq(tid)) {
 }
 
 void ContigAnalyzer::Detect() {
 
+    std::ofstream of(std::string("multi_cov_")+Name());
     ComputeCoverage();
-    cov_info_.Scan();
-    cov_info_.Stat();
+    multi_cov_.Dump(of);
+    // cov_info_.Scan();
+    // cov_info_.Stat();
  
-    LOG(INFO)("ComputeCoverage");
-    win_slider_.Flush();
-    DetectErrors();
+    // LOG(INFO)("ComputeCoverage");
+    // win_slider_.Flush();
+    // DetectErrors();
 
 }
 
@@ -52,13 +55,17 @@ void ContigAnalyzer::ComputeCoverage() {
 
     for (auto& m : match_) {
         if ( m.MatchedIdentity() >= dataset_.GetOverlapQualityThreshold() && (m.LClip() < MIN_CLIP || m.RClip() < MIN_CLIP )) {
-            LOG(INFO)("add_seq %d: %s", m.GetOverlap()->a_.id, dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
             assert(m.GetOverlap()->attached > 0);
-            cov_info_.Merge(m, MIN_CLIP*2, max_local_distance_threshold_, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
-            //cov_info_.Merge(m, MIN_CLIP*2, 0.50, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+            //cov_info_.Merge(m, MIN_CLIP*4, max_local_distance_threshold_, MIN_CLIP, 1.0 / m.GetOverlap()->attached);
+            multi_cov_.Merge(m, 1.0 / m.GetOverlap()->attached);
+            // TODO 参数化
         }
 
     }
+    std::sort(match_.begin(), match_.end(), [](const MatchInfo& a, const MatchInfo& b) {
+        return a.GetOverlap()->b_.start < b.GetOverlap()->b_.start || 
+            (a.GetOverlap()->b_.start == b.GetOverlap()->b_.start && a.GetOverlap()->b_.end < b.GetOverlap()->b_.end);
+    });
 }
 
 
@@ -109,26 +116,24 @@ bool ContigAnalyzer::CheckRegion(const ErrorRegion& reg) {
         }
     }
     LOG(INFO)("checkreg: %s:%zd-%zd %.02f < %0.2f", Name().c_str(), reg.start, reg.end, count, this->win_slider_.SurroundingCoverage(reg) * 0.2);
-    return count == 0 || count < this->win_slider_.SurroundingCoverage(reg) * 0.2;
+    return count == 0 ;//|| count < this->win_slider_.SurroundingCoverage(reg) * 0.2;
 }
 
 
 void ContigAnalyzer::DetectErrors() {
     LOG(INFO)("DetectErrors");
-    errors_ = win_slider_.DetectErrorRegions(1000, cov_info_.AvarageCoverage());
+    errors_ = win_slider_.DetectErrorRegions2(1000, cov_info_.AvarageCoverage());
     LOG(INFO)("DetectErrors: %zd", errors_.size());
     errors_ = MergeRegions(errors_, 1000);
     LOG(INFO)("DetectErrors: merged %zd", errors_.size());
     
     errors_.erase(std::remove_if(errors_.begin(), errors_.end(), [this](const ErrorRegion& e) {
-        bool torf = CheckRegion(e);
-        if (torf) {
-            LOG(INFO)("DetectErrors: add %s:%zd-%zd", Name().c_str(), e.start, e.end);
-
-        } else {
-            LOG(INFO)("DetectErrors: skip %s:%zd-%zd", Name().c_str(), e.start, e.end);
-        }
-        return !CheckRegion(e);
+        // bool torf = CheckRegion(e);
+        auto win = win_slider_.Region2Window(e);
+        bool bpt = win_slider_.HasBreakpoint(win);
+        bool alt = win_slider_.HasAlternate(win);
+        LOG(INFO)("check_reg: %s:%zd-%zd, break=%d, alter=%d", Name().c_str(), e.start, e.end, bpt, alt);
+        return !win_slider_.HasBreakpoint(win) && !win_slider_.HasAlternate(win);
     }), errors_.end());
 }
 
@@ -154,6 +159,167 @@ std::vector<ContigFragment> ContigAnalyzer::Split() {
     return frgs;
 }
 
+size_t ContigAnalyzer::FirstMatch(size_t pos) {
+    auto& match = match_;
+    size_t left = 0, right = match.size();
+    while (left < right) {
+        size_t mid = (left + right) / 2;
+        LOG(INFO)("FirstMatch: %zd %zd %zd | %zd %zd", left, right, mid, pos, match[mid].Start());
+        if (match[mid].Start() <= pos && match[mid].End() >= pos) {
+            right = mid;
+        } else if (match[mid].Start() > pos) {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
+    }
+    return left;
+}
+
+
+size_t ContigAnalyzer::LastMatch(size_t pos) {
+    auto& match = match_;
+    size_t left = 0, right = match.size();
+    while (left < right) {
+        size_t mid = (left + right) / 2;
+        LOG(INFO)("LastMatch: %zd %zd %zd | %zd %zd", left, right, mid, pos, match[mid].Start());
+        if (match[mid].Start() <= pos) {
+            left = mid + 1;
+        } else {
+            //if (match[mid].Start() > pos) 
+            right = mid;
+        } 
+    }
+    return left;
+}
+
+std::string ContigAnalyzer::Polish(size_t s, size_t e) {
+    assert(s >= 0 && e >= s && cov_info_.Size() >= e);
+
+    std::vector<uint8_t> table(e-s);
+    for (size_t i = s; i < e; ++i) {
+        table[i-s] = cov_info_.Status(i);
+    }
+
+    std::vector<std::array<size_t, 2>> regions;
+    size_t start = 0;
+    for (size_t i = 1; i < table.size(); ++i) {
+        if (table[i] != table[start]) {
+            regions.push_back({start, i});
+            start = i;
+        }
+    }
+    if (start < table.size()) {
+        regions.push_back({start, table.size()});
+    } 
+    
+    // LOG(INFO)("Polish: %zd regions", regions.size());
+    std::vector<std::array<size_t, 2>> merged;
+    merged.reserve(regions.size());
+    const int FLANKING = 10;
+    merged.push_back(regions[0]);
+    for (size_t i = 1; i < regions.size(); ++i) {
+        if (table[regions[i][0]] == table[merged.back()[0]]) {
+            merged.back()[1] = regions[i][1];
+        } else if (table[regions[i][0]] == 0 && regions[i][1] - regions[i][0] < 2*FLANKING) {
+            merged.back()[1] = regions[i][1];
+        } else {
+            merged.push_back(regions[i]);
+        }
+    }
+    std::string seq;
+    for (size_t i = 0; i < regions.size(); ++i) {
+        const auto& r = regions[i];
+        if (true || table[regions[i][0]] == 0) {
+            for (size_t j = regions[i][0]; j < regions[i][1]; ++j) {
+  
+                auto c = cov_info_.GetBestChoice(j + s);
+                if (c < 4) {
+                    seq += "ACGT"[c];
+                } else if (c == 4) {
+                    // deletion, do nothing
+                } else if (c == 5) {
+                    // insertion, TODO
+                } else {
+                    LOG(ERROR)("Polish: unexpected base %d at %zd", c, i);
+                }
+            }
+
+        } else {
+            assert(table[r[0]] == 1);
+            
+
+            size_t ss = r[0] + s > FLANKING ? r[0] + s - FLANKING : 0;
+            size_t ee = r[1] + s + FLANKING < cov_info_.Size() ? r[1] + s + FLANKING : cov_info_.Size();
+
+            std::vector<DnaSeq> segs;
+            LOG(INFO)("Polish: error region %zd-%zd, find_position %zd %zd", ss, ee, FirstMatch(ss), match_.size());
+            for (size_t im = FirstMatch(ss); im < match_.size() && match_[im].Start() <= ss; ++im) {
+                const auto& m = match_[im];
+                if (m.MatchedIdentity() >= dataset_.GetLocalQualityThreshold() &&
+                    m.MaxLocalDistance() < max_local_distance_threshold_ && m.LClip() < MIN_CLIP && m.RClip() < MIN_CLIP &&
+                    m.GetOverlap()->attached > 0 && m.Start() <= ss && m.End() >= ee) {
+
+                    auto qr = m.GetQueryRegion(ss, ee);
+                    LOG(INFO)("Query region: %zd-%zd %zd-%zd %s", ss, ee, qr[0], qr[1], dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+                    
+                    auto seg = (qr[0] < qr[1]) ?  
+                        DnaSeq(dataset_.seq_store_.GetSeq(m.GetOverlap()->a_.id), qr[0], qr[1] - qr[0]) :
+                        DnaSeq::ReverseComplement(DnaSeq(dataset_.seq_store_.GetSeq(m.GetOverlap()->a_.id), qr[1], qr[0] - qr[1]));
+                    segs.push_back(seg);
+                    
+                    
+                    LOG(INFO)("Polish: seg %d %s", qr[0] < qr[1], seg.ToString()->c_str());
+                }
+            }
+            // for (auto& seg : segs) {
+            //     LOG(INFO)("Polish: seg %s", seg.ToString()->c_str());
+            // }
+            if (segs.size() > 0) {
+                seq += segs[0].ToString()->c_str();
+            }
+        }
+    }
+
+    return seq;
+}
+
+std::vector<const MatchInfo*> ContigAnalyzer::GetCoverage(size_t pos, int flank) {
+    std::vector<const MatchInfo*> cov_matches;
+
+    if (flank < 0) {
+        size_t s_pos = pos < -flank ? 0 : pos + flank;
+        size_t e_pos = pos ;
+        size_t ifirst = FirstMatch(s_pos + dataset_.MaxReadLength());
+        size_t ilast = LastMatch(s_pos);
+        for (size_t im = ifirst; im < ilast; ++im) {
+            const auto& m = match_[im];
+            LOG(INFO)("GetCoverage0(right): %zd %zd %zd %s", pos, m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+            if ( m.LClip() < MIN_CLIP && m.GetOverlap()->attached > 0 && m.Start() <= s_pos && m.End() >= e_pos) {
+                
+                LOG(INFO)("GetCoverage1(right): %zd %zd %zd %s", pos, m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+                cov_matches.push_back(&m);
+                
+            }
+        }
+    } else {
+        size_t s_pos = pos ;
+        size_t e_pos = pos + flank >= cov_info_.Size() ? cov_info_.Size() : pos + flank;
+        size_t ifirst = FirstMatch(s_pos + dataset_.MaxReadLength());
+        size_t ilast = LastMatch(s_pos);
+        for (size_t im = ifirst; im < ilast; ++im) {
+            const auto& m = match_[im];
+            LOG(INFO)("GetCoverage0(left): %zd %zd %zd %s", pos, m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+            if ( m.RClip() < MIN_CLIP && m.GetOverlap()->attached > 0 && m.Start() <= s_pos && m.End() >= e_pos) {
+                
+                LOG(INFO)("GetCoverage1(left): %zd %zd %zd %s", pos, m.Start(), m.End(), dataset_.QueryStringById(m.GetOverlap()->a_.id).c_str());
+                cov_matches.push_back(&m);
+                
+            }
+        }
+    }
+    return cov_matches;
+}
 
 void ContigAnalyzer::DumpCoverage(std::ofstream& of) {
     const auto &ctg_name = dataset_.QueryStringById(tid_);
@@ -178,6 +344,12 @@ void ContigAnalyzer::DumpMatch(std::ofstream& of) {
            << rd_name << " " << ol->a_.start << " " << ol->a_.end << " " << ol->a_.len << " " << ol->identity_ << "\n";
     }
 
+}
+
+void ContigAnalyzer::DumpMultiCoverage(std::ofstream& of) {
+    const auto &ctg_name = 
+    of << ">" << dataset_.QueryStringById(tid_) << "\n";
+    multi_cov_.Dump(of);
 }
 
 }

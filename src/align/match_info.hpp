@@ -15,6 +15,7 @@ public:
         uint32_t ref : 2;
         uint32_t base : 3;   // 0,1,2,3,4 ->A,C,G,T,-
         uint32_t ins : 19 ;  // index of insert 
+        uint32_t pos;
     };
 
 
@@ -38,10 +39,13 @@ public:
     double MaxLocalDistance() const { return max_local_distance_; }
     void CalculateMaxLocalDistance(size_t win_size) ;
     std::vector<std::array<size_t,2>> LocalDistance(size_t win_size) const;
+    std::vector<double> LocalIdentity(size_t win_size) const;
     double Identity() const { return ol_->Identity(); }
     double MatchedIdentity() const { return matched_identity_; }
     std::vector<std::array<size_t,2>> GetHighQualityRegions(size_t win_size, double max_dist, size_t min_clip, size_t min_intv) const;
+    std::vector<std::array<size_t,2>> GetHighQualityRegions(size_t half_win_size, double max_dist) const;
     const Overlap* GetOverlap() const { return ol_; }
+    std::array<size_t,2> GetQueryRegion(size_t s, size_t e) const;
 
 protected:
     void ComputeMatchedIdentity(size_t large_size = 500);

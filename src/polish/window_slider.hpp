@@ -73,12 +73,24 @@ public:
     }
     std::array<size_t,2> Region2Window(const ErrorRegion& reg) const { return Region2Window(std::array<size_t,2> ({reg.start, reg.end})); }
     std::vector<ErrorRegion> DetectErrorRegions(size_t max_gap, const std::array<double,3>& ave_covs);
+    std::vector<ErrorRegion> DetectErrorRegions2(size_t max_gap, const std::array<double,3>& ave_covs);
+
     std::vector<ErrorRegion> MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const ;
     std::vector<ErrorRegion> MergeRegions2(const std::vector<ErrorRegion> &regs)const ;
     void Flush();
     void Dump(std::ofstream &of, const std::string& ctg_name);
     double SurroundingCoverage(const ErrorRegion& reg, size_t inv=10);
     std::array<double,2> ComputeCoverageThresholds(int type);
+    std::vector<double> AveCoverages(size_t winnum);
+    std::vector<double> StdCoverages(size_t winnum, const std::vector<double>& ave);
+    std::vector<std::pair<double,size_t>> MaxCoverages(size_t winnum);
+    std::vector<std::pair<double,size_t>> MinCoverages(size_t winnum);
+
+    bool HasBreakpoint(size_t s, size_t e) const;
+    bool HasBreakpoint(const std::array<size_t, 2> &w) const { return HasBreakpoint(w[0], w[1]); }
+    bool HasAlternate(size_t s, size_t e) const;
+    bool HasAlternate(const std::array<size_t,2> &w) const { return HasAlternate(w[0], w[1]); }
+    
 protected:
     CoverageInfo &cov_info_;
     uint32_t win_size_;

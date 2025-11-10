@@ -121,15 +121,15 @@ auto KmerStringToId(const std::string& str) -> KmerId{
     return id;    
 }
 
-std::string KmerId2String(KmerId id, size_t k) {
-    std::string str; 
-    const char* bases = "ACGT";
+std::string KmerId2String(KmerId kmer, size_t k) {
+    std::string s(k, 'A');
     for (size_t i = 0; i < k; ++i) {
-        str += bases[id&3];
-        id >>= 2;
+        auto b = (kmer >> (2 * (k - i - 1))) & 3;
+        s[i] = "ACGT"[b];
     }
-    return str;
+    return s;
 }
+
 
 size_t GetKmerLength(const std::string &fname) {
     GzFileReader reader(fname);

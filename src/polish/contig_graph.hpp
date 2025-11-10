@@ -5,37 +5,71 @@
 #include <cassert>
 
 #include "contig_fragment.hpp"
+#include "../utils/logger.hpp"
 
 namespace fsa {
+
+class MatchInfo;
 
 class ContigGraph {
 public:
     class Node;
-    class Link {
+    class Edge {
     public:
-        Link(Node* to) : to_(to) {}
-        Node* To() const { return to_; }  
+        Edge(Node* n0, Node* n1) : node0_(n0), node1_(n1) {}
+        const Node* OtherNode(const Node* n) const { 
+            if (n == node0_) {
+                return node1_; 
+            } else if (n == node1_) {
+                return node0_; 
+            } else {
+                assert(!"Invalid node");
+                return nullptr; // Should never reach here
+            }
+        }
+
+        Node* OtherNode(Node* n) {
+            return node1_; 
+        }
+        void AddMatch(const std::vector<const MatchInfo*> &mi0, const std::vector<const MatchInfo*>& mi1) {
+            match0_.insert(match0_.end(), mi0.begin(), mi0.end());
+            match1_.insert(match1_.end(), mi1.begin(), mi1.end());
+        }
+
     protected:
-        Node* to_ {nullptr};
+        Node* node0_ {nullptr};
+        Node* node1_ {nullptr};
+        std::vector<const MatchInfo*> match0_;
+        std::vector<const MatchInfo*> match1_;
     };
     class Node {
     public:
         Node(uint32_t id, const ContigFragment* frg, uint8_t end)
          : id_(id), frg_(frg), end_(end) {}
 
-        void AddLink(Node* to) {
-            link_to_.push_back(Link(to));
-        }
+        void AddEdge(Edge* e) {
+            edges_.push_back(e);
+        }    
+
         uint32_t Id() const { return id_; }
         const ContigFragment* Fragment() const { return frg_; }
-        const std::vector<Link>& Links() const { return link_to_; }
+        const std::vector<Edge*>& Edges() const { return edges_; }
+        uint8_t End() const { return end_; }
+ 
+        Edge* FindEdge(const Node* n) {
+            for (auto& e : edges_) {
+                if (e->OtherNode(this) == n) return e;
+            }
+            return nullptr;
+        }
 
     protected:
-        uint32_t id_ {0}; // Node ID
+        uint32_t id_ { 0 }; // Node ID
         const ContigFragment* frg_;
         uint8_t end_ {0}; // 0: start, 1: end
-        std::vector<Link> link_to_; // Nodes that this node connects to
+        std::vector<Edge*> edges_; 
     };
+
     class Chain {
     public:
         Chain(std::vector<const Node*>&& paths) : paths_(std::move(paths)) {
@@ -45,6 +79,7 @@ public:
     protected:
         std::vector<const Node*> paths_;
     };
+
 public:
     ContigGraph() = default;
     ContigGraph(const ContigGraph&) = delete;
@@ -56,7 +91,9 @@ public:
     }
 
     void Build();
+    void Simplify();
     std::vector<Chain> GetChains();
+    void Save(const std::string& fname) const ;
 
     Node* GetPairNode(Node* n) {
         assert(n != nullptr);
@@ -64,6 +101,7 @@ public:
     }
     const Node* GetPairNode(const Node* n) const {
         assert(n != nullptr);
+        LOG(INFO)("PairNode %08X %08X", n->Id(), GetPairNodeId(n->Id()));
         return nodes_.at(GetPairNodeId(n->Id())); // flip last bit to get the pair node
     }
     Node* GetNode(uint32_t id) {
@@ -91,10 +129,11 @@ public:
             return ((uint64_t)n1 << 32) + n0;
         }
     }
+
 protected:
     std::vector<ContigFragment> fragments_;
-
     std::unordered_map<uint32_t, Node*> nodes_;
+    std::unordered_map<uint64_t, Edge*> edges_; 
 };
 
 }

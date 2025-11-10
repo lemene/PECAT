@@ -63,8 +63,13 @@ auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>
     const double MAX_COV_DIFF = 0.2; 
     const double MIN_COV_DIFF = 0.1; 
 
-    const size_t SLOPE_WIN_SIZE = 10000;
-    const size_t SLOPE_WIN_COUNT = SLOPE_WIN_SIZE / stride_;
+    const size_t CAND_WIN_SIZE = 10000;
+    const size_t CAND_WIN_COUNT = CAND_WIN_SIZE / stride_;
+
+    auto cand_ave_covs = AveCoverages(CAND_WIN_COUNT);
+    auto cand_max_covs = MaxCoverages(CAND_WIN_COUNT);
+    auto cand_min_covs = MinCoverages(CAND_WIN_COUNT);
+
 
 
     std::vector<ErrorRegion> cands;
@@ -163,6 +168,126 @@ auto WindowSlider::DetectErrorRegions(size_t max_gap, const std::array<double,3>
         return a.start < b.start || (a.start == b.start && a.end < b.end);
     });
     return MergeRegions2(MergeRegions(cands, max_gap));
+}
+
+
+auto WindowSlider::DetectErrorRegions2(size_t max_gap, const std::array<double,3>& ave_covs) -> std::vector<ErrorRegion>  {
+
+    const size_t MIN_COV_HQ = 3;
+    const double MAX_COV_DIFF = 0.2; 
+    const double MIN_COV_DIFF = 0.1; 
+    
+    const size_t CAND_WIN_SIZE = 10000;
+    const size_t CAND_WIN_COUNT = CAND_WIN_SIZE / stride_;
+
+    auto cand_ave_covs = AveCoverages(CAND_WIN_COUNT);
+    auto cand_std_covs = StdCoverages(CAND_WIN_COUNT, cand_ave_covs);
+    auto cand_max_covs = MaxCoverages(CAND_WIN_COUNT);
+    auto cand_min_covs = MinCoverages(CAND_WIN_COUNT);
+
+    std::vector<double> cand_diff_covs(cand_max_covs.size());
+    std::vector<double> cand_slope_covs(cand_max_covs.size());
+    std::vector<double> cand_rdiff_covs(cand_max_covs.size());
+    std::vector<double> cand_rslope_covs(cand_max_covs.size());
+    for (size_t i = 0; i < cand_diff_covs.size(); i++) {
+
+        cand_diff_covs[i] = cand_max_covs[i].first - cand_min_covs[i].first;
+        cand_slope_covs[i] = cand_diff_covs[i] / ((int)cand_max_covs[i].second - (int)cand_min_covs[i].second);
+        
+        cand_rdiff_covs[i] = (cand_max_covs[i].first - cand_min_covs[i].first) / cand_ave_covs[i];
+        cand_rslope_covs[i] = cand_rdiff_covs[i] / ((int)cand_max_covs[i].second - (int)cand_min_covs[i].second);
+        
+        LOG(INFO)("dt_stat(%zd): %.02f-%zd %.02f-%zd, %.02f %.02f, %.02f %.02f, %.02f, %.02f", 
+            i, cand_max_covs[i].first, cand_max_covs[i].second, cand_min_covs[i].first, cand_min_covs[i].second,
+            cand_diff_covs[i], cand_slope_covs[i],
+            cand_rdiff_covs[i], cand_rslope_covs[i],
+            cand_ave_covs[i], cand_std_covs[i]
+        );
+    }
+
+    auto mm_ave = ComputeMedianAbsoluteDeviation(cand_ave_covs);
+    auto low_ave = mm_ave[0] - 3*1.4826*mm_ave[1];
+    auto high_ave = mm_ave[0] + 3*1.4826*mm_ave[1];
+    LOG(INFO)("dt_th_ave: %.02f %.02f -> %.02f %.02f", mm_ave[0], mm_ave[1], low_ave, high_ave);
+
+    auto mm_std = ComputeMedianAbsoluteDeviation(cand_std_covs);
+    auto low_std = mm_std[0] - 3*1.4826*mm_std[1];
+    auto high_std = mm_std[0] + 3*1.4826*mm_std[1];
+    LOG(INFO)("dt_th_std: %.02f %.02f -> %.02f %.02f", mm_std[0], mm_std[1], low_std, high_std);
+
+    auto mm_diff = ComputeMedianAbsoluteDeviation(cand_diff_covs);
+    auto low_diff = mm_diff[0] - 3*1.4826*mm_diff[1];
+    auto high_diff = mm_diff[0] + 3*1.4826*mm_diff[1];
+    LOG(INFO)("dt_th_diff: %.02f %.02f -> %.02f %.02f", mm_diff[0], mm_diff[1], low_diff, high_diff);
+
+    auto mm_slope = ComputeMedianAbsoluteDeviation(cand_slope_covs);
+    auto low_slope = mm_slope[0] - 3*1.4826*mm_slope[1];
+    auto high_slope = mm_slope[0] + 3*1.4826*mm_slope[1];
+    LOG(INFO)("dt_th_slope: %.02f %.02f -> %.02f %.02f", mm_slope[0], mm_slope[1], low_slope, high_slope);
+
+    auto mm_rdiff = ComputeMedianAbsoluteDeviation(cand_rdiff_covs);
+    auto low_rdiff = mm_rdiff[0] - 3*1.4826*mm_rdiff[1];
+    auto high_rdiff = mm_rdiff[0] + 3*1.4826*mm_rdiff[1];
+    LOG(INFO)("dt_th_rdiff: %.02f %.02f -> %.02f %.02f", mm_rdiff[0], mm_rdiff[1], low_rdiff, high_rdiff);
+
+    auto mm_rslope = ComputeMedianAbsoluteDeviation(cand_rslope_covs);
+    auto low_rslope = mm_rslope[0] - 3*1.4826*mm_rslope[1];
+    auto high_rslope = mm_rslope[0] + 3*1.4826*mm_rslope[1];
+    LOG(INFO)("dt_th_rslope: %.02f %.02f -> %.02f %.02f", mm_rslope[0], mm_rslope[1], low_rslope, high_rslope);
+
+    std::vector<ErrorRegion> cands;
+    for (size_t i = 0 ; i < win_cov_.size(); ++i) {
+        auto &winfo = win_cov_[i];
+        std::array<size_t,2> win = Window2Region(i);
+        assert(winfo.type == 0); // Not yet set type
+
+        if (win_cov_[i].c1 == 0) {
+            winfo.type = 2;
+        }
+        
+        LOG(INFO)("detect %zd-%zd %d %.02f", win[0], win[1], winfo.type, win_cov_[i].c1);
+    }
+
+    // for (size_t i = 0; i < cand_std_covs.size(); ++i) {
+    //     if (cand_std_covs[i] >= high_std) {
+    //         LOG(INFO)("detect_std: %zd, %0.2f > %.02f", i, cand_std_covs[i], high_std);
+    //         if (cand_slope_covs[i] <low_slope || cand_slope_covs[i] > high_slope) {
+    //             auto s = std::min(cand_max_covs[i].second, cand_min_covs[i].second);
+    //             auto e = std::max(cand_max_covs[i].second, cand_min_covs[i].second);
+    //             LOG(INFO)("DIFF: %zd %zd %zd", i, s, e);
+    //             for (size_t ii = s; ii <= e; ++ii) {
+    //                 auto &winfo = win_cov_[ii];
+    //                 winfo.type = 4;
+    //             }
+    //         }
+    //     }
+    // }
+    
+    for (size_t i = 0; i < cand_rdiff_covs.size(); ++i) {
+        if (cand_rdiff_covs[i] > mm_rdiff[0] + mm_rdiff[1] || cand_diff_covs[i] > mm_diff[0] + mm_diff[1] ) {
+            auto s = std::min(cand_max_covs[i].second, cand_min_covs[i].second);
+            auto e = std::max(cand_max_covs[i].second, cand_min_covs[i].second);
+            LOG(INFO)("DIFF: %zd %zd %zd", i, s, e);
+            for (size_t ii = s; ii <= e; ++ii) {
+                auto &winfo = win_cov_[ii];
+                winfo.type = 4;
+            }
+        }
+    }
+    
+    for (size_t i = 0; i < win_cov_.size(); ++i) {
+        std::array<size_t,2> win = Window2Region(i);
+        auto &winfo = win_cov_[i];
+        LOG(INFO)("type:%zd-%zd %d", win[0], win[1], winfo.type);
+        if (winfo.type == 2 || winfo.type == 4) {
+            cands.push_back({win[0], win[1], 0});
+        }
+    }
+
+    std::sort(cands.begin(), cands.end(), [](ErrorRegion& a, ErrorRegion &b) {
+        return a.start < b.start || (a.start == b.start && a.end < b.end);
+    });
+    return MergeRegions(cands, max_gap);
 }
 
 std::vector<ErrorRegion> WindowSlider::MergeRegions(const std::vector<ErrorRegion> &regs, size_t max_gap) const {
@@ -289,4 +414,193 @@ std::array<double,2> WindowSlider::ComputeCoverageThresholds(int type) {
 }
 
 
+std::vector<double> WindowSlider::AveCoverages(size_t winnum) {
+    std::vector<double> aves;
+
+    if (win_cov_.size() >= winnum) {
+        double ave = std::accumulate(win_cov_.begin(), win_cov_.begin() + winnum, 0.0, [](double sum, const WinInfo& w) {
+            return sum + w.c1;
+        }) / winnum;
+        aves.push_back(ave);
+
+        for (size_t i = winnum; i < win_cov_.size(); ++i) {
+            ave += win_cov_[i].c1 / winnum;
+            ave -= win_cov_[i - winnum].c1 / winnum;
+            aves.push_back(ave);
+        }
+    }
+    return aves;
+
+}
+
+std::vector<double> WindowSlider::StdCoverages(size_t winnum, const std::vector<double>& ave) {
+    std::vector<double> std(ave.size());
+
+    for (size_t i = 0; i < ave.size(); ++i) {
+        for (size_t iw = 0; iw < winnum; ++iw) {
+            std[i] += std::abs(win_cov_[iw+i].c1 - ave[i]) / winnum;
+        }
+    }
+    return std;
+}
+
+std::vector<std::pair<double,size_t>> WindowSlider::MaxCoverages(size_t winnum) {
+    std::vector<std::pair<double,size_t>> max_covs;
+
+    auto find_max_posion = [](const std::vector<WinInfo>& win_cov, size_t start, size_t end) {
+        double max_val = win_cov[start].max_c[1];
+        size_t max_pos = start;
+        // LOG(INFO)("fff %zd, %zd", start, end);
+
+        for (size_t i = start + 1; i < end; ++i) {
+            if (win_cov[i].max_c[1] >= max_val) {
+                max_val = win_cov[i].max_c[1];
+                max_pos = i;
+            }
+            // LOG(INFO)("fff %zd, %.02f -- %.02f %zd", i, win_cov[i].max_c[1], max_val, max_pos);
+        }
+        return std::make_pair(max_val, max_pos);
+    };
+
+    if (win_cov_.size() >= winnum) {
+        std::pair<double,size_t> mx = {win_cov_[0].max_c[1], 0};
+        
+        for (size_t i = 1; i < winnum; ++i) {
+            if (win_cov_[i].max_c[1] > mx.first) {
+                mx.first = win_cov_[i].max_c[1];
+                mx.second = i;
+            }
+        }
+        max_covs.push_back(mx);
+
+        for (size_t i = winnum; i < win_cov_.size(); ++i) {
+            assert(max_covs.size() == i - winnum + 1);
+            if (max_covs.size() == 225) {
+                LOG(INFO)("bb %zd, %u, %zd %.02f", i, win_cov_[i].max_c[1], mx.second, mx.first) ;
+            }
+            if (max_covs.size() == 225) {
+                LOG(INFO)("%zd < %zd", i - winnum, mx.second);
+            }
+            if (i - winnum < mx.second) {
+                if (max_covs.size() == 225) {
+                    LOG(INFO)("<< %d ", mx.first <= win_cov_[i].max_c[1]);
+                    //assert(0);
+                }
+                if (mx.first <= win_cov_[i].max_c[1]) {
+                    mx = {win_cov_[i].max_c[1], i};
+                }
+            } else {
+                mx = find_max_posion(win_cov_, i - winnum + 1, i + 1);
+            }
+            if (max_covs.size() == 225) {
+                LOG(INFO)("cc %.02f , %zd", mx.first, mx.second);
+                //assert(0);
+            }
+            max_covs.push_back(mx);
+        }
+    }
+    for (size_t i = 0; i < max_covs.size(); ++i) {
+        double mx = win_cov_[i].max_c[1];
+        size_t pos = i;
+        for (size_t iw = i+1; iw < i + winnum; ++iw) {
+            if (mx <= win_cov_[iw].max_c[1]) {
+                mx = win_cov_[iw].max_c[1];
+                pos = iw;
+            }
+        }
+        if (!(max_covs[i].first == mx )) {
+            LOG(INFO)("ccmax %zd %.02f %zd %.02f %zd", i, max_covs[i].first, max_covs[i].second, mx, pos);
+            assert(max_covs[i].first == mx);
+        }
+    }
+    return max_covs;
+
+}
+
+
+std::vector<std::pair<double,size_t>> WindowSlider::MinCoverages(size_t winnum) {
+    std::vector<std::pair<double,size_t>> min_covs;
+
+    auto find_min_posion = [](const std::vector<WinInfo>& win_cov, size_t start, size_t end) {
+        double min_val = win_cov[start].min_c[1];
+        size_t min_pos = start;
+        for (size_t i = start + 1; i < end; ++i) {
+            if (min_val >= win_cov[i].min_c[1]) {
+                min_val = win_cov[i].min_c[1];
+                min_pos = i;
+            }
+        }
+        return std::make_pair(min_val, min_pos);
+    };
+
+    if (win_cov_.size() >= winnum) {
+        std::pair<double,size_t> mn = {win_cov_[0].min_c[1], 0};
+        
+        for (size_t i = 1; i < winnum; ++i) {
+            if (mn.first >= win_cov_[i].min_c[1]) {
+                mn.first = win_cov_[i].min_c[1];
+                mn.second = i;
+            }
+        }
+        min_covs.push_back(mn);
+
+        for (size_t i = winnum; i < win_cov_.size(); ++i) {
+
+            if (i - winnum < mn.second) {
+                if (mn.first >= win_cov_[i].min_c[1]) {
+                    mn = {win_cov_[i].min_c[1], i};
+                }
+            } else {
+                mn = find_min_posion(win_cov_, i - winnum + 1, i + 1);
+            }
+            min_covs.push_back(mn);
+        }
+    }
+    
+    for (size_t i = 0; i < min_covs.size(); ++i) {
+        double mx = win_cov_[i].min_c[1];
+        size_t pos = i;
+        for (size_t iw = i+1; iw < i + winnum; ++iw) {
+            if (mx > win_cov_[iw].min_c[1]) {
+                mx = win_cov_[iw].min_c[1];
+                pos = iw;
+            }
+        }
+        if (!(min_covs[i].first == mx )) {
+            LOG(INFO)("ccmin %zd %.02f %zd %.02f %zd", i, min_covs[i].first, min_covs[i].second, mx, pos);
+            assert(min_covs[i].first == mx);
+        }
+    }
+
+    return min_covs;
+
+}
+
+bool WindowSlider::HasBreakpoint(size_t s, size_t e) const {
+    for (size_t i = s; i < e; ++i) {
+        if (win_cov_[i].min_c[1] < 1) {
+            return true;
+        }
+    }
+    return false;
+}
+bool WindowSlider::HasAlternate(size_t s, size_t e) const {
+    const int COV = 10;
+    double clips = 0.0;
+    double diff = 0.0;
+    double cov = 1000;
+    for (size_t i = s; i < e; ++i) {
+        clips += win_cov_[i].clips;
+
+        double r = win_cov_[i].count[0] == 0 ? 0.0 : win_cov_[i].c0 / win_cov_[i].count[0];
+        diff = std::max<double>(diff, win_cov_[i].count[0] - win_cov_[i].c0);
+        cov = std::min<double>(cov, win_cov_[i].c0 );
+    }
+
+    LOG(INFO)("reg_alter(%zd-%zd): %.02f, %.02f, %.02f", s, e, clips, cov, diff);
+
+    return clips > std::min<double>(COV, cov/2) || diff > std::min<double>(COV, cov/2);
+
+
+}
 }

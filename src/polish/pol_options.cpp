@@ -28,7 +28,6 @@ void PolOptions::SetArguments(ArgumentParser &ap) {
     
     ap.AddNamedOption(aligner_, "aligner", "method for local alignment, diff|edlib.");
     ap.AddNamedOption(score_, "score", "");
-    ap.AddNamedOption(cands_opts_str_, "candidate", "options for selecting candidate overlaps");
     
     ap.AddNamedOption(thread_size, "thread_size", "thread size");
     ap.AddNamedOption(min_coverage, "min_coverage", "");
@@ -48,53 +47,8 @@ void PolOptions::CheckArguments() {
     filter0_opts_ = filter0_.ToString();
     filter1_opts_ = filter1_.ToString();
 
-    cands_opts_.From(cands_opts_str_);          // 合并用户设置
-    cands_opts_str_ = cands_opts_.ToString();   // 输出所有参数
     if (debug) SetDebug();
 }
 
-
-void PolOptions::CandidateOptions::From(const std::string& str) {
-    auto items = SplitStringByChar(str, ':');
-
-    for (auto &i : items) {
-        auto kv = SplitStringByChar(i, '=');
-        if (kv[0] == "c") {
-            coverage = std::stoi(kv[1]);
-        } else if (kv[0] == "n") {
-            // pass 
-        } else if (kv[0] == "f") {
-            // pass
-        } else if (kv[0] == "p") {
-            percent = std::stod(kv[1]);
-        } else if (kv[0] == "ohwt") {
-            overhang_weight = std::stod(kv[1]);
-        } else {
-            LOG(ERROR)("Unrecoginze candidate overlaps options %s", kv[0].c_str());
-        }
-    }
-}
-
-std::string PolOptions::CandidateOptions::ToString() const  {
-    std::ostringstream oss;
-    oss.precision(2);
-    // oss.setf(std::ios::fixed);
-    oss << "c=" << coverage
-        << ":p=" << percent
-        << ":ohwt=" << overhang_weight;
-    return oss.str();
-}
-
-bool PolOptions::CandidateOptions::IsEnough(const std::vector<int> &cov) const {
-
-    int expcov = coverage;      // expected coverage
-    double expected = expcov * (cov.size() - 1);
-    double effective = std::accumulate(cov.begin(), cov.end(), 0, [expcov](int a, int c) {
-        return a + (c > expcov ? expcov : c); 
-    });
-    double total = std::accumulate(cov.begin(), cov.end(), 0);
-
-    return effective / expected >= percent || total / expected >= 1.5;
-}
 
 }   // namespace fsa

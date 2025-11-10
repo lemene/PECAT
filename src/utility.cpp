@@ -92,5 +92,35 @@ size_t GetMemoryUsage() {
     return vmrss_num;
 }
 
+
+size_t CountLinesInFile(std::ifstream& ifs, size_t threads) {
+    ifs.seekg(0);
+    std::string line;
+    std::mutex mutex;
+    std::atomic<size_t> count { 0 };
+
+    auto generate_func = [&ifs, &mutex](char* buf, size_t bufsize) -> size_t {
+        std::lock_guard<std::mutex> lock(mutex);
+
+        ifs.read(buf, bufsize);
+        return ifs.gcount();
+    };
+    auto worker_func = [&count, &generate_func](size_t id) {
+        char buf[1024*1000];
+        size_t bsize = generate_func(buf, sizeof(buf));
+        size_t cnt = 0;
+        while (bsize > 0) {
+            for (char* p = buf; p < buf+bsize; ++p) {
+                if (*p == '\n') cnt ++;
+            }
+            bsize = generate_func(buf, sizeof(buf));
+        }
+        count.fetch_add(cnt);
+    };
+
+    MultiThreadRun(threads, worker_func);
+    return count.load();
+}
+
 } // namespace fsa {
     

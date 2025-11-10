@@ -117,17 +117,17 @@ sub run_align($) {
     my $name = "al";
     my $wrkdir = $self->get_work_folder("2-align");
     
-    my $workdir_crr = $self->get_work_folder("1-correct");
+    my $wrkdir_crr = $self->get_work_folder("1-correct");
     my $isGz = $self->get_config("compress");
 
-    my $corrReads = $isGz ? "$workdir_crr/corrected_reads.fasta.gz" : "$workdir_crr/corrected_reads.fasta";
-    my $overlaps = "$wrkdir/overlaps.txt";
+    my $crr_reads = $isGz ? "$wrkdir_crr/corrected_reads.fasta.gz" : "$wrkdir_crr/corrected_reads.fasta";
+    my $refined_ols = "$wrkdir/refined_overlaps.paf";
+    my $flt_ols = "$wrkdir_crr/0/corrected_reads_0.fasta.flt.paf";
+    my $infos = "$wrkdir_crr/0/corrected_reads_0.fasta.infos";
 
     mkdir $wrkdir;
 
-    $self->run_jobs($self->jobRead2ReadParallelly($name, $wrkdir, $corrReads, $overlaps,
-                        [$self->get_config("ALIGN_RD2RD_OPTIONS"), $self->get_config("ALIGN_FILTER_OPTIONS")],  
-                        $self->get_config("ALIGN_BLOCK_SIZE")));
+    $self->run_jobs($self->newjob_refine_filterd_overlaps($name, $flt_ols, $refined_ols, $crr_reads, $infos, $wrkdir));
 }
 
 sub run_assemble1($) {
@@ -141,7 +141,7 @@ sub run_assemble1($) {
     my $isGz = $self->get_config("compress");
 
     my $reads = $isGz ? "$workdir_crr/corrected_reads.fasta.gz" : "$workdir_crr/corrected_reads.fasta";
-    my $overlaps = "$wrkdir_al/overlaps.txt";
+    my $overlaps = "$wrkdir_al/refined_overlaps.paf";
         
     $self->runAssemble($name, $wrkdir, $reads, $overlaps, $self->get_config("ASM1_ASSEMBLE_OPTIONS"));
 }
@@ -225,20 +225,28 @@ sub jobCorrect($$$$$) {
             my $size = `wc -l $blockInfo`;
 
             my @correctedSub = ();
+            my @flt_ols_sub = ();
+            my @infos_sub = ();
             for (my $i=0; $i < $size; $i=$i+1) {
                 $correctedSub[$i] = $isGz ? "$corrected.$i.gz" : "$corrected.$i";
+                $flt_ols_sub[$i] = "$corrected.$i.flt.paf";
+                $infos_sub[$i] = "$corrected.$i.infos";
             }
 
             push @{$job->{ifiles}}, @correctedSub;
+            push @{$job->{ifiles}}, @flt_ols_sub;
+            push @{$job->{ifiles}}, @infos_sub;
 
             push @{$job->{cmds}}, "cat @correctedSub > $corrected && rm @correctedSub";
+            push @{$job->{cmds}}, "cat @flt_ols_sub > $corrected.flt.paf";
+            push @{$job->{cmds}}, "cat @infos_sub > $corrected.infos";
 
 
         },
         name => "${name}_cat",
         ifiles => [],      # prefunc
-        ofiles => [$corrected], 
-        gfiles => [$corrected], 
+        ofiles => [$corrected, "$corrected.flt.paf", "$corrected.infos"], 
+        gfiles => [$corrected, "$corrected.flt.paf", "$corrected.infos"], 
         mfiles => [],
         cmds => [],                     # prefunc
         threads => 1,
@@ -299,6 +307,24 @@ sub run_correct($) {
         msg => "correcting reads, $name",
     ));
 
+}
+
+sub newjob_refine_filterd_overlaps($$$$$$$) {
+    my ($self, $name, $flt_ols, $refined_ols, $crr_reads, $infos, $wrkdir) = @_;
+    
+    my $bin_path = $self->get_env("BinPath");
+    my $threads = $self->get_config("THREADS");
+
+
+    return $self->newjob(
+        name => "${name}_adj_ols",
+        ifiles => [$flt_ols, $crr_reads, $infos],
+        ofiles => [$refined_ols],
+        gfiles => [],
+        mfiles => [],
+        cmds => ["python3 $bin_path/adjust_filtered_overlaps.py $flt_ols $refined_ols $crr_reads $infos"],
+        msg => "spliting read names, $name",
+    );
 }
 
 

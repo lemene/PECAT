@@ -12,6 +12,7 @@
 #include <numeric>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <cmath>
 
 namespace fsa {
@@ -557,6 +558,10 @@ public:
 
 //typedef std::bitset<500> MyBitSet;
 typedef BitSet MyBitSet;
+
+
+
+size_t CountLinesInFile(std::ifstream& ifs, size_t threads);
 
 } // namespace fsa {
 

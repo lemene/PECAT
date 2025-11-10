@@ -10,7 +10,6 @@ void CoverageInfo::Merge(const MatchInfo &match, size_t offsize, double local_th
     size_t s = match.Start();
     for (size_t i = 0; i < match.Size(); ++i) {
         const auto& info = match.Get(i);
-
         assert(base_cov_[s+i].ref == info.ref);
 
         base_cov_[s+i].bases0[info.base] += wt;
@@ -31,7 +30,6 @@ void CoverageInfo::Merge(const MatchInfo &match, size_t offsize, double local_th
 
     auto regs = match.GetHighQualityRegions(offsize, local_threashold, max_clip, offsize);
     for (auto& r : regs) {
-        LOG(INFO)("XXX reg %d %d", s+r[0], s+r[1]);
         for (size_t i = r[0]; i < r[1]; ++i) {
             const auto& info = match.Get(i);
             base_cov_[s+i].bases1[info.base] += wt;
@@ -45,7 +43,7 @@ void CoverageInfo::Merge(const MatchInfo &match, size_t offsize, double local_th
 
     // read 是否整段全部比对到组装结果上
     if (regs.size() == 1) {        
-        if (regs[0][0] + s == match.GetOverlap()->b_.start && regs[0][1] + s == match.GetOverlap()->b_.end) {
+        if (regs[0][0] + s <= match.GetOverlap()->b_.start + offsize && regs[0][1] + s + offsize >= match.GetOverlap()->b_.end) {
             for (size_t i = regs[0][0]; i < regs[0][1]; ++i) {       
                 const auto& info = match.Get(i);
                 base_cov_[s+i].bases2[info.base] += wt;
@@ -62,15 +60,19 @@ void CoverageInfo::Merge(const MatchInfo &match, size_t offsize, double local_th
 void CoverageInfo::Scan() {
     for (size_t i = 0; i < base_cov_.size(); ++i) {
         auto &bc = base_cov_[i];
-        auto mx = std::max_element(bc.bases1, bc.bases1+6);
-        auto ss = std::accumulate(bc.bases1, bc.bases1+6, 0);
-        bc.top = mx - bc.bases1;
+        auto mx = std::max_element(bc.bases0, bc.bases0+6);
+        auto ss = std::accumulate(bc.bases0, bc.bases0+6, 0);
+        bc.top = mx - bc.bases0;
 
-        if (*mx > ss * 0.7 && bc.top != 5 && bc.clips == 0 && bc.inssize == 0) {
+        if (*mx > ss * 0.7 && bc.clips == 0 && (bc.top != 5 || bc.top == 5 && bc.inssize < *mx*1.1)) {
             bc.level = 1;
         } else {
             bc.level = 0;
         }
+        // if (bc.level == 0) {
+        //     LOG(INFO)("Scan %zd:", i);
+        // }
+        
     }
 }
 

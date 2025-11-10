@@ -25,6 +25,8 @@ void PolDataset::Load() {
         seq_store_.SaveIdToName("id_2_name");
     }
     SelectBestMapping();
+
+    Stat();
 }
     
 
@@ -82,6 +84,7 @@ void PolDataset::SelectBestMapping() {
             for (size_t j = 0; j < gp.Size(i); j++) {
                 auto ol = gp.Get(i,j);
                 items.push_back({ol, ol->Identity()*ol->AlignedLength() }); // TODO use a better weight function
+                //items.push_back({ol, ol->Identity() }); // TODO use a better weight function
             }
         }
         if (items.size() > 0) {
@@ -90,14 +93,34 @@ void PolDataset::SelectBestMapping() {
             });
             quals.push_back({items[0].ol->Identity(), items[0].ol->AlignedLength()});
 
+            std::vector<int16_t> covs(items[0].ol->a_.len+1, 0);
+            covs[items[0].ol->a_.start] ++;
+            covs[items[0].ol->a_.end] --;
             size_t count = 1;
             for (; count < items.size(); ++count) {
-                if (items[count].wt < items[0].wt * opts_.secondary_to_primary_ratio) {
+
+                if (items[count].ol->AlignedLength()*2 > items[count].ol->a_.len) {
+                    covs[items[count].ol->a_.start] ++;
+                    covs[items[count].ol->a_.end] --;
+                    break;
+                } else {
                     break;
                 }
             }
+
+            for (size_t i = 1; i < covs.size(); ++i) {
+                covs[i] += covs[i-1];
+            }
+            assert(covs.back() == 0);
+
+            // if (count >= 2) {
+            //     LOG(INFO)("data_sec: %s", QueryStringById(items[0].ol->a_.id).c_str());
+            // }
+
             for (size_t i = 0; i < count; ++i) {
-                items[i].ol->attached = count;  // number of positions this overlap is aligned to
+                double c = std::accumulate(covs.begin() + items[i].ol->a_.start, covs.begin() + items[i].ol->a_.end, 0) / 
+                    (items[i].ol->a_.end - items[i].ol->a_.start);
+                items[i].ol->attached = std::round(c);
             }
         }
     }
@@ -130,6 +153,21 @@ size_t PolDataset::CountReadMap(Seq::Id id) const {
        
     }
     return count;
+}
+
+void PolDataset::Stat() {
+
+    // calculate max read length
+    size_t ave_length = 0;
+    size_t count = 0;
+    size_t max_read_length_ = 0;
+    for (size_t i = rd_ids_[0]; i < rd_ids_[1]; ++i) {
+        max_read_length_ = std::max(max_read_length_, seq_store_.GetSeqLength(i));
+        ave_length += seq_store_.GetSeqLength(i);
+        count++;
+    }
+    ave_read_length_ = ave_length / count;
+    LOG(INFO)("Max read length: %zd, average read length: %zd", max_read_length_, ave_read_length_);
 }
 
 }   // namespace fsa

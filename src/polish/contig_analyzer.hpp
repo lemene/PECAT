@@ -12,11 +12,9 @@
 
 #include "window_slider.hpp"
 #include "contig_fragment.hpp"
+#include "multi_coverage.hpp"
 
 namespace fsa {
-
-class ContigRegion{};
-
 
 class ContigAnalyzer {
 public:
@@ -39,11 +37,18 @@ public:
     void SaveErrors(std::ofstream& of);
 
     const std::string& Name() const { return dataset_.QueryStringById(tid_); }
+    
+    size_t FirstMatch(size_t pos);
+    size_t LastMatch(size_t pos);
     std::vector<ContigFragment> Split();
+    std::string Polish(size_t s, size_t e);
+    std::vector<const MatchInfo*> GetCoverage(size_t pos, int flank);
 
+    /** Save infomations */
     void DumpCoverage(std::ofstream& of);
     void DumpWindow(std::ofstream& of);
     void DumpMatch(std::ofstream& of);
+    void DumpMultiCoverage(std::ofstream &of);
     Seq::Id GetId() const { return tid_; }
 
 protected:
@@ -60,6 +65,8 @@ protected:
     std::vector<ErrorRegion> errors_;
     std::vector<Segment> segs_;
     double max_local_distance_threshold_ {0.0};
+
+    MultiCoverage multi_cov_;
 };
 
 } // namespace fsa {

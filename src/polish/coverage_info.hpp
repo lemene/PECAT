@@ -18,11 +18,11 @@ struct BaseCoverage {
         char buf[1024];
         sprintf(buf, "%d (all: %zd %.02f %.02f %.02f %.02f %.02f %.02f ) \
 (seg: %zd %.02f %.02f %.02f %.02f %.02f %.02f ) \
-(hq: %zd %.02f %.02f %.02f %.02f %.02f %.02f ) %.02f %.02f %zd", ref, 
+(hq: %zd %.02f %.02f %.02f %.02f %.02f %.02f ) %.02f %.02f %zd %u", ref, 
             c[0], bases0[0], bases0[1], bases0[2], bases0[3], bases0[4], bases0[5], 
             c[1], bases1[0], bases1[1], bases1[2], bases1[3], bases1[4], bases1[5], 
             c[2], bases2[0], bases2[1], bases2[2], bases2[3], bases2[4], bases2[5], 
-            inssize, clips, top);
+            inssize, clips, top, level);
         return buf;
     }
 
@@ -60,7 +60,8 @@ public:
     size_t Size() const { return base_cov_.size(); }
     const BaseCoverage& Get(size_t i) const { return base_cov_[i]; }
     void Merge(const class MatchInfo &match, size_t offsize, double local_threashold, size_t max_clip, double wt);
-    uint8_t GetBestChoice(size_t i) { return base_cov_[i].top; }
+    uint8_t GetBestChoice(size_t i) const { return base_cov_[i].top; }
+    uint8_t Status(size_t i) const { return base_cov_[i].level; }
     const std::array<double, 3> & AvarageCoverage() const { return average_coverages_; }
     void Scan();
     void Stat();

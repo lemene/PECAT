@@ -22,15 +22,15 @@ public:
     double GetOverlapQualityThreshold() const { return overlap_quality_threshold_; }
     double GetLocalQualityThreshold() const { return local_quality_threshold_; }
     size_t CountReadMap(Seq::Id id) const ;
-    
+    size_t MaxReadLength() const { return max_read_length_; }
 protected:
+    void Stat();
     /** reads in  */
     std::vector<Bed> CollectBedFromBam(const std::vector<Seq::Id>& read_ids);
     void LoadOverlaps(const std::string &fname);
     void LoadMappings();
     
     std::vector<Seq::Id> LoadContigIds(const std::string& name, const std::string &fname, const ReadStore& store);
-    void CalcCoverage();
     void SelectBestMapping();
 public:
     PolOptions& opts_;
@@ -46,6 +46,8 @@ public:
     std::vector<Seq::Id> ctg_ids_;
     double overlap_quality_threshold_ {0.0};    // TODO Move it to pol_options.hpp
     double local_quality_threshold_ {0.0};
+    size_t max_read_length_ {0};
+    size_t ave_read_length_ {0};
 };
 
 

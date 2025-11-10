@@ -18,12 +18,12 @@ ArgumentParser ContigPolish::GetArgumentParser() {
 void ContigPolish::Running() {
     SET_LOG_LEVEL(DEBUG);
     dataset_.Load();
-
     LOG(INFO)("Start detecting misassemblies");
     AnalyzeContigs();
+    // LOG(INFO)("Build Contig graph");
+    // BuildGraph();
 
-    LOG(INFO)("Build Contig graph");
-    BuildGraph();
+    // PolishContigs();
 }
 
 void ContigPolish::AnalyzeContigs() {
@@ -32,15 +32,17 @@ void ContigPolish::AnalyzeContigs() {
     std::ofstream of_mis("mis.bed");
     std::ofstream of_match("match_info");
     std::ofstream of_pol(opts_.cread_fname_);
+    std::ofstream of_mcov("multi_covs");
     std::mutex mutex;
 
-    auto dump = [&mutex, &of_cov, &of_mis, &of_win, &of_pol, &of_match](std::shared_ptr<ContigAnalyzer> ctg_dtr) {
+    auto dump = [&mutex, &of_cov, &of_mis, &of_win, &of_pol, &of_match, &of_mcov](std::shared_ptr<ContigAnalyzer> ctg_dtr) {
         std::lock_guard<std::mutex> locked(mutex);
 
-        ctg_dtr->DumpCoverage(of_cov);
-        ctg_dtr->DumpWindow(of_win);
-        ctg_dtr->DumpMatch(of_match);
-        ctg_dtr->SaveErrors(of_mis);
+        // ctg_dtr->DumpCoverage(of_cov);
+        // ctg_dtr->DumpWindow(of_win);
+        // ctg_dtr->DumpMatch(of_match);
+        // ctg_dtr->SaveErrors(of_mis);
+        ctg_dtr->DumpMultiCoverage(of_mcov);
 
     };
 
@@ -60,8 +62,8 @@ void ContigPolish::AnalyzeContigs() {
 
             auto ctg_analyser = make_ctg_analyser(tid, dataset_);
             ctg_analyser->Detect();
-            auto frgs = ctg_analyser->Split();
-            graph.AddFragment(frgs);
+            // auto frgs = ctg_analyser->Split();
+            // graph.AddFragment(frgs);
             dump(ctg_analyser);
         }
     };
@@ -75,12 +77,20 @@ void ContigPolish::BuildGraph() {
         graph_.AddFragment(ctg_alzr->Split());
     }
     graph_.Build();
+    graph_.Save(opts_.graph_fname_);
+    graph_.Simplify();
+    graph_.Save(opts_.graph_fname_ + ".simplified");
 }
 
 void ContigPolish::PolishContigs() {
+    
+    std::ofstream of(opts_.cread_fname_);
     auto chains = graph_.GetChains();
-    for (auto& chain : chains) {
-        chain.Polish();
+    LOG(INFO)("Total %zd chains", chains.size());
+    for (size_t i = 0; i < chains.size(); ++i) {
+        auto& chain = chains[i];
+        auto seq = chain.Polish();
+        of << ">" << i << "\n" << seq << "\n";
     }
 }
 

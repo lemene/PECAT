@@ -7,21 +7,8 @@ sys.path.insert(0, "/home/niefan/work/mbio")
 import mbio
 import mbio.ftype.table as tb
 import mbio.utils.utils as utils
-
-def ts_show_win_cov(argv):
-
-    idx = int(argv[0])
-
-    covs = []
-    for line in open(argv[1]):
-        its = line.split()
-        covs.append(int(its[1+idx]))
-
-    diff = [abs(a-b) for a, b in zip(covs[0:-1],covs[1:])]
-    rate = [abs(a-b)*2/(a+b) if a+b > 0 else 0 for a, b in zip(covs[0:-1],covs[1:])]
-    #tb.show_hist(diff)
-    #tb.show_hist(covs)
-    tb.show_hist(rate)
+import argparse
+import matplotlib.pyplot as plt
 
 def calculate_similarity(cigar):
     ref_length = 0
@@ -160,13 +147,106 @@ def ts_save_coverage_graph(argv):
 
         cov_data = covs[bed[0]]
 
-        x = list(range(s, e))
+        x = [i*200 for i in range(s, e)]
         for i in range(3):
             y = [cov[i] for cov in cov_data[s:e]]
             plt.plot(x, y, label=f"Coverage {i+1}")
         plt.savefig(f"{bed[0]}_{bed[1]}_{bed[2]}.png")
         plt.close()
     
+
+def ts_show_cov_graph(argv):
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+
+    bed_str = argv[0]
+    cov_fname = argv[1]
+
+    ctg, start_end = bed_str.split(':')
+    start, end = map(int, start_end.split('-')) 
+
+    covs = defaultdict(list)
+    for line in open(cov_fname):
+        its = line.split()
+        assert len(its) >= 3
+        bed = its[0].split(':')
+        
+        cov = [float(i) for i in its[1:4]]
+        covs[bed[0]].append(cov)
+
+    assert ctg in covs, f"Bed {ctg} not found in coverage data"
+    s = start // 200
+    e = (end + 199) // 200
+    s = max(0, s - 50)
+    e = min(e + 50, len(covs[bed[0]]))
+
+    cov_data = covs[bed[0]]
+
+    x = list(range(s, e))
+    for i in range(3):
+        y = [cov[i] for cov in cov_data[s:e]]
+        plt.plot(x, y, label=f"Coverage {i+1}")
+    plt.show()
+    
+def ts_kmer_to_int(argv):
+    kmer = argv[0]
+    k = len(kmer)
+    val = 0
+    for i in range(k):
+        val <<= 2
+        if kmer[i] == 'A':
+            val |= 0
+        elif kmer[i] == 'C':
+            val |= 1
+        elif kmer[i] == 'G':
+            val |= 2
+        elif kmer[i] == 'T':
+            val |= 3
+        else:
+            raise ValueError(f"Invalid character in kmer: {kmer[i]}")
+    print(val)
+    print(f"{val:0{k*2}b}")
+    print(f"{val:0{k*2}x}")
+    print(f"{val:0{k*2}X}") 
+
+def ts_show_win_cov(argv):
+    """显示窗口覆盖度变化率曲线图"""
+    parser = argparse.ArgumentParser(ts_show_win_cov.__doc__)
+    parser.add_argument("fname", type=str, help="覆盖度文件名")
+    parser.add_argument("--range", type=lambda s: tuple(int(n) for n in s.split(',')), default="2,100")
+
+    try:
+        args = parser.parse_args(argv)
+        x, ys = [], []
+        colnames = []
+        for lineno, line in enumerate(open(args.fname)):
+            if lineno == 0:
+                colnames = line.strip().split()[1:]
+                ys = [[] for _ in colnames]
+                continue
+
+            its = line.split()
+            p = int(its[0])
+            if p < args.range[0]:
+                continue
+            if p > args.range[1]:
+                break
+            x.append(int(its[0]))
+            for i, y in enumerate(its[1:]):
+                ys[i].append(float(y))
+        
+        plt.figure()
+        for n, y in zip(colnames, ys):
+            plt.plot(x, y, label=n)
+        plt.legend()
+        plt.title(f"Coverage")
+        plt.xlabel("Position")
+        plt.show()  
+
+    except SystemExit:
+        print("参数解析错误！")
+        return
+
 
 _local_func = locals()
 def main():

@@ -31,6 +31,7 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
                 uint8_t ct = tseq[tidx+i + ol->b_.start];
                 match_[tidx+i].ref = ct;
                 match_[tidx+i].base = cq;
+                match_[tidx+i].pos = qidx + i;
                 if (ct == cq) {
                     matched ++;
                 }
@@ -44,6 +45,7 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
                 char ct = tseq[tidx+i + ol->b_.start];
                 match_[tidx+i].ref = ct;
                 match_[tidx+i].base = 4;
+                match_[tidx+i].pos = qidx;
             }
             tidx += d.len;
             if (d.len <= SMALL_INDEL) {
@@ -53,6 +55,7 @@ MatchInfo::MatchInfo(const Overlap* ol, const DnaSeq& qseq, const DnaSeq& tseq) 
         case 'I':
             insert_.push_back({qidx, qidx+d.len});
             match_[tidx].ins = insert_.size();
+            match_[tidx].pos = qidx + d.len;
 
             qidx += d.len;
             if (d.len <= SMALL_INDEL) {
@@ -143,23 +146,24 @@ std::vector<std::array<size_t,2>> MatchInfo::GetHighQualityRegions(size_t win_si
     std::vector<uint8_t> flag(match_.size(), 0);
 
     std::vector<std::array<size_t,2>> vregs;
-    if (LClip() >= min_clip) {
-        size_t e = min_intv > match_.size() ? match_.size() :  min_intv;
-        vregs.push_back({0, e});
+    
+    // exclude head and tail
+    if (ol_->b_.start >= min_intv) {
+        vregs.push_back({0, std::min(min_intv, match_.size())});
     }
+    // exclude low quality regions
     for (size_t i=0; i < local_dist.size(); ++i) {
         double d = 1 - local_dist[i][0]*1.0 / local_dist[i][1];
         if (d > max_dist) {
             size_t s = i < min_intv ? 0 : i - min_intv;
             size_t e = i + win_size + min_intv > match_.size() ? match_.size() : i + win_size + min_intv;
             vregs.push_back({s, e});
-            //LOG(INFO)("vregs %zd-%zd %.02f > %.02f", s,e, d, max_dist);
         }
     }
 
-    if (RClip() >= min_clip) {
-        size_t s = min_intv > match_.size() ? 0 :  match_.size() - min_intv;
-        vregs.push_back({s, match_.size()});
+    // exclude head and tail
+    if (ol_->b_.len - ol_->b_.end >= min_intv) {
+        vregs.push_back({match_.size() - std::min(match_.size(), min_intv), match_.size()});
     }
 
     size_t s = 0;
@@ -177,4 +181,31 @@ std::vector<std::array<size_t,2>> MatchInfo::GetHighQualityRegions(size_t win_si
     return regs;
 }
 
+std::vector<double> MatchInfo::LocalIdentity(size_t win_size) const {
+    auto local_dist = LocalDistance(win_size);
+    std::vector<double> idents(local_dist.size(), 0.0);
+    for (size_t i = 0; i < local_dist.size(); ++i) {
+        idents[i] = local_dist[i][0] * 1.0 / local_dist[i][1];
+    }
+    return idents;
+}
+
+
+std::array<size_t,2> MatchInfo::GetQueryRegion(size_t s, size_t e) const {
+    if (!(s < e && e <= End() && s >= Start())) {
+        LOG(INFO)("GetQueryRegion: invalid range %zd-%zd, ol %zd-%zd", s, e, Start(), End());
+        assert(s < e && e <= End() && s >= Start());
+        return {0, 0};
+    }
+    assert(s < e && e <= End() && s >= Start());
+    const auto& r = ol_->a_;
+    size_t toff = Start();
+    if (r.strand == 0) {
+        size_t qoff = r.start;
+        return {match_[s-toff].pos + qoff, match_[e-toff].pos + qoff + 1};
+    } else {
+        size_t qoff = r.end - 1;
+        return {qoff - match_[s-toff].pos + 1, qoff - match_[e-toff].pos};
+    }
+}
 }

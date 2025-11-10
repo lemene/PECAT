@@ -20,11 +20,15 @@ public:
     MinimizerCounter(size_t k, size_t w) : w_(w), k_(k), kmc_(k) {}
 
     std::vector<Minimizer> Count(const DnaSeq& seq, const RankedKmers& rkmers);
+    std::vector<Minimizer> Count(const DnaSeq& seq, const RankedKmers* rkmers) {
+        return rkmers != nullptr ? Count(seq, *rkmers) : Count(seq);
+    }
+    std::vector<Minimizer> Count(const DnaSeq& seq);
 
 protected:
-    KmerCounter kmc_;
     size_t w_;
     size_t k_;
+    KmerCounter kmc_;
 };
         
 }

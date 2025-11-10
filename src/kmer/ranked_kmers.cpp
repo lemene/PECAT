@@ -28,34 +28,6 @@ struct BaseTable {
 };
 
 
-size_t count_lines_in_file(std::ifstream& ifs, size_t threads) {
-    ifs.seekg(0);
-    std::string line;
-    std::mutex mutex;
-    std::atomic<size_t> count { 0 };
-
-    auto generate_func = [&ifs, &mutex](char* buf, size_t bufsize) -> size_t {
-        std::lock_guard<std::mutex> lock(mutex);
-
-        ifs.read(buf, bufsize);
-        return ifs.gcount();
-    };
-    auto worker_func = [&count, &generate_func](size_t id) {
-        char buf[1024*1000];
-        size_t bsize = generate_func(buf, sizeof(buf));
-        size_t cnt = 0;
-        while (bsize > 0) {
-            for (char* p = buf; p < buf+bsize; ++p) {
-                if (*p == '\n') cnt ++;
-            }
-            bsize = generate_func(buf, sizeof(buf));
-        }
-        count.fetch_add(cnt);
-    };
-
-    MultiThreadRun(threads, worker_func);
-    return count.load();
-}
 
 struct Str2Kmer {
 public:
@@ -77,51 +49,6 @@ public:
     uint64_t mask;
     BaseTable base_table;
 };
-
-
-RankedKmers::Group::Group(const std::string &fname, double level, size_t threads) {
-    level_ = level;
-    load(fname, threads);
-}
-
-bool RankedKmers::Group::load(const std::string& fname, size_t threads) {
- 
-    std::ifstream ifs(fname);
-
-    count_ = count_lines_in_file(ifs, actual_threads(threads, 20));
-    if (count_ > 0) {
-        kmer_size_ = get_kmer_size_from_file(ifs);
-        LOG(INFO)("%zd kmers(k=%u) in file %s", count_, kmer_size_, fname.c_str());
-        bloom_ = std::shared_ptr<bloom_filter>(make_bloom(count_));
-        load_kmers_to_bloom(ifs, threads, *bloom_.get());
-    } else {
-        LOG(INFO)("Empty file: %s", fname.c_str());
-    }
-	LOG(INFO)("[M::%s] load kmers %s", __func__, fname.c_str());
-}
-
-std::shared_ptr<bloom_filter> RankedKmers::Group::make_bloom(size_t count) {
-
-    //set up bloom filter
-    bloom_parameters parameters;
-    parameters.projected_element_count = std::max<size_t>(count, (uint64_t)1000);
-    parameters.false_positive_probability = 0.001; 
-    parameters.maximum_number_of_hashes = 2;
-    assert(!(!parameters));
-    parameters.compute_optimal_parameters();
-    return std::shared_ptr<bloom_filter>(new bloom_filter(parameters));
-}
-
-uint32_t RankedKmers::Group::get_kmer_size_from_file(std::ifstream& ifs)  const {
-    ifs.clear();   ifs.seekg(0);
-    std::string kmer;
-    uint64_t freq;
-    if (ifs >> kmer >> freq) {
-        return kmer.size();
-    } else {
-        return 0;
-    }
-}
 
 class BlockReader {
 public:
@@ -165,14 +92,38 @@ protected:
     char delim_;
 };
 
-    
-void RankedKmers::Group::load_kmers_to_bloom(std::ifstream& ifs, size_t threads, bloom_filter& bloom) {
-    ifs.clear();  ifs.seekg(0);
+
+auto RankedKmers::Group::Create(const std::string &fname, double level, size_t threads) -> Group* {
+    std::ifstream ifs(fname);
+    auto count = CountLinesInFile(ifs, ActualThreads(threads, 20));
+    auto kmer_size = GetKmerSizeFromFile(ifs);
+    LOG(INFO)("Loading RankedKmers from %s: size=%zd, k=%d", fname.c_str(), count, kmer_size);
+
+    if (count > 10000000) {
+        return new GroupWithBloom(ifs, level, count, kmer_size, threads);
+    } else {
+        return new GroupWithSet(ifs, level, count, kmer_size, threads);
+    }
+}
+
+uint32_t RankedKmers::Group::GetKmerSizeFromFile(std::ifstream& ifs) {
+    ifs.clear();   ifs.seekg(0);
+    std::string kmer;
+    uint64_t freq;
+    if (ifs >> kmer >> freq) {
+        return kmer.size();
+    } else {
+        return 0;
+    }
+}
+
+template<typename C>
+void RankedKmers::Group::LoadToX(std::ifstream& ifs, size_t threads, C add_to_x) {
+    ResetStream(ifs);
 
     std::mutex mutex_gen;
     std::mutex mutex_comb;
 
-    assert(kmer_size_ > 0);
     Str2Kmer str2kmer(kmer_size_);
     BlockReader reader(ifs, '\n');
 
@@ -181,9 +132,9 @@ void RankedKmers::Group::load_kmers_to_bloom(std::ifstream& ifs, size_t threads,
         return reader.get(block, bsize);
     };
 
-    auto comb_func = [&bloom, &mutex_comb](const std::vector<uint64_t>& kmers) {
+    auto comb_func = [add_to_x, &mutex_comb](const std::vector<uint64_t>& kmers) {
         std::lock_guard<std::mutex> lock(mutex_comb);
-        bloom.insert(kmers.begin(), kmers.end());
+        add_to_x(kmers);
     };
 
     auto work_func = [&gen_func, &comb_func, &str2kmer](size_t id) {
@@ -211,19 +162,61 @@ void RankedKmers::Group::load_kmers_to_bloom(std::ifstream& ifs, size_t threads,
 
     };
 
-    MultiThreadRun(actual_threads(threads, 4), work_func);
+    MultiThreadRun(ActualThreads(threads, 4), work_func);
+}
+
+RankedKmers::GroupWithBloom::GroupWithBloom(std::ifstream& ifs, double level, size_t count, size_t kmer_size, size_t threads) 
+ : Group(level, count, kmer_size) {
+
+    Load(ifs, threads);
+}
+
+bool RankedKmers::GroupWithBloom::Load(std::ifstream& ifs, size_t threads) {
+ 
+    ResetStream(ifs);
+
+    if (count_ > 0) {
+        kmer_size_ = GetKmerSizeFromFile(ifs);
+        bloom_ = std::shared_ptr<bloom_filter>(MakeBloom(count_));
+        LoadToX(ifs, threads, [this](const std::vector<uint64_t> kmers) {
+            bloom_->insert(kmers.begin(), kmers.end());
+        });
+    } 
+}
+
+std::shared_ptr<bloom_filter> RankedKmers::GroupWithBloom::MakeBloom(size_t count) {
+
+    //set up bloom filter
+    bloom_parameters parameters;
+    parameters.projected_element_count = std::max<size_t>(count, (uint64_t)1000);
+    parameters.false_positive_probability = 0.0001; 
+    parameters.maximum_number_of_hashes = 2;
+    assert(!(!parameters));
+    parameters.compute_optimal_parameters();
+    return std::shared_ptr<bloom_filter>(new bloom_filter(parameters));
+}
+
+RankedKmers::GroupWithSet::GroupWithSet(std::ifstream& ifs, double level, size_t count, size_t kmer_size, size_t threads) 
+ : Group(level, count, kmer_size) {
+    Load(ifs, threads);
+}
+
+bool RankedKmers::GroupWithSet::Load(std::ifstream& ifs, size_t threads) {
+    LoadToX(ifs, threads, [this](const std::vector<uint64_t> kmers) {
+        kmers_.insert(kmers.begin(), kmers.end());
+    });
+    return true;
 }
 
 RankedKmers::RankedKmers(const std::vector<std::string> &fnames, const std::vector<double> &weights, size_t threads) {
     assert(fnames.size() == weights.size() || weights.size() == 0);
 
     for (size_t i = 0; i < fnames.size(); ++i) {
-        
         double wt = weights.size() == 0 ? 1.0 : weights[i];
-        groups_.push_back(Group(fnames[i], wt, threads));
+        groups_.push_back(Group::Create(fnames[i], wt, threads));
     }
 
-    assert(check() && "TODO kmer");
+    assert(Check() && "TODO kmer");
 }
 
 

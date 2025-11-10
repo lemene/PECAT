@@ -11,4 +11,9 @@ ContigFragment::ContigFragment(ContigAnalyzer* ctg_analyzer, size_t start, size_
 Seq::Id ContigFragment::ContigId() const {
     return ctg_analyzer_->GetId(); 
 }
+
+std::string ContigFragment::Polish() const {
+    return ctg_analyzer_->Polish(start_, end_);
+}
+
 }

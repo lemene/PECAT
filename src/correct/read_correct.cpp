@@ -539,8 +539,13 @@ void ReadCorrect::Worker::DumpFilteredOverlaps(std::ostream &os) {
         Overlap ol;
         ol.a_.id = al.qid;
         ol.a_.len = al.query->Size();
-        ol.a_.start = al.query_start;
-        ol.a_.end = al.query_end;
+        if (al.strand == 0) {
+            ol.a_.start = al.query_start;
+            ol.a_.end = al.query_end;
+        } else {
+            ol.a_.start = al.query->Size() - al.query_end;
+            ol.a_.end = al.query->Size() - al.query_start;
+        }
         ol.a_.strand = al.strand;
 
         ol.b_.id = al.tid;

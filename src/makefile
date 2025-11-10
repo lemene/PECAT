@@ -6,7 +6,7 @@ BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
              $(BUILD_OBJ_DIR)/bridge $(BUILD_OBJ_DIR)/assemble $(BUILD_OBJ_DIR)/correct/align $(BUILD_OBJ_DIR)/kmer \
 			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph \
-			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish $(BUILD_OBJ_DIR)/align
+			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish $(BUILD_OBJ_DIR)/align $(BUILD_OBJ_DIR)/base
 
 simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./assemble/simplify/bridge.cpp \
 	./assemble/simplify/transitive.cpp ./assemble/simplify/cross.cpp ./assemble/simplify/low_quality.cpp \
@@ -27,7 +27,8 @@ assemble_src = ./assemble/contig_generator.cpp
 
 overlap_src = ./overlap/mapping.cpp
 
-kmer_src = ./kmer/ranked_kmers.cpp ./kmer/kmer.cpp ./kmer/minimizer_counter.cpp ./kmer/kmer_counter.cpp
+kmer_src = ./kmer/ranked_kmers.cpp ./kmer/kmer.cpp ./kmer/minimizer_counter.cpp ./kmer/kmer_counter.cpp \
+           ./kmer/minimizer_graph.cpp ./kmer/minimizer_store.cpp ./kmer/mkseq_store.cpp
 
 libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_store.cpp sequence.cpp\
              utility.cpp file_io.cpp seq_io.cpp overlap_store.cpp graph.cpp sequence_store.cpp\
@@ -37,7 +38,8 @@ libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_sto
 			 ../thirdparty/edlib/edlib/src/edlib.cpp correct/aligner.cpp ./correct/dw.cpp  ./correct/diff.cpp  \
 			 ./correct/align/edlib_aligner.cpp ./correct/align/ksw2_aligner.cpp  \
 			 ./utils/string_pool.cpp ./utils/pair_file.cpp ./utils/misc.cpp ./utils/project_file.cpp\
-			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
+			 ./phase/phase_info.cpp ./phase/contig_phaser.cpp ./base/string_store.cpp \
+			 $(phase_src) $(simplify_src) $(correct_src) $(graph_src) \
 			 $(assemble_src) $(overlap_src) $(align_src) $(kmer_src)
 
 libfsa_src += $(wildcard ./correct/align/*.cpp)
@@ -76,7 +78,7 @@ fsa_rd_correct_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_correct_src
 fsa_ctg_polish_src = ./prog/fsa_ctg_polish.cpp ./correct/alignment_graph.cpp\
                      ./polish/contig_polish.cpp ./polish/pol_dataset.cpp ./polish/pol_options.cpp\
 					 ./polish/contig_analyzer.cpp ./polish/coverage_info.cpp ./polish/window_slider.cpp \
-					 ./polish/contig_fragment.cpp ./polish/contig_graph.cpp 
+					 ./polish/contig_fragment.cpp ./polish/contig_graph.cpp ./polish/multi_coverage.cpp
 					 
 fsa_ctg_polish_obj := $(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ctg_polish_src))
 
@@ -85,9 +87,6 @@ fsa_ol_purge_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_purge_src))
 
 fsa_ol_refine_src = ./prog/fsa_ol_refine.cpp ./overlap_refine.cpp
 fsa_ol_refine_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_refine_src))
-
-fsa_kmer_bin_src = ./prog/fsa_kmer_bin.cpp ./kmer/kmer_bin.cpp
-fsa_kmer_bin_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_kmer_bin_src))
 
 fsa_kmer_tools_src = ./prog/fsa_kmer_tools.cpp ./kmer/kmer_tools.cpp
 fsa_kmer_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_kmer_tools_src))
@@ -122,7 +121,7 @@ dep:=$(patsubst %.o,%.d, $(obj))
 bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
       fsa_rd_haplotype fsa_ol_tools fsa_rd_tools fsa_sam_tools\
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
-	  fsa_kmer_bin fsa_ctg_call fsa_rd_consistent fsa_ctg_polish \
+	  fsa_ctg_call fsa_rd_consistent fsa_ctg_polish \
 	  fsa_kmer_tools
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
