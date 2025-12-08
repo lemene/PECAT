@@ -213,6 +213,23 @@ public:
     std::mutex *mutex_ { nullptr };
 };
 
+template<typename F>
+void TraverseFileLines(const std::string &fname, F func, size_t thread_size=1) {
+    std::mutex mutex_gen;
+    GzFileReader in(fname);
+
+    auto work_func = [&func, &mutex_gen, &in](size_t id) {
+        LineInBlock line_in_block(in, 10000000, &mutex_gen);
+
+        std::string line;
+        for (bool is_valid = line_in_block.GetLine(line); is_valid; is_valid = line_in_block.GetLine(line)) {
+            func(line);
+        }
+    };
+
+    MultiThreadRun(thread_size, work_func);
+}
+
 } // namespace fsa {
 
 

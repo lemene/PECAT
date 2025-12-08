@@ -12,8 +12,4 @@ Seq::Id ContigFragment::ContigId() const {
     return ctg_analyzer_->GetId(); 
 }
 
-std::string ContigFragment::Polish() const {
-    return ctg_analyzer_->Polish(start_, end_);
-}
-
 }

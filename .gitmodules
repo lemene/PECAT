@@ -16,3 +16,6 @@
 [submodule "thirdparty/bloom"]
 	path = thirdparty/bloom
 	url = https://github.com/ArashPartow/bloom.git
+[submodule "thirdparty/doctest"]
+	path = thirdparty/doctest
+	url = https://github.com/doctest/doctest.git

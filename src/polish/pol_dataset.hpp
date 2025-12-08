@@ -19,8 +19,6 @@ public:
     void Load();
     const std::string& QueryStringById(Seq::Id id) const { return string_pool_.QueryStringById(id); }    
     const StringPool& GetStringPool() const { return string_pool_; }
-    double GetOverlapQualityThreshold() const { return overlap_quality_threshold_; }
-    double GetLocalQualityThreshold() const { return local_quality_threshold_; }
     size_t CountReadMap(Seq::Id id) const ;
     size_t MaxReadLength() const { return max_read_length_; }
 protected:
@@ -44,8 +42,8 @@ public:
     
     
     std::vector<Seq::Id> ctg_ids_;
-    double overlap_quality_threshold_ {0.0};    // TODO Move it to pol_options.hpp
-    double local_quality_threshold_ {0.0};
+    double overlap_quality_median_ {0.0};
+    double overlap_quality_mad_ {0.0};
     size_t max_read_length_ {0};
     size_t ave_read_length_ {0};
 };

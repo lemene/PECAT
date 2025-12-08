@@ -25,6 +25,7 @@ public:
         assert(seq_id < mkseqs_.size());
         return mkseqs_[seq_id].Get(postion); 
     }
+    const std::string& QueryNameById(size_t seq_id);
 protected:
     size_t k_ { 19 };
     size_t w_ { 1000 };

@@ -57,9 +57,9 @@ void ContigGraph::Build() {
         const int FLAKING = 3000;
         auto& n = nodes_[n_id];
         if (i % 2 == 0) {
-            end_covs[i] = n->Fragment()->Analyzer()->GetCoverage(n->Fragment()->Start(), FLAKING);
+            //end_covs[i] = n->Fragment()->Analyzer()->GetCoverage(n->Fragment()->Start(), FLAKING);
         } else {
-            end_covs[i] = n->Fragment()->Analyzer()->GetCoverage(n->Fragment()->End(), -FLAKING);
+            //end_covs[i] = n->Fragment()->Analyzer()->GetCoverage(n->Fragment()->End(), -FLAKING);
         }
         LOG(INFO)("End-Cov %zd %08X %zd-%zd %zd", i, n_id, n->Fragment()->Start(), n->Fragment()->End(), end_covs[i].size());
     }
@@ -166,17 +166,6 @@ auto ContigGraph::GetChains() -> std::vector<Chain> {
 
 std::string ContigGraph::Chain::Polish() {
     std::string seq;
-    assert(paths_.size() % 2 == 0);
-
-    for (size_t i = 0; i < paths_.size(); i += 2) {
-        //assert(GetPairNode(paths_[i])->Id() == paths_[i+1]->Id());
-        auto s = paths_[i]->Fragment()->Polish();
-        if (paths_[i]->End() == 0) {
-            seq += s;
-        } else {
-            seq += Seq::ReverseComplement(s);
-        }
-    }
 
     return seq;
 }

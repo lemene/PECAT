@@ -1,4 +1,4 @@
-#include "kmer_tools.hpp"
+#include "mprog_kmer_tools.hpp"
 
 #include "read_store.hpp"
 
@@ -96,16 +96,16 @@ void Program_Bin::Running() {
     auto spec_kmer_fname = SplitStringByChar(specific_, ';');
 
     // loading specific kmers
-    std::vector<KmerSet> spec_kmers;
+    std::vector<KmerStoreUsingVector> spec_kmers;
     for (const auto& fn : spec_kmer_fname) {
-        spec_kmers.push_back(LoadKmers1(fn));
+        spec_kmers.push_back(KmerStoreUsingVector(fn));
     }
 
     // check
     for (size_t i = 1; i < spec_kmers.size(); ++i) {
-        assert(spec_kmers[i].k == spec_kmers[i-1].k);
+        assert(spec_kmers[i].K() == spec_kmers[i-1].K());
     }
-    size_t k = spec_kmers[0].k;
+    size_t k = spec_kmers[0].K();
 
     ReadStore rd_store;
     rd_store.Load(ifname_);
@@ -174,7 +174,7 @@ void Program_Bin::Running() {
 }
 
 
-std::vector<size_t> Program_Bin::CountKmers(size_t k, const std::string& seq, const std::vector<KmerSet>& kmers) {
+std::vector<size_t> Program_Bin::CountKmers(size_t k, const std::string& seq, const std::vector<KmerStoreUsingVector>& kmers) {
     std::vector<size_t> count(kmers.size()+1, 0);
     KmerCounter kc (k);
     auto kseq = kc.CountAll(DnaSeq(seq));
@@ -182,7 +182,7 @@ std::vector<size_t> Program_Bin::CountKmers(size_t k, const std::string& seq, co
     for (size_t i = 0; i < kseq.size(); ++i) {
         auto kmin = std::min(kseq[i][0], kseq[i][1]);
         for (size_t i = 0; i < kmers.size(); ++i) {
-            if (kmers[i].Find(kmin)) count[i] ++;
+            if (kmers[i].Count(kmin) > 0) count[i] ++;
         }
     }
     return count;
@@ -211,6 +211,18 @@ void Program_Graph::Running() {
     graph.Build(mkseqs);
     graph.Save("graph.csv");
     mkseqs.Save("mkseqs.txt");
+
+    for (size_t i = 0; i < mkseqs.Size(); ++i) {
+        const auto& ks = mkseqs.Get(i);
+        std::unordered_set<uint64_t> neighbors;
+        for (size_t j = 0; j < ks.Size(); ++j) {
+            auto nb0 = graph.Neighbor(ks.Get(j).hash, 0, 3);
+            neighbors.insert(nb0.begin(), nb0.end());
+            auto nb1 = graph.Neighbor(ks.Get(j).hash, 1, 3);
+            neighbors.insert(nb1.begin(), nb1.end());
+        }
+        LOG(INFO)("get neighbor: size = %zd", neighbors.size());
+    }
 
     //MinimizerStore mkmer_store;
 
@@ -242,8 +254,8 @@ void Program_Histo::Running() {
     assert(!ofname_.empty());
     assert(!freq_fname_.empty());
 
-    auto kset = LoadKmers0(freq_fname_);
-    KmerCounter kc(kset.k);
+    auto kset = KmerStoreUsingMap(freq_fname_);
+    KmerCounter kc(kset.K());
 
     ReadStore rd_store;
     rd_store.Load(ifname_);
@@ -287,11 +299,146 @@ void Program_Histo::Running() {
     MultiThreadRun(thread_size_, work_func);
 }
 
+void Program_FreqFreq::Running() {
+    assert(!ifname_.empty());
+
+    std::unique_ptr<KmerStoreUsingMap> kset;
+    std::unique_ptr<GzFileWriter> local;
+    std::unique_ptr<GzFileWriter> global;
+    if (!freq_fname_.empty() && !global_fname_.empty()) {
+        kset = std::make_unique<KmerStoreUsingMap>(freq_fname_, thread_size_);
+        LOG(INFO)("KK: %zd, %zd", kset->K(), k_);
+        assert(kset->K() == (size_t)k_);
+        global = std::make_unique<GzFileWriter>(global_fname_);
+    }
+
+    if (!local_fname_.empty()) {
+        local = std::make_unique<GzFileWriter>(local_fname_);
+    }
+
+    ReadStore rd_store;
+    rd_store.Load(ifname_);
+    
+    std::mutex mutex;
+    auto save_clear_infos = [&mutex, &local, &global](std::ostringstream& ossl, std::ostringstream& ossg) {
+        std::lock_guard<std::mutex> lock(mutex);
+        
+        if (local) {
+            local->Write(ossl.str());
+        }
+        if (global) {
+            global->Write(ossg.str());
+        }
+        ossl.str("");
+        ossg.str("");
+    };
+ 
+    auto dump_local = [&local, &rd_store](size_t i, const std::vector<KmerId>& kseqs, std::ostream& oss) {
+        if (local == nullptr) return;
+
+        std::unordered_map<KmerId, size_t> kcount;
+        for (auto k : kseqs) {
+            kcount[k]++;
+        }
+
+        auto mx = std::max_element(kcount.begin(), kcount.end(), 
+            [](const decltype(kcount)::value_type &a,const decltype(kcount)::value_type &b) {
+                return a.second < b.second;
+        });
+        
+        std::vector<size_t> histo(mx->second+1, 0);
+        for (const auto& it : kcount) {
+            histo[it.second] += 1;
+        }
+
+        oss << rd_store.QueryNameById(i);
+        for (size_t i = 0; i < histo.size(); i++) {
+            if (histo[i] > 0) {
+                oss  << " " << i << "-" << histo[i];
+            }
+        }
+        oss << "\n";
+    };
+
+    auto dump_global = [&global, &rd_store, &kset](size_t i, const std::vector<KmerId>& kmers, std::ostream& oss) {
+        if (global == nullptr) return;
+
+        std::map<KmerId, size_t> kfreq;     // ordered
+        for (auto k : kmers) {
+            kfreq[kset->Count(k)] ++; // count frequency in the
+        }
+
+        oss << rd_store.QueryNameById(i) ;
+        for (auto &f : kfreq) {
+            oss << " " << f.first << "-" << f.second;
+        }   
+        oss << "\n";
+    };
+
+    std::atomic<size_t> index {0};
+    auto work_func = [&rd_store, &index, save_clear_infos, this, &dump_local, &dump_global](size_t _) {
+        LOG(INFO)("Thread %zd start %zd", _, rd_store.Size());
+        const size_t MAX_BLCOK_SIZE = 10*1024*1024;
+        KmerCounter kc(k_);
+        std::ostringstream ossl;
+        std::ostringstream ossg;
+        for (size_t i = index.fetch_add(1); i < rd_store.Size(); i = index.fetch_add(1)) {
+            if (rd_store.GetSeqLength(i) < 1000) continue;
+            auto kmers = kc.CountCanon(rd_store.GetSeq(i));
+
+            dump_local(i, kmers, ossl);
+            dump_global(i, kmers, ossg);
+
+            if (ossl.tellp() >= MAX_BLCOK_SIZE || ossg.tellp() >= MAX_BLCOK_SIZE) {
+                save_clear_infos(ossl, ossg);
+            }
+        }
+        save_clear_infos(ossl, ossg);
+    };
+
+
+    MultiThreadRun(thread_size_, work_func);
+}
+
+
+
+void Program_SegFreq::Running() {
+    std::mutex mutex_gen;
+    std::mutex mutex_comb;
+    
+    GzFileReader ifile(ifname_);
+    
+    size_t k = GetKmerLength(ifname_);
+    assert(start_ >= 0 && (size_t)(start_ + len_) <= k && len_  < 6);
+
+    std::vector<std::atomic_uint32_t> seg_freqs(1ULL << (len_*2));
+    
+    auto work_func = [&mutex_gen, &seg_freqs, &ifile, this](size_t _) {
+        LineInBlock line_in_block(ifile, 10000000, &mutex_gen);
+    
+        KmerCounter kc(len_);
+        
+        std::string line;
+        for (auto valid = line_in_block.GetLine(line); valid; valid = line_in_block.GetLine(line)) {
+            auto items = SplitStringBySpace(line);
+
+            auto p = kc.CountForward(items[0].substr(start_, len_))[0];
+            seg_freqs[p]++;
+        }
+    };
+    
+    MultiThreadRun(thread_size_, work_func);
+
+    std::ofstream ofile(ofname_);
+    for (size_t i = 0; i < seg_freqs.size(); ++i) {
+        ofile << KmerId2String(i, len_) << "\t" << seg_freqs[i] << "\n";
+    }
+}
 
 void Program_Verify::Running() {
     assert(!freq_fname0_.empty() && !freq_fname0_.empty() && !ofname_.empty());
 
-    auto kset1 = LoadKmers0(freq_fname1_);
+    auto kset1 = KmerStoreUsingMap(freq_fname1_);
 
     std::mutex mutex_gen;
     std::mutex mutex_comb;
@@ -309,7 +456,7 @@ void Program_Verify::Running() {
     auto work_func = [&in, &mutex_gen, combine_func, &kset1](size_t _) {
         LineInBlock line_in_block(in, 1000000, &mutex_gen);
         std::unordered_map<std::string, size_t> okkmers;
-        KmerCounter kc(kset1.k);
+        KmerCounter kc(kset1.K());
         std::string line;
         double E = 0.9;
         while (line_in_block.GetLine(line)) {
@@ -345,7 +492,9 @@ void Program_Test::Running() {
     
     //Test_CountingKmer();
     //Test_CountingMinimizer();
-    CountMinimizers();
+    //CountMinimizers();
+    auto kset = KmerStoreUsingMap(ifname_, thread_size_);
+    LOG(INFO)("KmerStore size: %zd", kset.Size());
 }
 
 void Program_Test::Test_CountingKmer() {

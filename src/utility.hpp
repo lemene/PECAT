@@ -562,6 +562,7 @@ typedef BitSet MyBitSet;
 
 
 size_t CountLinesInFile(std::ifstream& ifs, size_t threads);
+size_t CountLinesInFile(const std::string& fname, size_t threads);
 
 } // namespace fsa {
 

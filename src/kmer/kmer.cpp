@@ -8,8 +8,115 @@
 #include "../utility.hpp"
 namespace fsa {
 
-void KmerSet::BuildIndex() {
-    index.assign(1024, {kmers.size(),0});
+
+
+void KmerStoreUsingMap::Load(const std::string &fname, size_t thread_size) {
+    std::mutex mutex_gen;
+    std::mutex mutex_comb;
+
+    k = GetKmerLength(fname);
+    auto count = CountLinesInFile(fname, std::min<size_t>(thread_size, 20));
+    LOG(INFO)("Loading KmerStoreUsingMap from %s: size=%zd, k=%d", fname.c_str(), count, k);
+
+    kmers.reserve(count*1.5);
+    std::shared_ptr<Reader> in = fname == "-" ?
+        std::shared_ptr<Reader>(new StdioReader()) :
+        std::shared_ptr<Reader>(new GzFileReader(fname));
+
+    auto combine_func = [&mutex_comb, this](std::vector<std::pair<KmerId, int>>& ks) {
+        std::lock_guard<std::mutex> lock(mutex_comb);
+        kmers.insert(ks.begin(), ks.end());
+        ks.clear();
+    };
+
+    auto work_func = [&mutex_gen, combine_func, in, this](size_t _) {
+        LineInBlock line_in_block(*in, 10000000, &mutex_gen);
+        const size_t block_size = 10000000;
+
+        std::vector<std::pair<KmerId, int>> ks;
+
+        std::string line;
+        for (auto valid = line_in_block.GetLine(line); valid; valid = line_in_block.GetLine(line)) {
+            auto items = SplitStringBySpace(line);
+            int c =  std::stoi(items[1]);
+            if (c >= cutoff) {
+                ks.push_back({KmerStringToId(items[0]), c});
+            }
+
+            if (ks.size() >= block_size) {
+                combine_func(ks);
+            }
+        }
+        LOG(INFO)("Thread %zd loaded %zd kmers", _, ks.size());
+        combine_func(ks);
+        LOG(INFO)("combine_func %zd loaded %zd kmers", _, ks.size());
+    };
+    
+    MultiThreadRun(thread_size, work_func);
+}
+
+
+void KmerStoreUsingBin::Load(const std::string &fname, size_t thread_size) {
+    std::mutex mutex_gen;
+    std::mutex mutex_comb;
+
+    k = GetKmerLength(fname);
+    
+    
+
+    GzFileReader reader(fname);
+
+    auto combine_func = [&mutex_comb, this](std::vector<std::pair<KmerId, int>>& ks) {
+        std::lock_guard<std::mutex> lock(mutex_comb);
+        for (const auto& p : ks) {
+            size_t bidx = BinIndex(p.first);
+            kmers[bidx][p.first] = p.second;
+        }
+        ks.clear();
+    };
+
+    auto work_func = [&mutex_gen, combine_func, &reader](size_t _) {
+        LineInBlock line_in_block(reader, 10000000, &mutex_gen);
+        const size_t block_size = 10000;
+
+        std::vector<std::pair<KmerId, int>> ks;
+
+        std::string line;
+        for (auto valid = line_in_block.GetLine(line); valid; valid = line_in_block.GetLine(line)) {
+            auto items = SplitStringBySpace(line);
+            ks.push_back({KmerStringToId(items[0]), std::stoi(items[1])});
+
+            // if (ks.size() >= block_size) {
+            //     combine_func(ks);
+            // }
+        }
+        LOG(INFO)("Thread %zd loaded %zd kmers", _, ks.size());
+        combine_func(ks);
+        LOG(INFO)("combine_func %zd loaded %zd kmers", _, ks.size());
+    };
+    
+    MultiThreadRun(thread_size, work_func);
+}
+
+void KmerStoreUsingVector::Load(const std::string& fname, size_t thread_size) {
+    k = GetKmerLength(fname);
+
+    GzFileReader reader(fname);
+    std::string line;
+    
+    while (reader.GetLine(line)) {
+        auto items = SplitStringBySpace(line);
+        kmers.push_back({KmerStringToId(items[0]),std::stoi(items[1])});
+    }
+    LOG(INFO)("Load %zd kmers(k=%zd) from %s", kmers.size(), k, fname.c_str());
+    std::sort(kmers.begin(), kmers.end(), [](const KmerItem& a, const KmerItem &b) { return a.kmer < b.kmer; });
+    LOG(INFO)("Sort %zd kmers(k=%zd) from %s", kmers.size(), k, fname.c_str());
+
+    BuildIndex();
+}
+
+void KmerStoreUsingVector::BuildIndex() {
+    index.assign(1024, {kmers.size(), 0});
 
     for (size_t i = 0; i<kmers.size(); ++i) {
         size_t idx = kmers[i].kmer >> (k*2 - 10);
@@ -25,11 +132,12 @@ void KmerSet::BuildIndex() {
 
 }
 
-bool KmerSet1::Find(KmerId kid) const {
+
+
+size_t KmerStoreUsingVector::Count(KmerId kid) const {
     auto se = index[kid >> (k*2 - 10)];
     size_t s = se[0]; 
     size_t e = se[1];
-    //printf("s e %zd %zd\n", s, e);
 
     while (s < e) {
         size_t m = (s+e) / 2;
@@ -44,71 +152,45 @@ bool KmerSet1::Find(KmerId kid) const {
     return false;
 }
 
-
-auto LoadKmers0(const std::string &fname) -> KmerSet0 {
-    KmerSet0 kmers;
+void KmerStoreUsingSet::Load(const std::string &fname, size_t thread_size) {
     std::mutex mutex_gen;
     std::mutex mutex_comb;
 
-    kmers.k = GetKmerLength(fname);
-
-    std::atomic<size_t> s { 0 };
-
-    const size_t block_size = 1000;
+    k = GetKmerLength(fname);
     GzFileReader reader(fname);
-    auto generate_func = [&mutex_gen, &reader](std::vector<std::string> &lines) {
-        std::lock_guard<std::mutex> lock(mutex_gen);
-        return reader.GetLines(lines);
-    };
 
-    auto combine_func = [&mutex_comb, &kmers](std::unordered_map<KmerId, int>& ks) {
+    auto combine_func = [&mutex_comb, this](std::vector<std::pair<KmerId, int>>& ks) {
         std::lock_guard<std::mutex> lock(mutex_comb);
-        kmers.kmers.insert(ks.begin(), ks.end());
+        for (const auto& p : ks) {
+            if (p.second <= ksets.size()) {
+                ksets[p.second - 1].insert(p.first);
+            } else {
+                kmers[p.first] = p.second;
+            }
+        }
         ks.clear();
     };
 
-    auto work_func = [block_size, generate_func, combine_func, &reader, &s](size_t id) {
-        std::vector<std::string> lines(block_size);
-        std::unordered_map<KmerId, int> ks;
+    auto work_func = [&mutex_gen, combine_func, &reader](size_t _) {
+        LineInBlock line_in_block(reader, 10000000, &mutex_gen);
+        const size_t block_size = 1000000;
 
-        size_t sz = generate_func(lines);
-        while (sz > 0) {
-            
-            for (size_t i=0; i<sz; ++i) {
-                auto items = SplitStringBySpace(lines[i]);
-                ks[KmerStringToId(items[0])] = std::stoi(items[1]);
-                s.fetch_add(std::stoi(items[1]));
-            }
-            
-            combine_func(ks);
-            sz = generate_func(lines);
+        std::vector<std::pair<KmerId, int>> ks;
+
+        std::string line;
+        for (auto valid = line_in_block.GetLine(line); valid; valid = line_in_block.GetLine(line)) {
+            auto items = SplitStringBySpace(line);
+            ks.push_back({KmerStringToId(items[0]), std::stoi(items[1])});
+
+            // if (ks.size() >= block_size) {
+            //     combine_func(ks);
+            // }
         }
+        LOG(INFO)("Thread %zd loaded %zd kmers", _, ks.size());
+        combine_func(ks);
     };
     
-    int thread_size_ = 10;
-    MultiThreadRun(std::min<size_t>(thread_size_, 3), work_func);
-
-    LOG(INFO)("Load %zd kmers, %zd occu (k=%zd) from %s", kmers.kmers.size(), s.fetch_add(0), kmers.k, fname.c_str());
-    return kmers;
-}
-
-auto LoadKmers1(const std::string &fname) -> KmerSet {
-    KmerSet kmers;
-
-    kmers.k = GetKmerLength(fname);
-
-    GzFileReader reader(fname);
-    std::string line;
-    while (reader.GetLine(line)) {
-        auto items = SplitStringBySpace(line);
-        kmers.kmers.push_back({KmerStringToId(items[0]),std::stoi(items[1])});
-    }
-
-    LOG(INFO)("Load %zd kmers(k=%zd) from %s", kmers.kmers.size(), kmers.k, fname.c_str());
-    std::sort(kmers.kmers.begin(), kmers.kmers.end(), [](const KmerItem& a, const KmerItem &b) { return a.kmer < b.kmer; });
-    LOG(INFO)("Sort %zd kmers(k=%zd) from %s", kmers.kmers.size(), kmers.k, fname.c_str());
-    kmers.BuildIndex();
-    return kmers;
+    MultiThreadRun(thread_size, work_func);
 }
 
 

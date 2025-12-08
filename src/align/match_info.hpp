@@ -12,10 +12,10 @@ public:
     MatchInfo(const Overlap* ol, const DnaSeq& q, const DnaSeq& t);
     struct InfoItem {
         InfoItem() : ref(0), base(0), ins(0) {}
-        uint32_t ref : 2;
-        uint32_t base : 3;   // 0,1,2,3,4 ->A,C,G,T,-
+        uint32_t ref : 2;       // 0,1,2,3 ->A,C,G,T    base in reference
+        uint32_t base : 3;   // 0,1,2,3,4 ->A,C,G,T,-   base in query
         uint32_t ins : 19 ;  // index of insert 
-        uint32_t pos;
+        uint32_t pos;       // position in query
     };
 
 

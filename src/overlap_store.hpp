@@ -939,6 +939,18 @@ public:
     std::unordered_map<int, Index> index_;
 };
 
+template<typename F>
+void TraversePafFile(const std::string &fname, F func, size_t thread_size=1) {
+    auto work_func = [func](const std::string &line) {
+        Overlap o;
+        StringPool::TempNameId ni;
+        auto r = OverlapStore::FromPafLine(line, o, ni);
+        if (r > 0) {
+            func(o);
+        }
+    };
+    TraverseFileLines(fname, work_func, thread_size);
+}
 
 } // namespace fsa {
 

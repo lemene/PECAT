@@ -13,7 +13,6 @@ public:
     ContigFragment(ContigAnalyzer* ctg_analyzer, size_t start, size_t end);
 
     Seq::Id ContigId() const;
-    std::string Polish() const ;
     ContigAnalyzer* Analyzer() const { return ctg_analyzer_; }
     size_t Start() const { return start_; }
     size_t End() const { return end_; }

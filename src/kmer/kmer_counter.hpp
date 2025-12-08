@@ -63,6 +63,27 @@ public:
         return kmers;
     }
 
+    std::vector<KmerId> CountForward(const DnaSeq& seq) {
+        std::vector<KmerId> kmers;
+        kmers.reserve(seq.Size() - k_ + 1); // Reserve space for k-mers based on sequence size
+
+        if (seq.Size() >= k_) {    
+            KmerId kmer = 0;
+            
+            size_t index = 0;
+            for (index = 0; index < k_-1; ++index) {
+                auto c = seq[index];
+                kmer = (kmer << 2 | c) & mask;           // forward k-mer
+            }
+            for (; index < seq.Size(); index++) {
+                auto c = seq[index];
+                kmer = (kmer << 2 | c) & mask;           // forward k-mer
+                kmers.push_back(kmer);
+            }
+        }
+        return kmers;
+    }
+
     std::string ToString(KmerId kmer) {
         std::string s(k_, 'A');
         for (size_t i = 0; i < k_; ++i) {

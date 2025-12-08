@@ -70,7 +70,7 @@ public:
     }
     virtual void Running();
 
-    std::vector<size_t> CountKmers(size_t k, const std::string& seq, const std::vector<KmerSet>& kmers);
+    std::vector<size_t> CountKmers(size_t k, const std::string& seq, const std::vector<KmerStoreUsingVector>& kmers);
 
 protected:
     std::string specific_;
@@ -136,6 +136,60 @@ protected:
 
 };
 
+
+class Program_FreqFreq : public Program {
+public:
+    Program_FreqFreq() {
+        name_ = "freqfreq";
+        desc_ = "frequncy of read kmer frequency";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "ifname", "sequnece file");
+        ap.AddNamedOption(thread_size_, "thread_size", "sequnece file");
+        ap.AddNamedOption(global_fname_, "global", "read_global_kmer_freq_distribution");
+        ap.AddNamedOption(local_fname_, "local", "read_local_kmer_freq_distribution");
+        ap.AddNamedOption(freq_fname_, "kmer_freq", "");
+        ap.AddNamedOption(k_, "k", "kmer length");
+        return ap;
+    }
+
+    virtual void Running();
+protected:
+    int k_ { 17 };
+    std::string ifname_;
+    std::string ofname_;
+    int thread_size_{4};
+    std::string freq_fname_;
+    std::string global_fname_;
+    std::string local_fname_;
+    
+};
+
+class Program_SegFreq : public Program {
+public:
+    Program_SegFreq() {
+        name_ = "segfreq";
+        desc_ = "segment frequency";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "freq", "k-mer frequency file");
+        ap.AddPositionOption(ofname_, "ofname", "output file name");
+        ap.AddNamedOption(thread_size_, "thread_size", "sequnece file");
+        ap.AddNamedOption(start_, "start", "start position");
+        ap.AddNamedOption(len_, "end", "end position");
+        return ap;
+    }   
+    virtual void Running();
+protected:
+    std::string ifname_;
+    std::string ofname_;
+    int thread_size_{4};
+    int start_{0};
+    int len_ {5};
+};
+
 class Program_Verify : public Program {
 public:
     Program_Verify() {
@@ -159,6 +213,7 @@ protected:
     int thread_size_ { 4 };
 
 };
+
 
 class Program_Test : public Program
 {
@@ -201,6 +256,8 @@ public:
         Add(new Program_Bin());
         Add(new Program_Graph());
         Add(new Program_Histo());
+        Add(new Program_FreqFreq());
+        Add(new Program_SegFreq());
         Add(new Program_Verify());
         Add(new Program_Test());
     }

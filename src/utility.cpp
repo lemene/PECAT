@@ -122,5 +122,10 @@ size_t CountLinesInFile(std::ifstream& ifs, size_t threads) {
     return count.load();
 }
 
+size_t CountLinesInFile(const std::string& fnane, size_t threads) {
+    std::ifstream ifs(fnane);
+    return CountLinesInFile(ifs, threads);
+}
+
 } // namespace fsa {
     

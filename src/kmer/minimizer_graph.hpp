@@ -34,7 +34,6 @@ class RawNode {
         uint8_t Direction() const { return dir_ ^ mkmer_->dir; }
         uint64_t Hash() const { return mkmer_->hash; }
         
-        
     protected:
         const Minimizer* mkmer_;
         uint8_t dir_;
@@ -74,7 +73,6 @@ class RawNode {
                 return RawNode(&mkseqs.GetMinimizer(seq_id_, pos_), dir_);
         }
 
-
         bool Equal(const MkseqStore& mkseqs, const RawEdge& b) const {
             const auto& a0 = InNode(mkseqs);
             const auto& a1 = OutNode(mkseqs);
@@ -90,7 +88,7 @@ class RawNode {
     
     class Node {
     public:
-        struct Hash {
+        struct HashFunc {
             size_t operator()(const Node& n) const {
                 std::hash<uint8_t> uint8_hash;
                 return n.hash_ ^ (uint8_hash(n.dir_) << 1);
@@ -106,6 +104,8 @@ class RawNode {
         bool operator<(const Node& b) const {
             return hash_ < b.hash_ || (hash_ == b.hash_ && dir_ < b.dir_);
         }
+        uint64_t Hash() const { return hash_; }
+        uint8_t Direction() const { return dir_; }
     protected:
         uint64_t hash_;
         uint8_t dir_;
@@ -118,10 +118,12 @@ class RawNode {
 
         }
         size_t Count() const { return end_ - start_; }
-        // Node InNode(const MinimizerGraph &graph) const { 
-        //     auto rnode = graph.redge_list_[start_]->GetInNode(*graph.mkseqs_);
-        //     return Node(mkseqs_.GetMinimizer(mkseqs_.Get(redge_list_[start_]->seq_id_).Get(redge_list_[start_]->pos_ )));
-        // }
+        Node InNode(const MinimizerGraph &graph) const { 
+            return graph.InNode(*this);
+        }
+        Node OutNode(const MinimizerGraph &graph) const {
+            return graph.OutNode(*this);
+        }
         // Node OutNode(const MinimizerGraph &graph) const { 
         //     return Node(graph.redge_list_[start_]->GetOutNode(*graph.mkseqs_));
         // }
@@ -131,8 +133,6 @@ class RawNode {
         size_t position_ { 0 };  // which path this edge belongs to
 
     };
-
-
 public:
     MinimizerGraph(){}
     ~MinimizerGraph() {
@@ -147,11 +147,44 @@ public:
     }
     void Build(const MkseqStore& mkseqs);
     void Save(const std::string& fname) const;
+
+    Node InNode(const Edge& e) const {
+        auto rn = redge_list_[e.start_]->InNode(*mkseqs_);
+        return Node(rn.Hash(), rn.Direction(), e.position_);
+    }
+    Node OutNode(const Edge& e) const {
+        auto rn = redge_list_[e.start_]->OutNode(*mkseqs_);
+        return Node(rn.Hash(), rn.Direction(), e.position_);
+    }
+
+    std::vector<const Edge*> OutEdges(const Node& n) {
+        std::vector<const Edge*> es;
+        auto n2e = node_to_edge.find(n);
+        if (n2e != node_to_edge.end()) {
+            for (size_t i = n2e->second; i < edge_list_.size(); ++i) {
+                auto e = edge_list_[i];
+                if (e->InNode(*this) == n) {
+                    es.push_back(e);
+                } else {
+                    break;
+                }
+            }
+        }
+        return es;
+    }
+
+    //std::unordered_set<> Neighbor() const;
+    void Neighbor(uint64_t hash, uint8_t d, uint8_t n, std::unordered_set<uint64_t>& hashs);
+    std::unordered_set<uint64_t> Neighbor(uint64_t h, uint8_t d, uint8_t n) {
+        std::unordered_set<uint64_t> hashs;
+        Neighbor(h, d, n, hashs);
+        return hashs;
+    }
 protected:
     const MkseqStore *mkseqs_;
     std::vector<RawEdge*> redge_list_;
     std::vector<Edge*> edge_list_;
-    std::unordered_map<Node, size_t, Node::Hash> node_2_edge;
+    std::unordered_map<Node, size_t, Node::HashFunc> node_to_edge;
 };
 
 }

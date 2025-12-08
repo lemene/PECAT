@@ -6,7 +6,8 @@ BUILD_DIR += $(BUILD_BIN_DIR) $(BUILD_OBJ_DIR)
 BUILD_DIR += $(BUILD_OBJ_DIR)/prog $(BUILD_OBJ_DIR)/../thirdparty/edlib/edlib/src $(BUILD_OBJ_DIR)/correct \
              $(BUILD_OBJ_DIR)/bridge $(BUILD_OBJ_DIR)/assemble $(BUILD_OBJ_DIR)/correct/align $(BUILD_OBJ_DIR)/kmer \
 			 $(BUILD_OBJ_DIR)/utils $(BUILD_OBJ_DIR)/phase $(BUILD_OBJ_DIR)/assemble/simplify $(BUILD_OBJ_DIR)/assemble/graph \
-			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish $(BUILD_OBJ_DIR)/align $(BUILD_OBJ_DIR)/base
+			 $(BUILD_OBJ_DIR)/overlap $(BUILD_OBJ_DIR)/polish $(BUILD_OBJ_DIR)/align $(BUILD_OBJ_DIR)/base \
+			 $(BUILD_OBJ_DIR)/mapping
 
 simplify_src = assemble/simplify/simplifier.cpp ./assemble/simplify/spur.cpp ./assemble/simplify/bridge.cpp \
 	./assemble/simplify/transitive.cpp ./assemble/simplify/cross.cpp ./assemble/simplify/low_quality.cpp \
@@ -29,6 +30,7 @@ overlap_src = ./overlap/mapping.cpp
 
 kmer_src = ./kmer/ranked_kmers.cpp ./kmer/kmer.cpp ./kmer/minimizer_counter.cpp ./kmer/kmer_counter.cpp \
            ./kmer/minimizer_graph.cpp ./kmer/minimizer_store.cpp ./kmer/mkseq_store.cpp
+
 
 libfsa_src = ./utils/argument_parser.cpp ./utils/logger.cpp overlap.cpp read_store.cpp sequence.cpp\
              utility.cpp file_io.cpp seq_io.cpp overlap_store.cpp graph.cpp sequence_store.cpp\
@@ -88,7 +90,7 @@ fsa_ol_purge_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_purge_src))
 fsa_ol_refine_src = ./prog/fsa_ol_refine.cpp ./overlap_refine.cpp
 fsa_ol_refine_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_ol_refine_src))
 
-fsa_kmer_tools_src = ./prog/fsa_kmer_tools.cpp ./kmer/kmer_tools.cpp
+fsa_kmer_tools_src = ./prog/fsa_kmer_tools.cpp ./kmer/mprog_kmer_tools.cpp
 fsa_kmer_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_kmer_tools_src))
 
 fsa_sam_tools_src = ./prog/fsa_sam_tools.cpp ./sam_tools.cpp
@@ -97,12 +99,16 @@ fsa_sam_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_sam_tools_src))
 fsa_rd_call_src = ./prog/fsa_rd_call.cpp ./phase/read_call.cpp
 fsa_rd_call_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_rd_call_src))
 
+fsa_map_tools_src = ./prog/fsa_map_tools.cpp ./mapping/mprog_map_tools.cpp \
+					./mapping/prog_coverage_profile.cpp ./polish/multi_coverage.cpp
+fsa_map_tools_obj:=$(patsubst %.cpp, $(BUILD_OBJ_DIR)/%.o, $(fsa_map_tools_src))
+
 ifeq ($(BUILDDEBUG), 1)
 	CFLAGS =  -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
-	CXXFLAGS = -std=c++11 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
+	CXXFLAGS = -std=c++14 -Wall -O0  -D_FILE_OFFSET_BITS=64 -g -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 else
 	CFLAGS =  -Wall -O3  -D_FILE_OFFSET_BITS=64 -I. -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2 -I ../thirdparty/htslib
-	CXXFLAGS = -std=c++11 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
+	CXXFLAGS = -std=c++14 -Wall -O3 -D_FILE_OFFSET_BITS=64 -I.  -I ../thirdparty/edlib/edlib/include -I ../thirdparty/ksw2  -I ../thirdparty/htslib
 endif
 
 LDFLAGS = -pthread -lz $(BUILD_BIN_DIR)/libksw2.a ../thirdparty/htslib/libhts.a  
@@ -113,7 +119,8 @@ obj:=$(libfsa_obj) $(fsa_ol_assemble_obj) \
 	$(fsa_rd_haplotype_obj) $(fsa_rd_consistent_obj) $(fsa_ctg_call_obj) \
 	$(fsa_ol_tools_obj) $(fsa_rd_tools_obj) $(fsa_misc_tools_obj) \
 	$(fsa_ol_purge_obj) $(fsa_ol_refine_obj) $(fsa_kmer_bin_obj) \
-	$(fsa_ctg_polish_obj) $(fsa_sam_tools_obj) $(fsa_kmer_tools_obj)
+	$(fsa_ctg_polish_obj) $(fsa_sam_tools_obj) $(fsa_kmer_tools_obj) \
+	$(fsa_map_tools_obj) $(fsa_rd_call_obj)
 
 
 dep:=$(patsubst %.o,%.d, $(obj))
@@ -122,7 +129,7 @@ bin = libfsa.a fsa_ol_assemble fsa_ctg_bridge \
       fsa_rd_haplotype fsa_ol_tools fsa_rd_tools fsa_sam_tools\
 	  fsa_misc_tools fsa_rd_correct fsa_ol_purge fsa_ol_refine \
 	  fsa_ctg_call fsa_rd_consistent fsa_ctg_polish \
-	  fsa_kmer_tools
+	  fsa_kmer_tools fsa_map_tools #fsa_rd_call
 
 bin:=$(patsubst %,  $(BUILD_BIN_DIR)/%, $(bin))
 
@@ -187,10 +194,13 @@ $(BUILD_BIN_DIR)/fsa_sam_tools: $(fsa_sam_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
 	g++ $^ -o $@ $(LDFLAGS)
 
 
-$(BUILD_BIN_DIR)/fsa_rd_call: $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
-	echo $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
-	g++ $^ -o $@ $(LDFLAGS)
+# $(BUILD_BIN_DIR)/fsa_rd_call: $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
+# 	echo $(fsa_rd_call_obj) $(BUILD_BIN_DIR)/libfsa.a
+# 	g++ $^ -o $@ $(LDFLAGS)
 
+
+$(BUILD_BIN_DIR)/fsa_map_tools: $(fsa_map_tools_obj) $(BUILD_BIN_DIR)/libfsa.a
+	g++ $^ -o $@ $(LDFLAGS)
 
 
 %.o:%.c

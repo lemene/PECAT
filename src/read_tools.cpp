@@ -442,6 +442,7 @@ void Program_Longest::Running() {
     LOG(INFO)("min_length = %zd", min_length);
 
     FilterReadFile(ifname_, ofname_, id2name_, [min_length, this](SeqReader::Item& item) {
+        LOG(INFO)("%s : %zd > %d %d", item.head.c_str(), item.seq.size(), min_length, DnaSeq::Check(item.seq));
         return (int)item.seq.size() >= min_length && DnaSeq::Check(item.seq);
     });
 }
@@ -535,7 +536,7 @@ std::vector<int> WeightedShuffle(const std::vector<int>& elements, const std::ve
 void Program_Weight::Running() {
     assert(base_size_ > 0);
 
-    auto kmers = LoadKmers0(kmer_freq_fname_);
+    auto kmers = KmerStoreUsingMap(kmer_freq_fname_);
     auto min_freqs = kmers.Min();
 
     ReadStore rd_store;
@@ -546,7 +547,7 @@ void Program_Weight::Running() {
     double cov = coverage_ > 0 ? coverage_ : base_size_ *1.0 / kmers.Size();
     LOG(INFO)("size = %lld, rate = %f, cov=%.02f", total, rate, cov);
 
-    KmerCounter kc(kmers.k);
+    KmerCounter kc(kmers.K());
     auto to_weight = [&kmers, &kc, this, &min_freqs, &cov](const DnaSeq& seq) {
         auto kseq = kc.CountAll(seq);
         std::unordered_map<KmerId, int> lfreqs;
@@ -607,13 +608,13 @@ void Program_Weight::Running() {
 void Program_XXX::Running() {
 
     std::mutex mutex;
-    auto kmers = LoadKmers0(kmer_freq_fname_);
+    auto kmers = KmerStoreUsingMap(kmer_freq_fname_);
 
     ReadStore rd_store;
     rd_store.Load(ifname_);
     
     std::unordered_set<Seq::Id> selected;
-    KmerCounter kc(kmers.k);
+    KmerCounter kc(kmers.K());
     
     std::atomic<size_t> index {rd_store.GetIdLow()};
     auto count_kmer_in_read = [&rd_store, &kmers, &kc, &index, &mutex, &selected](size_t tid) {

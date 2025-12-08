@@ -15,27 +15,35 @@ namespace fsa {
 
 class MultiCoverage {
 public:
+    struct BaseCov {
+        double all {0.0};
+        double wt_all {0.0};
+        double quals[3] {0.0, 0.0, 0.0};  // for different quality thresholds
 
-public:
-    MultiCoverage(const DnaSeq& ctg) : covs_(5 + 3), win_size_(1000) {
-        for (size_t i = 0; i < covs_.size(); ++i) {
-            covs_[i].assign(ctg.Size(), 0.0);
+        void Dump(std::ofstream& of, size_t pos) {
+            of << pos << "\t" << all << "\t" << wt_all;
+            for (size_t i = 0; i < 3; ++i) {
+                of << "\t" << quals[i];
+            }
+            of << "\n";
         }
+    };
+public:
+    MultiCoverage(const DnaSeq& ctg, double qual_median, double qual_mad) : base_covs_(ctg.Size()), win_size_(1000) {
+        assert(quality_threshods_.size() == 3);
+        quality_threshods_[0] = qual_median - 6 * 1.4826 * qual_mad;
+        quality_threshods_[1] = qual_median - 4 * 1.4826 * qual_mad;
+        quality_threshods_[2] = qual_median - 2 * 1.4826 * qual_mad;
     }
     void Merge(const MatchInfo &match, double wt);
 
-    void Dump(std::ofstream& of);
+    std::vector<BaseCov> ToCov(const MatchInfo &match, double wt) const;
+    void Merge(std::vector<BaseCov> &covs, size_t s);
 
-    enum CovType {
-        ALL = 0,
-        ALL_WT = 1,
-        MATCHED = 2,
-        MATCHED_WT = 3,
-        THRESHOLD = 4,
-    };
+    void Dump(std::ofstream& of);
 protected:
-    std::vector<std::vector<double>> covs_;
-    std::vector<double> locaL_thresholds_ { 0.85, 0.90 };
+    std::vector<BaseCov> base_covs_;
+    std::vector<double> quality_threshods_ { 0.85, 0.90, 0.95 };
     size_t win_size_;
 };
 }

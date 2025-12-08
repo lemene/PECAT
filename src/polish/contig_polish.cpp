@@ -18,81 +18,55 @@ ArgumentParser ContigPolish::GetArgumentParser() {
 void ContigPolish::Running() {
     SET_LOG_LEVEL(DEBUG);
     dataset_.Load();
-    LOG(INFO)("Start detecting misassemblies");
-    AnalyzeContigs();
-    // LOG(INFO)("Build Contig graph");
-    // BuildGraph();
-
-    // PolishContigs();
+    AnalyzeContigs2();
 }
 
-void ContigPolish::AnalyzeContigs() {
-    std::ofstream of_cov("cov_all");
-    std::ofstream of_win("cov_win");
-    std::ofstream of_mis("mis.bed");
-    std::ofstream of_match("match_info");
-    std::ofstream of_pol(opts_.cread_fname_);
-    std::ofstream of_mcov("multi_covs");
-    std::mutex mutex;
+// void ContigPolish::AnalyzeContigs() {
+//     std::ofstream of_mcov("multi_covs");
+//     std::mutex mutex;
 
-    auto dump = [&mutex, &of_cov, &of_mis, &of_win, &of_pol, &of_match, &of_mcov](std::shared_ptr<ContigAnalyzer> ctg_dtr) {
-        std::lock_guard<std::mutex> locked(mutex);
+//     auto dump = [&mutex, &of_mcov](std::shared_ptr<ContigAnalyzer> ctg_dtr) {
+//         std::lock_guard<std::mutex> locked(mutex);
+//         ctg_dtr->DumpMultiCoverage(of_mcov);
 
-        // ctg_dtr->DumpCoverage(of_cov);
-        // ctg_dtr->DumpWindow(of_win);
-        // ctg_dtr->DumpMatch(of_match);
-        // ctg_dtr->SaveErrors(of_mis);
-        ctg_dtr->DumpMultiCoverage(of_mcov);
+//     };
 
-    };
+//     ContigGraph graph;
 
-    ContigGraph graph;
+//     auto make_ctg_analyser = [&mutex, this](Seq::Id tid, PolDataset &dataset) -> std::shared_ptr<ContigAnalyzer> {
+//         std::lock_guard<std::mutex> locked(mutex);
+//         ctg_analyzers_.emplace_back(new ContigAnalyzer(tid, dataset_));
+//         return ctg_analyzers_.back();
+//     };
 
-    auto make_ctg_analyser = [&mutex, this](Seq::Id tid, PolDataset &dataset) -> std::shared_ptr<ContigAnalyzer> {
-        std::lock_guard<std::mutex> locked(mutex);
-        ctg_analyzers_.emplace_back(new ContigAnalyzer(tid, dataset_));
-        return ctg_analyzers_.back();
-    };
-
-    std::atomic<size_t> index {0};
-    auto work_func = [dump, &index, this, &graph, make_ctg_analyser](size_t _) {
+//     std::atomic<size_t> index {0};
+//     auto work_func = [dump, &index, this, &graph, make_ctg_analyser](size_t _) {
         
-        for (size_t i = index.fetch_add(1); i < dataset_.ctg_ids_.size(); i = index.fetch_add(1)) {
-            auto tid = dataset_.ctg_ids_[i];    
+//         for (size_t i = index.fetch_add(1); i < dataset_.ctg_ids_.size(); i = index.fetch_add(1)) {
+//             auto tid = dataset_.ctg_ids_[i];    
 
-            auto ctg_analyser = make_ctg_analyser(tid, dataset_);
-            ctg_analyser->Detect();
-            // auto frgs = ctg_analyser->Split();
-            // graph.AddFragment(frgs);
-            dump(ctg_analyser);
-        }
-    };
+//             auto ctg_analyser = make_ctg_analyser(tid, dataset_);
+//             ctg_analyser->Detect();
+//             dump(ctg_analyser);
+//         }
+//     };
 
-    MultiThreadRun((size_t)opts_.thread_size, work_func);
+//     MultiThreadRun((size_t)opts_.thread_size, work_func);
 
-}
+// }
 
-void ContigPolish::BuildGraph() {
-    for (const auto& ctg_alzr : ctg_analyzers_) {
-        graph_.AddFragment(ctg_alzr->Split());
+void ContigPolish::AnalyzeContigs2() {
+
+        
+    for (size_t i = 0; i < dataset_.ctg_ids_.size(); i++) {
+        auto tid = dataset_.ctg_ids_[i];    
+        std::ofstream of_mcov(opts_.OutputPath(dataset_.QueryStringById(tid) + ".mcov"));
+        ContigAnalyzer ctg_analyser(tid, dataset_);
+        ctg_analyser.ComputeCoverage(opts_.thread_size);
+        ctg_analyser.DumpMultiCoverage(of_mcov);
     }
-    graph_.Build();
-    graph_.Save(opts_.graph_fname_);
-    graph_.Simplify();
-    graph_.Save(opts_.graph_fname_ + ".simplified");
-}
 
-void ContigPolish::PolishContigs() {
-    
-    std::ofstream of(opts_.cread_fname_);
-    auto chains = graph_.GetChains();
-    LOG(INFO)("Total %zd chains", chains.size());
-    for (size_t i = 0; i < chains.size(); ++i) {
-        auto& chain = chains[i];
-        auto seq = chain.Polish();
-        of << ">" << i << "\n" << seq << "\n";
-    }
-}
 
+}
 
 } // namespace fsa {

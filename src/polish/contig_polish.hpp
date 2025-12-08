@@ -25,9 +25,7 @@ public:
     
 protected:
     void AnalyzeContigs();
-    void BuildGraph();
-    void PolishContigs();
-
+    void AnalyzeContigs2();
 protected:
     PolOptions opts_;
     PolDataset dataset_ { opts_ };

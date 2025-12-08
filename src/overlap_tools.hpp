@@ -191,6 +191,23 @@ protected:
     int thread_size_ { 4 };
 };
 
+class Program_Coverage : public Program {
+public:
+    Program_Coverage() {
+        name_ = "coverage";
+        desc_ = "calculate coverage of paf";
+    }
+    virtual ArgumentParser GetArgumentParser() {
+        ArgumentParser ap(Name(), Description(), "");
+        ap.AddPositionOption(ifname_, "ifname", "paf file");
+        ap.AddNamedOption(thread_size_, "thread_size", "thread size");
+        return ap;
+    }
+    virtual void Running();
+protected:
+    std::string ifname_;
+    int thread_size_ { 4 };
+};
 
 class Program_Test : public Program {
 public:

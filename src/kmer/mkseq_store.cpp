@@ -70,4 +70,8 @@ void MkseqStore::Save(const std::string& fname) const {
         ofile << '\n';
     }
 }
+
+const std::string& MkseqStore::QueryNameById(size_t seq_id) {
+    return rd_store_->QueryNameById(seq_id);
+}
 }
